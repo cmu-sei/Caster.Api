@@ -24,7 +24,7 @@ jobs:
         run: |
           echo ::set-output name=name::Caster.Api.Client
           echo ::set-output name=dll_name::Caster.Api
-          echo ::set-output name=directory::Caster.Api
+          echo ::set-output name=directory::src/Caster.Api
 
       - uses: actions/checkout@v2
 
