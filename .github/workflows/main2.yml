@@ -42,7 +42,7 @@ jobs:
                     
       - name: Run AutoRest
         run: |
-          npm install autorest@3.0.6247
+          npm install autorest@3.0.5231
           find . -name "*autorest*"
           cd ${{ steps.package_name.outputs.name }}
 
