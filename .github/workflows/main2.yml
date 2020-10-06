@@ -24,7 +24,7 @@ jobs:
         run: |
           echo ::set-output name=name::Caster.Api.Client
           echo ::set-output name=dll_name::Caster.Api
-          echo ::set-output name=directory::Caster.Api
+          echo ::set-output name=directory::src/Caster.Api
 
       - uses: actions/checkout@v2
 
@@ -42,13 +42,13 @@ jobs:
                     
       - name: Run AutoRest
         run: |
-          npm install autorest@3.0.6247
+          npm install autorest@3.0.5231
           find . -name "*autorest*"
-          cd ${{ steps.package_name.outputs.name }}
+          cd src/${{ steps.package_name.outputs.name }}
 
       - name: Create NuGet Package
         run: |
-          cd ${{ steps.package_name.outputs.name }}
+          cd src/${{ steps.package_name.outputs.name }}
           dotnet pack -c Release /p:version=${{ github.event.inputs.clientVersion }}  \
           /p:authors="Carnegie Mellon University/Software Engineering Institute"      \
           /p:description="AutoRest generated client for Crucible's ${{ steps.package_name.outputs.dll_name }}"   \
@@ -84,6 +84,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.package_name.outputs.name }}/bin/Release/${{ steps.package_name.outputs.name }}.${{ github.event.inputs.clientVersion }}.nupkg
+          asset_path: src/${{ steps.package_name.outputs.name }}/bin/Release/${{ steps.package_name.outputs.name }}.${{ github.event.inputs.clientVersion }}.nupkg
           asset_name: ${{ steps.package_name.outputs.name }}.${{ github.event.inputs.clientVersion }}.nupkg
           asset_content_type: application/zip
