@@ -24,8 +24,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using S3.VM.Api;
-using S3.VM.Api.Models;
+using Player.Vm.Api;
+using Player.Vm.Api.Models;
 
 namespace Caster.Api.Domain.Services
 {
@@ -188,7 +188,7 @@ namespace Caster.Api.Domain.Services
             var errorMessages = new List<string>();
 
             var dbContext = scope.ServiceProvider.GetRequiredService<CasterContext>();
-            var client = scope.ServiceProvider.GetRequiredService<IS3VmApiClient>();
+            var client = scope.ServiceProvider.GetRequiredService<IPlayerVmApiClient>();
             var playerOptions = scope.ServiceProvider.GetRequiredService<PlayerOptions>();
 
             var workspace = await dbContext.Workspaces.SingleOrDefaultAsync(x => x.Id == workspaceId, ct);
@@ -203,13 +203,13 @@ namespace Caster.Api.Domain.Services
             var previousResources = previousState.GetResources();
 
             // Get all vms from vm api
-            VmSummary[] virtualMachines = null;
+            Vm[] virtualMachines = null;
 
             try
             {
                 virtualMachines = (await client.GetAllAsync(ct)).ToArray();
             }
-            catch (ApiErrorException ex)
+            catch (ProblemDetailsException ex)
             {
                 errorMessages.Add($"Error retrieving Virtual Machines: {ex.Body.Title}");
             }
@@ -302,7 +302,7 @@ namespace Caster.Api.Domain.Services
             {
                 await func();
             }
-            catch (ApiErrorException ex)
+            catch (ProblemDetailsException ex)
             {
                 // Ignore delete error if vm doesn't exist
                 if (!(delete && ex.Body.Status == (int)HttpStatusCode.NotFound && ex.Body.Title == "Vm not found"))
@@ -330,7 +330,7 @@ namespace Caster.Api.Domain.Services
                     using (var scope = _serviceScopeFactory.CreateScope())
                     {
                         var dbContext = scope.ServiceProvider.GetRequiredService<CasterContext>();
-                        var client = scope.ServiceProvider.GetRequiredService<IS3VmApiClient>();
+                        var client = scope.ServiceProvider.GetRequiredService<IPlayerVmApiClient>();
 
                         var removedResources = await dbContext.RemovedResources.ToArrayAsync();
                         var confirmedDeleted = new List<RemovedResource>();
@@ -344,7 +344,7 @@ namespace Caster.Api.Domain.Services
                                 await client.DeleteVmAsync(new Guid(removedResource.Id));
                                 deleteConfirmed = true;
                             }
-                            catch (ApiErrorException ex)
+                            catch (ProblemDetailsException ex)
                             {
                                 // TODO: Use instance field when it is implemented in VmApi to confirm
                                 if (ex.Body.Status == (int)HttpStatusCode.NotFound && ex.Body.Title == "Vm not found")

@@ -28,7 +28,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
 using Polly;
 using Polly.Extensions.Http;
-using S3.VM.Api;
+using Player.Vm.Api;
 using SimpleInjector;
 
 namespace Caster.Api.Infrastructure.Extensions
@@ -72,7 +72,7 @@ namespace Caster.Api.Infrastructure.Extensions
             .AddHttpMessageHandler<AuthenticatingHandler>()
             .AddPolicyHandler(policy);
 
-            services.AddScoped<IS3VmApiClient, S3VmApiClient>(p =>
+            services.AddScoped<IPlayerVmApiClient, PlayerVmApiClient>(p =>
             {
                 var httpClientFactory = p.GetRequiredService<IHttpClientFactory>();
                 var playerOptions = p.GetRequiredService<PlayerOptions>();
@@ -82,10 +82,12 @@ namespace Caster.Api.Infrastructure.Extensions
                 var httpClient = httpClientFactory.CreateClient("player");
                 httpClient.BaseAddress = uri;
 
-                var s3VmApiClient = new S3VmApiClient(httpClient, true);
-                s3VmApiClient.BaseUri = uri;
+                var playerVmApiClient = new PlayerVmApiClient(httpClient, true)
+                {
+                    BaseUri = uri
+                };
 
-                return s3VmApiClient;
+                return playerVmApiClient;
             });
         }
 
@@ -125,7 +127,8 @@ namespace Caster.Api.Infrastructure.Extensions
             var commentsFileName = Assembly.GetExecutingAssembly().GetName().Name + ".xml";
             var commentsFilePath = Path.Combine(baseDirectory, commentsFileName);
 
-            services.AddSwaggerGen(c => {
+            services.AddSwaggerGen(c =>
+            {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "Caster API", Version = "v1.1.0" });
                 c.CustomSchemaIds(schemaIdStrategy);
                 c.OperationFilter<JsonIgnoreQueryOperationFilter>();
@@ -171,7 +174,7 @@ namespace Caster.Api.Infrastructure.Extensions
 
                 c.IncludeXmlComments(commentsFilePath);
                 c.MapType<Optional<Guid?>>(() => new OpenApiSchema { Type = "string", Format = "uuid" });
-                c.MapType<JsonElement?>(() => new OpenApiSchema { Type = "object" , Nullable = true});
+                c.MapType<JsonElement?>(() => new OpenApiSchema { Type = "object", Nullable = true });
             });
         }
 
@@ -195,7 +198,7 @@ namespace Caster.Api.Infrastructure.Extensions
 
             // use SimpleInjector DI container for MediatR
             // in order to support constrained open generics for Behaviors
-            container.BuildMediator(new [] {Assembly.GetExecutingAssembly()});
+            container.BuildMediator(new[] { Assembly.GetExecutingAssembly() });
 
             // register with simpleinjector because it uses MediatR
             container.RegisterSingleton<IRunQueueService, RunQueueService>();
