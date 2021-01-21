@@ -45,6 +45,7 @@ namespace Caster.Api
         private readonly ClientOptions _clientOptions = new ClientOptions();
         private readonly TerraformOptions _terraformOptions = new TerraformOptions();
         private readonly ILoggerFactory _loggerFactory;
+        private string _pathbase;
 
         public Startup(IConfiguration configuration, ILoggerFactory loggerFactory)
         {
@@ -52,6 +53,7 @@ namespace Caster.Api
             Configuration.GetSection("Authorization").Bind(_authOptions);
             Configuration.GetSection("Client").Bind(_clientOptions);
             Configuration.GetSection("Terraform").Bind(_terraformOptions);
+            _pathbase = Configuration["PathBase"] ?? "";
 
             _loggerFactory = loggerFactory;
         }
@@ -186,6 +188,8 @@ namespace Caster.Api
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
+            app.UsePathBase(_pathbase);
+
             app.UseSimpleInjector(container);
             app.UseCustomExceptionHandler();
             app.UseRouting();
