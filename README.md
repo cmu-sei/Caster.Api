@@ -23,4 +23,4 @@ Include the reasons why you're requesting the new feature and how it might benef
 
 ## License
 
-Copyright 2020 Carnegie Mellon University. See the [LICENSE.md](./LICENSE.md) files for details.
+Copyright 2021 Carnegie Mellon University. See the [LICENSE.md](./LICENSE.md) files for details.
