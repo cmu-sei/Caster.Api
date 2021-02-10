@@ -24,8 +24,8 @@ namespace Caster.Api.Features.Resources
 {
     public class Taint
     {
-        [DataContract(Name="TaintResourcesCommand")]
-        public class Command : IRequest<Resource[]>
+        [DataContract(Name = "TaintResourcesCommand")]
+        public class Command : IRequest<ResourceCommandResult>
         {
             /// <summary>
             /// ID of the Workspace.
@@ -37,13 +37,13 @@ namespace Caster.Api.Features.Resources
             /// Untaint the Resources if true
             /// </summary>
             [JsonIgnore]
-            public bool Untaint { get; set;}
+            public bool Untaint { get; set; }
 
             /// <summary>
             /// Perform the chosen operation on all Resources in the Workspace if true.
             /// </summary>
             [DataMember]
-            public bool SelectAll { get; set;}
+            public bool SelectAll { get; set; }
 
             /// <summary>
             /// List of Resource addresses to Taint or Untaint. Ignored if SelectAll is true.
@@ -52,7 +52,7 @@ namespace Caster.Api.Features.Resources
             public string[] ResourceAddresses { get; set; }
         }
 
-        public class Handler : BaseOperationHandler, IRequestHandler<Command, Resource[]>
+        public class Handler : BaseOperationHandler, IRequestHandler<Command, ResourceCommandResult>
         {
             public Handler(
                 CasterContext db,
@@ -63,34 +63,28 @@ namespace Caster.Api.Features.Resources
                 ITerraformService terraformService,
                 ILockService lockService,
                 ILogger<BaseOperationHandler> logger) :
-            base(db, mapper, authorizationService, identityResolver, terraformOptions, terraformService, lockService, logger) {}
+            base(db, mapper, authorizationService, identityResolver, terraformOptions, terraformService, lockService, logger)
+            { }
 
-            public async Task<Resource[]> Handle(Command request, CancellationToken cancellationToken)
+            public async Task<ResourceCommandResult> Handle(Command request, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
 
-                var workspace = await _db.Workspaces
-                    .Include(w => w.Directory)
-                    .Where(w => w.Id == request.WorkspaceId)
-                    .FirstOrDefaultAsync();
-
-                if (workspace == null) throw new EntityNotFoundException<Workspace>();
+                var workspace = await base.GetWorkspace(request.WorkspaceId);
 
                 string[] addresses = request.ResourceAddresses;
 
-                if (request.SelectAll) {
+                if (request.SelectAll)
+                {
                     addresses = workspace.GetState().GetResources().Select(r => r.Address).ToArray();
                 }
 
-                workspace = await base.PerformOperation(
+                return await base.PerformOperation(
                     workspace,
                     request.Untaint ? ResourceOperation.untaint : ResourceOperation.taint,
                     addresses);
-
-                return _mapper.Map<Resource[]>(workspace.GetState().GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes)));
             }
         }
     }
 }
-

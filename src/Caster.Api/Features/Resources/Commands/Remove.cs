@@ -22,19 +22,25 @@ using System.Text.Json.Serialization;
 
 namespace Caster.Api.Features.Resources
 {
-    public class Refresh
+    public class Remove
     {
-        [DataContract(Name="RefreshResourcesCommand")]
-        public class Command : IRequest<Resource[]>
+        [DataContract(Name = "RemoveResourcesCommand")]
+        public class Command : IRequest<ResourceCommandResult>
         {
             /// <summary>
             /// ID of the Workspace.
             /// </summary>
             [JsonIgnore]
             public Guid WorkspaceId { get; set; }
+
+            /// <summary>
+            /// List of Resource addresses to remove
+            /// </summary>
+            [DataMember]
+            public string[] ResourceAddresses { get; set; }
         }
 
-        public class Handler : BaseOperationHandler, IRequestHandler<Command, Resource[]>
+        public class Handler : BaseOperationHandler, IRequestHandler<Command, ResourceCommandResult>
         {
             public Handler(
                 CasterContext db,
@@ -45,25 +51,21 @@ namespace Caster.Api.Features.Resources
                 ITerraformService terraformService,
                 ILockService lockService,
                 ILogger<BaseOperationHandler> logger) :
-            base(db, mapper, authorizationService, identityResolver, terraformOptions, terraformService, lockService, logger) {}
+            base(db, mapper, authorizationService, identityResolver, terraformOptions, terraformService, lockService, logger)
+            { }
 
-            public async Task<Resource[]> Handle(Command request, CancellationToken cancellationToken)
+            public async Task<ResourceCommandResult> Handle(Command request, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
 
-                var workspace = await _db.Workspaces
-                    .Include(w => w.Directory)
-                    .Where(w => w.Id == request.WorkspaceId)
-                    .FirstOrDefaultAsync();
+                var workspace = await base.GetWorkspace(request.WorkspaceId);
 
-                if (workspace == null) throw new EntityNotFoundException<Workspace>();
-
-                workspace = await base.PerformOperation(workspace, ResourceOperation.refresh, null);
-
-                return _mapper.Map<Resource[]>(workspace.GetState().GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes)));
+                return await base.PerformOperation(
+                    workspace,
+                    ResourceOperation.remove,
+                    request.ResourceAddresses);
             }
         }
     }
 }
-

@@ -2,7 +2,6 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 using MediatR;
@@ -54,7 +53,7 @@ namespace Caster.Api.Features.Resources
         /// Taint selected Resources
         /// </summary>
         [HttpPost("workspaces/{workspaceId}/resources/actions/taint")]
-        [ProducesResponseType(typeof(Resource[]), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(ResourceCommandResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "TaintResources")]
         public async Task<IActionResult> Taint([FromRoute] Guid workspaceId, [FromBody] Taint.Command command)
         {
@@ -67,7 +66,7 @@ namespace Caster.Api.Features.Resources
         /// Untaint selected Resources
         /// </summary>
         [HttpPost("workspaces/{workspaceId}/resources/actions/untaint")]
-        [ProducesResponseType(typeof(Resource[]), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(ResourceCommandResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "UntaintResources")]
         public async Task<IActionResult> Untaint([FromRoute] Guid workspaceId, [FromBody] Taint.Command command)
         {
@@ -78,16 +77,41 @@ namespace Caster.Api.Features.Resources
         }
 
         /// <summary>
+        /// Remove selected Resources
+        /// </summary>
+        [HttpPost("workspaces/{workspaceId}/resources/actions/remove")]
+        [ProducesResponseType(typeof(ResourceCommandResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "RemoveResources")]
+        public async Task<IActionResult> Remove([FromRoute] Guid workspaceId, [FromBody] Remove.Command command)
+        {
+            command.WorkspaceId = workspaceId;
+            var result = await _mediator.Send(command);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Import a Resource
+        /// </summary>
+        [HttpPost("workspaces/{workspaceId}/resources/actions/import")]
+        [ProducesResponseType(typeof(ResourceCommandResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "ImportResources")]
+        public async Task<IActionResult> Import([FromRoute] Guid workspaceId, [FromBody] Import.Command command)
+        {
+            command.WorkspaceId = workspaceId;
+            var result = await _mediator.Send(command);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Refresh the Workspace's Resources
         /// </summary>
         [HttpPost("workspaces/{workspaceId}/resources/actions/refresh")]
-        [ProducesResponseType(typeof(Resource[]), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(ResourceCommandResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "RefreshResources")]
         public async Task<IActionResult> Refresh([FromRoute] Guid workspaceId)
         {
-            var result = await _mediator.Send(new Refresh.Command{ WorkspaceId = workspaceId });
+            var result = await _mediator.Send(new Refresh.Command { WorkspaceId = workspaceId });
             return Ok(result);
         }
     }
 }
-
