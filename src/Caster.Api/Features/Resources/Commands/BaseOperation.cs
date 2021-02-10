@@ -6,13 +6,16 @@ using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using System.Security.Claims;
-using System.Security.Principal;
 using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.Extensions.Logging;
 using Caster.Api.Infrastructure.Identity;
+using System.Collections.Generic;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Linq;
 
 namespace Caster.Api.Features.Resources
 {
@@ -22,7 +25,9 @@ namespace Caster.Api.Features.Resources
         {
             taint,
             untaint,
-            refresh
+            refresh,
+            remove,
+            import
         }
 
         protected readonly CasterContext _db;
@@ -54,16 +59,16 @@ namespace Caster.Api.Features.Resources
             _logger = logger;
         }
 
-        protected async Task<Workspace> PerformOperation(Workspace workspace, ResourceOperation operation, string[] addresses)
+        protected async Task<ResourceCommandResult> PerformOperation(Workspace workspace, ResourceOperation operation, string[] addresses, string args = null)
         {
             using (var lockResult = await _lockService.GetWorkspaceLock(workspace.Id).LockAsync(0))
             {
                 if (!lockResult.AcquiredLock)
                     throw new WorkspaceConflictException();
 
-                if (!(await _db.AnyIncompleteRuns(workspace.Id)))
+                if (!await _db.AnyIncompleteRuns(workspace.Id))
                 {
-                    return await this.OperationDoWork(workspace, operation, addresses);
+                    return await this.OperationDoWork(workspace, operation, addresses, args);
                 }
                 else
                 {
@@ -72,8 +77,9 @@ namespace Caster.Api.Features.Resources
             }
         }
 
-        private async Task<Workspace> OperationDoWork(Workspace workspace, ResourceOperation operation, string[] addresses)
+        private async Task<ResourceCommandResult> OperationDoWork(Workspace workspace, ResourceOperation operation, string[] addresses, string args)
         {
+            var errors = new List<string>();
             var workingDir = workspace.GetPath(_terraformOptions.RootWorkingDirectory);
             var files = await _db.GetWorkspaceFiles(workspace, workspace.Directory);
             await workspace.PrepareFileSystem(workingDir, files);
@@ -89,6 +95,8 @@ namespace Caster.Api.Features.Resources
 
             if (!initResult.IsError)
             {
+                TerraformResult result = null;
+
                 switch (operation)
                 {
                     case ResourceOperation.taint:
@@ -108,20 +116,47 @@ namespace Caster.Api.Features.Resources
                             }
 
                             if (taintResult != null && taintResult.IsError)
-                                _logger.LogError(taintResult.Output);
-
+                            {
+                                errors.Add(taintResult.Output);
+                            }
                         }
                         break;
                     case ResourceOperation.refresh:
-                        TerraformResult refreshResult = _terraformService.Refresh(workspace, statePath);
-                        if (refreshResult.IsError) _logger.LogError(refreshResult.Output);
+                        result = _terraformService.Refresh(workspace, statePath);
                         break;
+                    case ResourceOperation.remove:
+                        result = _terraformService.RemoveResources(workspace, addresses, statePath);
+                        break;
+                    case ResourceOperation.import:
+                        result = _terraformService.Import(workspace, addresses[0], args, statePath);
+                        break;
+                }
+
+                if (result != null && result.IsError)
+                {
+                    errors.Add(result.Output);
                 }
 
                 await workspace.RetrieveState(workingDir);
                 await _db.SaveChangesAsync();
                 workspace.CleanupFileSystem(_terraformOptions.RootWorkingDirectory);
             }
+
+            return new ResourceCommandResult
+            {
+                Resources = _mapper.Map<Resource[]>(workspace.GetState().GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes))),
+                Errors = errors.ToArray()
+            };
+        }
+
+        protected async Task<Workspace> GetWorkspace(Guid id)
+        {
+            var workspace = await _db.Workspaces
+                .Include(w => w.Directory)
+                .Where(w => w.Id == id)
+                .FirstOrDefaultAsync();
+
+            if (workspace == null) throw new EntityNotFoundException<Workspace>();
 
             return workspace;
         }

@@ -54,4 +54,3 @@ namespace Caster.Api.Features.Resources
         public JsonElement? Attributes { get; set; }
     }
 }
-

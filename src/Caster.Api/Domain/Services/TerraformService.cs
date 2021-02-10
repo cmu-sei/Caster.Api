@@ -23,6 +23,8 @@ namespace Caster.Api.Domain.Services
         TerraformResult Show(Workspace workspace);
         TerraformResult Taint(Workspace workspace, string address, string statePath);
         TerraformResult Untaint(Workspace workspace, string address, string statePath);
+        TerraformResult RemoveResources(Workspace workspace, string[] addresses, string statePath);
+        TerraformResult Import(Workspace workspace, string address, string id, string statePath);
         TerraformResult Refresh(Workspace workspace, string statePath);
         bool IsValidVersion(string version);
         IEnumerable<string> GetVersions();
@@ -47,7 +49,7 @@ namespace Caster.Api.Domain.Services
         private const string _binaryName = "terraform";
         private readonly TerraformOptions _options;
         private readonly ILogger<TerraformService> _logger;
-        private StringBuilder _outputBuilder = new StringBuilder();
+        private readonly StringBuilder _outputBuilder = new StringBuilder();
         private string _workspaceName = null;
 
         public TerraformService(TerraformOptions options, ILogger<TerraformService> logger)
@@ -72,12 +74,15 @@ namespace Caster.Api.Domain.Services
             int exitCode;
             _outputBuilder.Clear();
 
-            ProcessStartInfo startInfo = new ProcessStartInfo();
-            startInfo.FileName = this.GetBinaryPath(workspace);
-            startInfo.WorkingDirectory = workspace.GetPath(_options.RootWorkingDirectory);
-            startInfo.CreateNoWindow = true;
-            startInfo.RedirectStandardOutput = true;
-            startInfo.RedirectStandardError = redirectStandardError;
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = this.GetBinaryPath(workspace),
+                WorkingDirectory = workspace.GetPath(_options.RootWorkingDirectory),
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = redirectStandardError
+            };
+
             startInfo.EnvironmentVariables.Add("TF_IN_AUTOMATION", "true");
 
             if (!string.IsNullOrEmpty(_workspaceName))
@@ -130,7 +135,7 @@ namespace Caster.Api.Domain.Services
         {
             if (e.Data != null)
             {
-                _outputBuilder.Append(e.Data);
+                _outputBuilder.AppendLine(e.Data);
                 _logger.LogTrace(e.Data);
             }
         }
@@ -161,9 +166,7 @@ namespace Caster.Api.Domain.Services
 
         public TerraformResult Init(Workspace workspace, DataReceivedEventHandler outputHandler)
         {
-            List<string> args = new List<string>();
-            args.Add("init");
-            args.Add("-input=false");
+            List<string> args = new List<string> { "init", "-input=false" };
 
             if (!string.IsNullOrEmpty(_options.PluginDirectory))
             {
@@ -175,20 +178,13 @@ namespace Caster.Api.Domain.Services
 
         public TerraformResult SelectWorkspace(Workspace workspace, DataReceivedEventHandler outputHandler)
         {
-            List<string> args = new List<string>();
-            args.Add("workspace");
-            args.Add("select");
-            args.Add(workspace.Name);
-
+            List<string> args = new List<string> { "workspace", "select", workspace.Name };
             return this.Run(workspace, args, outputHandler);
         }
 
         public TerraformResult Plan(Workspace workspace, bool destroy, string[] targets, DataReceivedEventHandler outputHandler)
         {
-            List<string> args = new List<string>();
-            args.Add("plan");
-            args.Add("-input=false");
-            args.Add("-out=plan");
+            List<string> args = new List<string> { "plan", "-input=false", "-out=plan" };
 
             if (destroy)
             {
@@ -205,27 +201,19 @@ namespace Caster.Api.Domain.Services
 
         public TerraformResult Apply(Workspace workspace, DataReceivedEventHandler outputHandler)
         {
-            List<string> args = new List<string>();
-            args.Add("apply");
-            args.Add("plan");
-
+            List<string> args = new List<string> { "apply", "plan" };
             return this.Run(workspace, args, outputHandler);
         }
 
         public TerraformResult Show(Workspace workspace)
         {
-            List<string> args = new List<string>();
-            args.Add("show");
-            args.Add("-json");
-            args.Add("plan");
-
+            List<string> args = new List<string> { "show", "-json", "plan" };
             return this.Run(workspace, args, null, redirectStandardError: false);
         }
 
         public TerraformResult Taint(Workspace workspace, string address, string statePath)
         {
-            List<string> args = new List<string>();
-            args.Add("taint");
+            List<string> args = new List<string>() { "taint" };
             AddStatePathArg(statePath, ref args);
             args.Add(address);
 
@@ -234,18 +222,39 @@ namespace Caster.Api.Domain.Services
 
         public TerraformResult Untaint(Workspace workspace, string address, string statePath)
         {
-            List<string> args = new List<string>();
-            args.Add("untaint");
+            List<string> args = new List<string>() { "untaint" };
             AddStatePathArg(statePath, ref args);
             args.Add(address);
 
             return this.Run(workspace, args, null);
         }
 
+        public TerraformResult RemoveResources(Workspace workspace, string[] addresses, string statePath)
+        {
+            List<string> args = new List<string>() { "state", "rm" };
+            AddStatePathArg(statePath, ref args);
+
+            foreach (var addr in addresses)
+            {
+                args.Add(addr);
+            }
+
+            return this.Run(workspace, args, null);
+        }
+
+        public TerraformResult Import(Workspace workspace, string address, string id, string statePath)
+        {
+            List<string> args = new List<string> { "import" };
+            AddStatePathArg(statePath, ref args);
+            args.Add(address);
+            args.Add(id);
+
+            return this.Run(workspace, args, null);
+        }
+
         public TerraformResult Refresh(Workspace workspace, string statePath)
         {
-            List<string> args = new List<string>();
-            args.Add("refresh");
+            List<string> args = new List<string>() { "refresh" };
             AddStatePathArg(statePath, ref args);
             return this.Run(workspace, args, null);
         }

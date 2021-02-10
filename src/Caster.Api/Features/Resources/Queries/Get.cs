@@ -13,24 +13,39 @@ using Caster.Api.Infrastructure.Exceptions;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
+using System.Linq;
 using Caster.Api.Infrastructure.Identity;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace Caster.Api.Features.Resources
 {
-    public class GetByWorkspace
+    public class Get
     {
-        [DataContract(Name="GetResourcesByWorkspaceQuery")]
-        public class Query : IRequest<Resource[]>
+        [DataContract(Name = "GetResourceQuery")]
+        public class Query : IRequest<Resource>
         {
             /// <summary>
-            /// ID of the Workspace.
+            /// Id of the Workspace that the Resource exists in.
             /// </summary>
             [JsonIgnore]
             public Guid WorkspaceId { get; set; }
+
+            /// <summary>
+            /// Id of the Resource.
+            /// </summary>
+            [JsonIgnore]
+            public string Id { get; set; }
+
+            /// <summary>
+            /// Type of the Resource.
+            /// </summary>
+            [DataMember]
+            [Required]
+            public string Type { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Resource[]>
+        public class Handler : IRequestHandler<Query, Resource>
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
@@ -49,7 +64,7 @@ namespace Caster.Api.Features.Resources
                 _user = identityResolver.GetClaimsPrincipal();
             }
 
-            public async Task<Resource[]> Handle(Query request, CancellationToken cancellationToken)
+            public async Task<Resource> Handle(Query request, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
@@ -57,14 +72,13 @@ namespace Caster.Api.Features.Resources
                 var workspace = await _db.Workspaces.FindAsync(request.WorkspaceId);
 
                 if (workspace == null)
-                {
                     throw new EntityNotFoundException<Workspace>();
-                }
 
                 var state = workspace.GetState();
-                return _mapper.Map<Resource[]>(state.GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes)));
+                var resources = state.GetResources();
+                var resource = resources.Where(r => r.Type == request.Type && r.Id == request.Id).FirstOrDefault();
+                return _mapper.Map<Resource>(resource, opts => opts.ExcludeMembers());
             }
         }
     }
 }
-
