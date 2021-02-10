@@ -6,7 +6,7 @@ Caster.Api utilizes the Terraform binary in order execute workspace operations. 
 
 In order to avoid this, a System Administrator should follow these steps in the Caster UI before stopping the Caster.Api container:
 
-- Navigate to *Administration -> Workspaces*
+- Navigate to *Administration > Workspaces*
 - Disable Workspace Operations by clicking the toggle button
 - Wait until all Active Runs are completed
 
