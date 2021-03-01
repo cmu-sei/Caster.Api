@@ -14,7 +14,7 @@ using System.Linq;
 
 namespace Caster.Api.Features.HealthChecks
 {    
-    [Route("api/healthz")]
+    [Route("api/health")]
     [ApiController]
     [AllowAnonymous]
     public class HealthController : ControllerBase
@@ -41,8 +41,7 @@ namespace Caster.Api.Features.HealthChecks
             HealthReport report = await this.healthCheckService.CheckHealthAsync((check) => check.Tags.Contains("live"));
             var result = new
             {
-                status = report.Status.ToString(),
-                errors = report.Entries.Select(e => new { name = e.Key, status = e.Value.Status.ToString(), description = e.Value.Description.ToString() })
+                status = report.Status.ToString()
             };
             return report.Status == HealthStatus.Healthy ? this.Ok(result) : this.StatusCode((int)HttpStatusCode.ServiceUnavailable, result);
         }
@@ -62,8 +61,7 @@ namespace Caster.Api.Features.HealthChecks
             HealthReport report = await this.healthCheckService.CheckHealthAsync((check) => check.Tags.Contains("ready"));
             var result = new
             {
-                status = report.Status.ToString(),
-                errors = report.Entries.Select(e => new { name = e.Key, status = e.Value.Status.ToString(), description = e.Value.Description.ToString() })
+                status = report.Status.ToString()
             };
             return report.Status == HealthStatus.Healthy ? this.Ok(result) : this.StatusCode((int)HttpStatusCode.ServiceUnavailable, result);
         }
