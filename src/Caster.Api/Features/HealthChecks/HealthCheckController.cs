@@ -33,7 +33,7 @@ namespace Caster.Api.Features.HealthChecks
         /// Returns a HealthReport of the liveliness health check
         /// </remarks>
         /// <returns></returns>
-        [HttpGet("liveliness")]
+        [HttpGet("live")]
         [ProducesResponseType(typeof(HealthReport), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "Health_GetLiveliness")]
         public async Task<IActionResult> GetLiveliness(CancellationToken ct)
@@ -53,7 +53,7 @@ namespace Caster.Api.Features.HealthChecks
         /// Returns a HealthReport of the readiness health check
         /// </remarks>
         /// <returns></returns>
-        [HttpGet("readiness")]
+        [HttpGet("ready")]
         [ProducesResponseType(typeof(HealthReport), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "Health_GetReadiness")]
         public async Task<IActionResult> GetReadiness(CancellationToken ct)
