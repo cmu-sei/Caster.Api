@@ -29,7 +29,7 @@ namespace Caster.Api.Features.Modules
         /// </summary>
         /// <param name="id">The Id of the Module to retrieve</param>
         [HttpGet("modules/{id}")]
-        [ProducesResponseType(typeof(Caster.Api.Features.Modules.Module), (int)HttpStatusCode.OK)]
+        [ProducesResponseType(typeof(Module), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "GetModule")]
         public async Task<IActionResult> Get([FromRoute] string id)
         {

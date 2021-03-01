@@ -32,8 +32,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using System.Text.Json.Serialization;
 using FluentValidation.AspNetCore;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 [assembly: ApiController]
 namespace Caster.Api
@@ -212,12 +212,12 @@ namespace Caster.Api
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
-                endpoints.MapHealthChecks($"/{_routePrefix}/health/ready", new HealthCheckOptions()
+                endpoints.MapHealthChecks("/api/health/ready", new HealthCheckOptions()
                 {
                     Predicate = (check) => check.Tags.Contains("ready"),
                 });
 
-                endpoints.MapHealthChecks($"/{_routePrefix}/health/live", new HealthCheckOptions()
+                endpoints.MapHealthChecks("/api/health/live", new HealthCheckOptions()
                 {
                     Predicate = (check) => check.Tags.Contains("live"),
                 });
@@ -228,7 +228,7 @@ namespace Caster.Api
             app.UseSwaggerUI(c =>
             {
                 c.SwaggerEndpoint("/swagger/v1/swagger.json", "Caster API V1");
-                c.RoutePrefix = _routePrefix;
+                c.RoutePrefix = "api";
                 c.OAuthClientId(_authOptions.ClientId);
                 c.OAuthClientSecret(_authOptions.ClientSecret);
                 c.OAuthAppName(_authOptions.ClientName);

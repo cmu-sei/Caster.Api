@@ -14,7 +14,7 @@ using System.Linq;
 
 namespace Caster.Api.Features.HealthChecks
 {    
-    [Route("api/health")]
+    [Route("api/healthz")]
     [ApiController]
     [AllowAnonymous]
     public class HealthController : ControllerBase

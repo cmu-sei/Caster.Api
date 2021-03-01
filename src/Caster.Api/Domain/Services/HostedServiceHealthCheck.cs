@@ -7,6 +7,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+
 namespace Caster.Api.Domain.Services
 {
     public class HostedServiceHealthCheck : IHealthCheck
