@@ -212,12 +212,12 @@ namespace Caster.Api
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
-                endpoints.MapHealthChecks("/api/health/ready", new HealthCheckOptions()
+                endpoints.MapHealthChecks($"/{_routePrefix}/health/ready", new HealthCheckOptions()
                 {
                     Predicate = (check) => check.Tags.Contains("ready"),
                 });
 
-                endpoints.MapHealthChecks("/api/health/live", new HealthCheckOptions()
+                endpoints.MapHealthChecks($"/{_routePrefix}/health/live", new HealthCheckOptions()
                 {
                     Predicate = (check) => check.Tags.Contains("live"),
                 });
@@ -228,7 +228,7 @@ namespace Caster.Api
             app.UseSwaggerUI(c =>
             {
                 c.SwaggerEndpoint("/swagger/v1/swagger.json", "Caster API V1");
-                c.RoutePrefix = "api";
+                c.RoutePrefix = _routePrefix;
                 c.OAuthClientId(_authOptions.ClientId);
                 c.OAuthClientSecret(_authOptions.ClientSecret);
                 c.OAuthAppName(_authOptions.ClientName);
