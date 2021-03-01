@@ -26,16 +26,22 @@ namespace Caster.Api.Domain.Services
         private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly IOptionsMonitor<FileVersionScrubOptions> _fileVersionScrubOptions;
         private readonly ILogger<FileVersionScrubService> _logger;
-        public FileVersionScrubService(IServiceScopeFactory serviceScopeFactory, IOptionsMonitor<FileVersionScrubOptions> fileVersionScrubOptions, ILogger<FileVersionScrubService> logger)
+        private readonly HostedServiceHealthCheck _hostedServiceHealthCheck;
+        public FileVersionScrubService(IServiceScopeFactory serviceScopeFactory,
+            IOptionsMonitor<FileVersionScrubOptions> fileVersionScrubOptions,
+            ILogger<FileVersionScrubService> logger,
+            HostedServiceHealthCheck hostedServiceHealthCheck)
         {
-            _serviceScopeFactory = serviceScopeFactory;           
-            _fileVersionScrubOptions = fileVersionScrubOptions; 
+            _serviceScopeFactory = serviceScopeFactory;
+            _fileVersionScrubOptions = fileVersionScrubOptions;
             _logger = logger;
+            _hostedServiceHealthCheck = hostedServiceHealthCheck;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
             _ = ExecuteAsync();
+            _hostedServiceHealthCheck.HealthAllowance = new TimeSpan(1,1,0,0);
             return System.Threading.Tasks.Task.CompletedTask;
         }
 
@@ -60,6 +66,7 @@ namespace Caster.Api.Domain.Services
                 DateTime nowDateTime = DateTime.UtcNow;
                 DateTime nextCheckDate = nowDateTime.Date.AddDays(1).AddMinutes(1);
                 var waitUntilTimeSpan = nextCheckDate.Subtract(nowDateTime);
+                _hostedServiceHealthCheck.CompletedRun();
                 await Task.Delay(waitUntilTimeSpan);
             }
         }
@@ -81,7 +88,7 @@ namespace Caster.Api.Domain.Services
                     .Where(v => v.DateSaved < saveAllUntaggedNewerThanThisDate && v.DateSaved >= removeAllUntaggedOlderThanThisDate)
                     .ToArrayAsync();
                 versionsToRemove = versionsToKeepOnePerDay
-                    .GroupBy(v => new {v.FileId, v.DateSaved.Value.Date})
+                    .GroupBy(v => new { v.FileId, v.DateSaved.Value.Date })
                     .Where(g => g.Count() > 1)
                     .SelectMany(g => g.OrderByDescending(v => v.DateSaved).Skip(1))
                     .Where(v => v.TaggedById == null)
