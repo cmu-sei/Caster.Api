@@ -32,6 +32,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using System.Text.Json.Serialization;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 [assembly: ApiController]
 namespace Caster.Api
@@ -47,6 +49,8 @@ namespace Caster.Api
         private readonly ILoggerFactory _loggerFactory;
         private string _pathbase;
 
+        private const string _routePrefix = "api";
+
         public Startup(IConfiguration configuration, ILoggerFactory loggerFactory)
         {
             Configuration = configuration;
@@ -61,7 +65,14 @@ namespace Caster.Api
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddSingleton<HostedServiceHealthCheck>();
+            services.AddHealthChecks()
+                .AddCheck<HostedServiceHealthCheck>(
+                    "service_responsive", 
+                    failureStatus: HealthStatus.Unhealthy, 
+                    tags: new[] { "live" });
             services.AddDbContextPool<CasterContext>(builder => builder.UseNpgsql(Configuration.GetConnectionString("PostgreSQL")));
+            services.AddHealthChecks().AddNpgSql(Configuration.GetConnectionString("PostgreSQL"), tags: new[] { "ready", "live"});
             services.AddCors(options => options.UseConfiguredCors(Configuration.GetSection("CorsPolicy")));
 
             services.AddOptions()
@@ -201,6 +212,15 @@ namespace Caster.Api
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapControllers();
+                endpoints.MapHealthChecks($"/{_routePrefix}/health/ready", new HealthCheckOptions()
+                {
+                    Predicate = (check) => check.Tags.Contains("ready"),
+                });
+
+                endpoints.MapHealthChecks($"/{_routePrefix}/health/live", new HealthCheckOptions()
+                {
+                    Predicate = (check) => check.Tags.Contains("live"),
+                });
                 endpoints.MapHub<ProjectHub>("/hubs/project");
             });
 
@@ -208,7 +228,7 @@ namespace Caster.Api
             app.UseSwaggerUI(c =>
             {
                 c.SwaggerEndpoint("/swagger/v1/swagger.json", "Caster API V1");
-                c.RoutePrefix = "api";
+                c.RoutePrefix = _routePrefix;
                 c.OAuthClientId(_authOptions.ClientId);
                 c.OAuthClientSecret(_authOptions.ClientSecret);
                 c.OAuthAppName(_authOptions.ClientName);
