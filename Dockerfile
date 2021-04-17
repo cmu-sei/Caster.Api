@@ -23,6 +23,7 @@ EXPOSE 80
 ENV ASPNETCORE_URLS=http://*:80
 CMD [ "dotnet", "Caster.Api.dll" ]
 
-#Install git
-RUN apt-get update && \
-	apt-get install -y git jq
+#Install git and set credential store
+RUN apt-get update              && \
+	apt-get install -y git jq   && \
+    git config --global credential.helper store
