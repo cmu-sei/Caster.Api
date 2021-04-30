@@ -64,7 +64,14 @@ namespace Caster.Api.Features.Files
 
                 if(isNotAlreadyLocked)
                 {
-                    file.Lock(userId, isAdmin);
+                    try
+                    {
+                        file.Lock(userId, isAdmin);
+                    }
+                    catch (FileConflictException) 
+                    {
+                        throw new FileConflictException ("Cannot rename a file while it's being edited or locked by another user.");
+                    }
                 }
 
                 try
