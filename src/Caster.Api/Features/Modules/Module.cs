@@ -19,7 +19,6 @@ namespace Caster.Api.Features.Modules
         public string Description { get; set; }
     }
 
-    [DataContract(Name="ModuleModel")]
     public class Module
     {
         public Guid Id { get; set; }

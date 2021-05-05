@@ -19,12 +19,14 @@ using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Identity;
+using AutoMapper.QueryableExtensions;
+using Caster.Api.Infrastructure.Extensions;
 
 namespace Caster.Api.Features.Runs
 {
     public class Create
     {
-        [DataContract(Name="CreateRunCommand")]
+        [DataContract(Name = "CreateRunCommand")]
         public class Command : IRequest<Run>
         {
             /// <summary>
@@ -94,12 +96,17 @@ namespace Caster.Api.Features.Runs
                 }
 
                 await _mediator.Publish(new RunCreated { RunId = run.Id });
-                return _mapper.Map<Run>(run);
+
+                return await _db.Runs
+                    .ProjectTo<Run>(_mapper.ConfigurationProvider)
+                    .SingleOrDefaultAsync(x => x.Id == run.Id, cancellationToken);
             }
 
             private async Task<Domain.Models.Run> DoWork(Command request)
             {
                 var run = _mapper.Map<Domain.Models.Run>(request);
+                run.CreatedById = _user.GetId();
+                run.Modify(_user.GetId());
                 await _db.Runs.AddAsync(run);
                 await _db.SaveChangesAsync();
                 return run;
@@ -115,4 +122,3 @@ namespace Caster.Api.Features.Runs
         }
     }
 }
-

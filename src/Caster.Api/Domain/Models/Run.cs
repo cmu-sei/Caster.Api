@@ -25,11 +25,24 @@ namespace Caster.Api.Domain.Models
         public Guid WorkspaceId { get; set; }
         public virtual Workspace Workspace { get; set; }
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public bool IsDestroy { get; set; }
         public RunStatus Status { get; set; } = RunStatus.Queued;
 
         public string[] Targets { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public Guid? CreatedById { get; set; }
+        public User CreatedBy { get; set; }
+
+        public DateTime? ModifiedAt { get; set; } = DateTime.UtcNow;
+        public Guid? ModifiedById { get; set; }
+        public User ModifiedBy { get; set; }
+
+        public void Modify(Guid userId)
+        {
+            ModifiedAt = DateTime.UtcNow;
+            ModifiedById = userId;
+        }
     }
 
     public enum RunStatus

@@ -20,11 +20,6 @@ namespace Caster.Api.Features.Runs
         public Guid WorkspaceId { get; set; }
 
         /// <summary>
-        /// The time in UTC that this Run was initially created 
-        /// </summary>
-        public DateTime CreatedAt { get; set; }
-
-        /// <summary>
         /// Wether or not this Run was for a Destroy command
         /// </summary>
         public bool IsDestroy { get; set; }
@@ -58,6 +53,35 @@ namespace Caster.Api.Features.Runs
         /// The Id of the Apply for this Run. Null if no Apply exists.
         /// </summary>
         public Guid? ApplyId { get; set; }
+
+        /// <summary>
+        /// The time in UTC that this Run was initially created
+        /// </summary>
+        public DateTime CreatedAt { get; set; }
+
+        /// <summary>
+        /// The Id of the User who created this Run
+        /// </summary>
+        public Guid? CreatedById { get; set; }
+
+        /// <summary>
+        /// The Name of the User who created this Run
+        /// </summary>
+        public string CreatedBy { get; set; }
+
+        /// <summary>
+        /// The time in UTC that this Run was last modified (Applied, Rejected, etc)
+        /// </summary>
+        public DateTime? ModifiedAt { get; set; }
+
+        /// <summary>
+        /// The Id of the User who last modified this Run
+        /// </summary>
+        public Guid? ModifiedById { get; set; }
+
+        /// <summary>
+        /// The Name of the User who last modified this Run
+        /// </summary>
+        public string ModifiedBy { get; set; }
     }
 }
-

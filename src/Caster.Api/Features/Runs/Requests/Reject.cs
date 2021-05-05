@@ -20,12 +20,14 @@ using Caster.Api.Domain.Services;
 using System.Linq;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Domain.Events;
+using AutoMapper.QueryableExtensions;
+using Caster.Api.Infrastructure.Extensions;
 
 namespace Caster.Api.Features.Runs
 {
     public class Reject
     {
-        [DataContract(Name="RejectRunCommand")]
+        [DataContract(Name = "RejectRunCommand")]
         public class Command : IRequest<Run>
         {
             /// <summary>
@@ -87,15 +89,18 @@ namespace Caster.Api.Features.Runs
 
                     run.Status = RunStatus.Rejected;
 
-                    if (run.Plan != null) {
+                    if (run.Plan != null)
+                    {
                         run.Plan.Status = PlanStatus.Rejected;
                     }
 
+                    run.Modify(_user.GetId());
                     await _db.SaveChangesAsync();
-
                     await _mediator.Publish(new RunUpdated(run.Id));
 
-                    return _mapper.Map<Run>(run);
+                    return await _db.Runs
+                        .ProjectTo<Run>(_mapper.ConfigurationProvider)
+                        .SingleOrDefaultAsync(x => x.Id == run.Id, cancellationToken);
                 }
             }
 
@@ -115,4 +120,3 @@ namespace Caster.Api.Features.Runs
         }
     }
 }
-
