@@ -5,8 +5,8 @@ namespace Caster.Api.Infrastructure.Exceptions
 {
     public class FileConflictException : ConflictException
     {
-        public FileConflictException()
-            : base("You cannot make changes to a File without holding it's lock")
+        public FileConflictException(string message = "You cannot make changes to a File without holding it's lock")
+            : base(message)
         {
         }
     }
