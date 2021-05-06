@@ -5,9 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
+using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Options;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using NaturalSort.Extension;
 
@@ -28,6 +31,7 @@ namespace Caster.Api.Domain.Services
         TerraformResult Refresh(Workspace workspace, string statePath);
         bool IsValidVersion(string version);
         IEnumerable<string> GetVersions();
+        TerraformResult CancelRun(Workspace workspace, bool force);
     }
 
     public class TerraformResult
@@ -50,12 +54,14 @@ namespace Caster.Api.Domain.Services
         private readonly TerraformOptions _options;
         private readonly ILogger<TerraformService> _logger;
         private readonly StringBuilder _outputBuilder = new StringBuilder();
+        private readonly IMemoryCache _processCache;
         private string _workspaceName = null;
 
-        public TerraformService(TerraformOptions options, ILogger<TerraformService> logger)
+        public TerraformService(TerraformOptions options, ILogger<TerraformService> logger, IMemoryCache cache)
         {
             _options = options;
             _logger = logger;
+            _processCache = cache;
         }
 
         private string GetBinaryPath(Workspace workspace)
@@ -112,6 +118,7 @@ namespace Caster.Api.Domain.Services
                 }
 
                 process.Start();
+                _processCache.Set(workspace.Id, process);
                 process.BeginOutputReadLine();
 
                 if (redirectStandardError)
@@ -120,7 +127,7 @@ namespace Caster.Api.Domain.Services
                 }
 
                 process.WaitForExit();
-
+                _processCache.Remove(workspace.Id);
                 exitCode = process.ExitCode;
             }
 
@@ -275,6 +282,59 @@ namespace Caster.Api.Domain.Services
                 .OrderByDescending(x => x, StringComparison.OrdinalIgnoreCase.WithNaturalSort());
         }
 
+        public TerraformResult CancelRun(Workspace workspace, bool force)
+        {
+            if (_processCache.TryGetValue(workspace.Id, out Process p))
+            {
+                if (force)
+                {
+                    p.Kill();
+                }
+                else
+                {
+                    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    {
+                        throw new NotImplementedException("Cancel is not supported on the current platform. Try a forced cancel instead.");
+                    }
+
+                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    {
+                        FileName = "/bin/sh",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    };
+
+                    using Process process = new Process();
+                    process.StartInfo = startInfo;
+
+                    process.StartInfo.ArgumentList.Add("-c");
+                    process.StartInfo.ArgumentList.Add($"kill {p.Id}");
+
+                    process.OutputDataReceived += OutputHandler;
+                    process.ErrorDataReceived += OutputHandler;
+
+                    process.Start();
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+
+                    process.WaitForExit();
+
+                    _logger.LogDebug($"Cancel process: exit code: {process.ExitCode}. output: {_outputBuilder}");
+
+                    return new TerraformResult
+                    {
+                        ExitCode = process.ExitCode,
+                        Output = _outputBuilder.ToString()
+                    };
+                }
+            }
+            else
+            {
+                _logger.LogDebug("Couldn't find process to cancel");
+            }
+
+            return null;
+        }
 
         private void AddStatePathArg(string statePath, ref List<string> args)
         {

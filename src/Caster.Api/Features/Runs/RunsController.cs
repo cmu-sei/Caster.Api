@@ -107,5 +107,21 @@ namespace Caster.Api.Features.Runs
             var result = await _mediator.Send(new SaveState.Command { RunId = runId });
             return Ok(result);
         }
+
+        /// <summary>
+        /// Attempts to cancel a Run
+        /// </summary>
+        /// <param name="id">The Id of the Run to cancel</param>
+        /// <param name="command"></param>
+        /// <returns></returns>
+        [HttpPost("runs/{id}/actions/cancel")]
+        [ProducesResponseType(typeof(Run), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "CancelRun")]
+        public async Task<IActionResult> Cancel([FromRoute] Guid id, Cancel.Command command)
+        {
+            command.Id = id;
+            var result = await this._mediator.Send(command);
+            return Ok(result);
+        }
     }
 }
