@@ -55,14 +55,14 @@ namespace Caster.Api.Domain.Services
     {
         private Object _lock { get; } = new Object();
 
-        private string _content = string.Empty;
+        private StringBuilder _content = new StringBuilder();
         public string Content
         {
             get
             {
                 lock (_lock)
                 {
-                    return _content;
+                    return _content.ToString();
                 }
             }
         }
@@ -85,7 +85,7 @@ namespace Caster.Api.Domain.Services
         {
             lock (_lock)
             {
-                _content += output + Environment.NewLine;
+                _content.AppendLine(output);
 
                 foreach (var resetEvent in this.ResetEvents)
                 {

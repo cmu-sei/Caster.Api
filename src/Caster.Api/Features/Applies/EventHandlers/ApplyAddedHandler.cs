@@ -30,7 +30,6 @@ namespace Caster.Api.Features.Applies.EventHandlers
 
         private System.Timers.Timer _timer;
         private Domain.Models.Apply _apply;
-        private StringBuilder _outputBuilder = new StringBuilder();
         private bool _timerComplete = false;
         private Output _output = null;
 
@@ -98,7 +97,7 @@ namespace Caster.Api.Features.Applies.EventHandlers
                     _timer.Stop();
                 }
 
-                _apply.Output = _outputBuilder.ToString();
+                _apply.Output = _output.Content;
                 _apply.Status = !isError ? ApplyStatus.Applied : ApplyStatus.Failed;
                 _apply.Run.Status = !isError ? RunStatus.Applied : RunStatus.Failed;
 
@@ -173,14 +172,9 @@ namespace Caster.Api.Features.Applies.EventHandlers
 
         private void OutputHandler(object sender, DataReceivedEventArgs e)
         {
-            if (e.Data != null)
+            if (e.Data != null && _output != null)
             {
-                _outputBuilder.AppendLine(e.Data);
-
-                if (_output != null)
-                {
-                    _output.AddLine(e.Data);
-                }
+                _output.AddLine(e.Data);
             }
         }
 
@@ -201,7 +195,7 @@ namespace Caster.Api.Features.Applies.EventHandlers
                     {
                         // Only update the Output field
                         dbContext.Applies.Attach(_apply);
-                        _apply.Output = _outputBuilder.ToString();
+                        _apply.Output = _output.Content;
 
                         dbContext.SaveChanges();
                     }

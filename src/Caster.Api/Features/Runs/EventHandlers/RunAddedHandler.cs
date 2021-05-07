@@ -35,7 +35,6 @@ namespace Caster.Api.Features.Runs.EventHandlers
 
         private System.Timers.Timer _timer;
         private Domain.Models.Plan _plan;
-        private StringBuilder _outputBuilder = new StringBuilder();
         private bool _timerComplete = false;
         private Output _output = null;
 
@@ -72,7 +71,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
             {
                 var isError = await DoWork(run);
 
-                _plan.Output = _outputBuilder.ToString();
+                _plan.Output = _output.Content;
                 _plan.Status = !isError ? PlanStatus.Planned : PlanStatus.Failed;
                 run.Status = !isError ? RunStatus.Planned : RunStatus.Failed;
 
@@ -120,12 +119,12 @@ namespace Caster.Api.Features.Runs.EventHandlers
 
                 if (host == null)
                 {
-                    _outputBuilder.AppendLine("No Host could be found to use for this Plan");
+                    _output.AddLine("No Host could be found to use for this Plan");
                     return true;
                 }
                 else
                 {
-                    _outputBuilder.AppendLine($"Attempting to use Host {host.Name} for this Plan");
+                    _output.AddLine($"Attempting to use Host {host.Name} for this Plan");
                 }
 
                 files.Add(host.GetHostFile());
@@ -196,11 +195,11 @@ namespace Caster.Api.Features.Runs.EventHandlers
                             workspace.HostId = host.Id;
                             _db.SaveChanges();
 
-                            _outputBuilder.AppendLine($"Allocated {addedCount} new machines to Host {host.Name}");
+                            _output.AddLine($"Allocated {addedCount} new machines to Host {host.Name}");
                         }
                         else
                         {
-                            _outputBuilder.AppendLine($"{addedCount} new machines exceeds the maximum assigned to Host {host.Name}");
+                            _output.AddLine($"{addedCount} new machines exceeds the maximum assigned to Host {host.Name}");
                             isError = true;
                         }
                     }
@@ -232,14 +231,9 @@ namespace Caster.Api.Features.Runs.EventHandlers
 
         private void OutputHandler(object sender, DataReceivedEventArgs e)
         {
-            if (e.Data != null)
+            if (e.Data != null && _output != null)
             {
-                _outputBuilder.AppendLine(e.Data);
-
-                if (_output != null)
-                {
-                    _output.AddLine(e.Data);
-                }
+                _output.AddLine(e.Data);
             }
         }
 
@@ -260,7 +254,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
                     {
                         // Only update the Output field
                         dbContext.Plans.Attach(_plan);
-                        _plan.Output = _outputBuilder.ToString();
+                        _plan.Output = _output.Content;
                         dbContext.SaveChanges();
                     }
                 }
