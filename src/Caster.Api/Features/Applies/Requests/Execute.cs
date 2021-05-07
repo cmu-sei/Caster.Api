@@ -19,12 +19,13 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using System.Linq;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Infrastructure.Extensions;
 
 namespace Caster.Api.Features.Applies
 {
     public class Execute
     {
-        [DataContract(Name="ApplyRunCommand")]
+        [DataContract(Name = "ApplyRunCommand")]
         public class Command : IRequest<Apply>
         {
             /// <summary>
@@ -87,10 +88,12 @@ namespace Caster.Api.Features.Applies
                     };
 
                     await _db.Applies.AddAsync(apply);
+                    run.Modify(_user.GetId());
                     await _db.SaveChangesAsync();
                 }
 
                 await _mediator.Publish(new ApplyCreated { ApplyId = apply.Id });
+                await _mediator.Publish(new RunUpdated(apply.RunId));
                 return _mapper.Map<Apply>(apply);
             }
 
@@ -108,4 +111,3 @@ namespace Caster.Api.Features.Applies
         }
     }
 }
-

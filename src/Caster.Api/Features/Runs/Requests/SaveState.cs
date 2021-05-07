@@ -20,12 +20,13 @@ using Caster.Api.Domain.Services;
 using System.Linq;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Infrastructure.Options;
+using AutoMapper.QueryableExtensions;
 
 namespace Caster.Api.Features.Runs
 {
     public class SaveState
     {
-        [DataContract(Name="SaveStateCommand")]
+        [DataContract(Name = "SaveStateCommand")]
         public class Command : IRequest<Run>
         {
             /// <summary>
@@ -84,7 +85,7 @@ namespace Caster.Api.Features.Runs
 
                     await ValidateRun(run, cancellationToken);
 
-                    var workingDir =  run.Workspace.GetPath(_options.RootWorkingDirectory);
+                    var workingDir = run.Workspace.GetPath(_options.RootWorkingDirectory);
                     var stateRetrieved = await run.Workspace.RetrieveState(workingDir);
 
                     if (stateRetrieved)
@@ -99,13 +100,15 @@ namespace Caster.Api.Features.Runs
                     }
                 }
 
-                return _mapper.Map<Run>(run);
+                return await _db.Runs
+                    .ProjectTo<Run>(_mapper.ConfigurationProvider)
+                    .SingleOrDefaultAsync(x => x.Id == run.Id, cancellationToken);
             }
 
             private async Task ValidateRun(Domain.Models.Run run, CancellationToken cancellationToken)
             {
                 if (run.Status != RunStatus.Applied_StateError && run.Status != RunStatus.Failed_StateError)
-                        throw new WorkspaceConflictException();
+                    throw new WorkspaceConflictException();
 
                 var notLatest = await _db.Runs
                     .AnyAsync(r =>
