@@ -29,6 +29,7 @@ namespace Caster.Api.Domain.Services
         TerraformResult RemoveResources(Workspace workspace, string[] addresses, string statePath);
         TerraformResult Import(Workspace workspace, string address, string id, string statePath);
         TerraformResult Refresh(Workspace workspace, string statePath);
+        TerraformResult GetOutputs(Workspace workspace, string statePath);
         bool IsValidVersion(string version);
         IEnumerable<string> GetVersions();
         TerraformResult CancelRun(Workspace workspace, bool force);
@@ -262,6 +263,13 @@ namespace Caster.Api.Domain.Services
         public TerraformResult Refresh(Workspace workspace, string statePath)
         {
             List<string> args = new List<string>() { "refresh" };
+            AddStatePathArg(statePath, ref args);
+            return this.Run(workspace, args, null);
+        }
+
+        public TerraformResult GetOutputs(Workspace workspace, string statePath)
+        {
+            List<string> args = new List<string>() { "output", "-json" };
             AddStatePathArg(statePath, ref args);
             return this.Run(workspace, args, null);
         }
