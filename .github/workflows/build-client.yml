@@ -40,7 +40,7 @@ jobs:
 
       - name: Run NSwag
         run: |
-          cd ${{ steps.package_name.outputs.name }}
+          cd src/${{ steps.package_name.outputs.name }}
           npm install nswag@13.10.8
           ./node_modules/.bin/nswag run /runtime:NetCore31
 
