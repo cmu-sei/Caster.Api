@@ -3,6 +3,7 @@
 
 using System;
 using System.Net;
+using System.Text.Json;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -111,6 +112,18 @@ namespace Caster.Api.Features.Resources
         public async Task<IActionResult> Refresh([FromRoute] Guid workspaceId)
         {
             var result = await _mediator.Send(new Refresh.Command { WorkspaceId = workspaceId });
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Get the Workspace's Outputs
+        /// </summary>
+        [HttpPost("workspaces/{workspaceId}/resources/actions/outputs")]
+        [ProducesResponseType(typeof(ResourceCommandResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetWorkspaceOutputs")]
+        public async Task<IActionResult> Output([FromRoute] Guid workspaceId)
+        {
+            var result = await _mediator.Send(new Output.Command { WorkspaceId = workspaceId });
             return Ok(result);
         }
     }
