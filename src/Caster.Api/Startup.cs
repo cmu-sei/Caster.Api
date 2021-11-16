@@ -2,38 +2,38 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using AutoMapper;
 using Caster.Api.Data;
-using Caster.Api.Infrastructure.Options;
+using Caster.Api.Domain.Services;
+using Caster.Api.Extensions;
+using Caster.Api.Features.Files;
+using Caster.Api.Hubs;
+using Caster.Api.Infrastructure.ClaimsTransformers;
+using Caster.Api.Infrastructure.Exceptions.Middleware;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Infrastructure.Mapping;
+using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
+using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
-using Caster.Api.Infrastructure.Exceptions.Middleware;
-using Caster.Api.Domain.Services;
-using Caster.Api.Infrastructure.ClaimsTransformers;
-using Microsoft.Extensions.Logging;
-using System.IdentityModel.Tokens.Jwt;
-using Caster.Api.Hubs;
-using Caster.Api.Features.Files;
-using SimpleInjector;
-using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Extensions;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.SignalR;
-using System.Text.Json.Serialization;
-using FluentValidation.AspNetCore;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SimpleInjector;
 
 [assembly: ApiController]
 namespace Caster.Api
@@ -68,11 +68,11 @@ namespace Caster.Api
             services.AddSingleton<HostedServiceHealthCheck>();
             services.AddHealthChecks()
                 .AddCheck<HostedServiceHealthCheck>(
-                    "service_responsive", 
-                    failureStatus: HealthStatus.Unhealthy, 
+                    "service_responsive",
+                    failureStatus: HealthStatus.Unhealthy,
                     tags: new[] { "live" });
             services.AddDbContextPool<CasterContext>(builder => builder.UseNpgsql(Configuration.GetConnectionString("PostgreSQL")));
-            services.AddHealthChecks().AddNpgSql(Configuration.GetConnectionString("PostgreSQL"), tags: new[] { "ready", "live"});
+            services.AddHealthChecks().AddNpgSql(Configuration.GetConnectionString("PostgreSQL"), tags: new[] { "ready", "live" });
             services.AddCors(options => options.UseConfiguredCors(Configuration.GetSection("CorsPolicy")));
 
             services.AddOptions()
@@ -121,7 +121,8 @@ namespace Caster.Api
 
             services.AddSwagger(_authOptions);
 
-            services.AddAutoMapper(cfg => {
+            services.AddAutoMapper(cfg =>
+            {
                 cfg.ForAllPropertyMaps(
                     pm => pm.SourceType != null && Nullable.GetUnderlyingType(pm.SourceType) == pm.DestinationType,
                     (pm, c) => c.MapFrom<object, object, object, object>(new IgnoreNullSourceValues(), pm.SourceMember.Name));
@@ -227,7 +228,7 @@ namespace Caster.Api
             app.UseSwagger();
             app.UseSwaggerUI(c =>
             {
-                c.SwaggerEndpoint("/swagger/v1/swagger.json", "Caster API V1");
+                c.SwaggerEndpoint($"{_pathbase}/swagger/v1/swagger.json", "Caster API V1");
                 c.RoutePrefix = _routePrefix;
                 c.OAuthClientId(_authOptions.ClientId);
                 c.OAuthClientSecret(_authOptions.ClientSecret);
