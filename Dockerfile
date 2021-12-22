@@ -1,7 +1,7 @@
 #
 #multi-stage target: dev
 #
-FROM mcr.microsoft.com/dotnet/core/sdk:3.1 AS dev
+FROM mcr.microsoft.com/dotnet/sdk:6.0 AS dev
 
 ENV ASPNETCORE_URLS=http://*:5000 \
     ASPNETCORE_ENVIRONMENT=DEVELOPMENT
@@ -14,7 +14,7 @@ CMD [ "dotnet", "run" ]
 #
 #multi-stage target: prod
 #
-FROM mcr.microsoft.com/dotnet/core/aspnet:3.1 AS prod
+FROM mcr.microsoft.com/dotnet/aspnet:6.0 AS prod
 ARG commit
 ENV COMMIT=$commit
 COPY --from=dev /app/dist /app
@@ -25,5 +25,5 @@ CMD [ "dotnet", "Caster.Api.dll" ]
 
 #Install git and set credential store
 RUN apt-get update              && \
-	apt-get install -y git jq   && \
+    apt-get install -y git jq   && \
     git config --global credential.helper store

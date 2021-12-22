@@ -137,7 +137,7 @@ namespace Caster.Api.Tests.Unit
             Assert.Equal("vsphere_virtual_machine", machine.Type);
             Assert.Equal($"vsphere_virtual_machine.{addressName}{(count.HasValue ? string.Format("[{0}]", count) : "")}", machine.Address);
             Assert.Equal($"vsphere_virtual_machine.{addressName}", machine.BaseAddress);
-            Assert.Equal(teamId, machine.GetTeamIds().FirstOrDefault());
+            Assert.Equal(teamId, machine.GetTeamIds()?.FirstOrDefault());
         }
 
         [Fact]

@@ -1,10 +1,10 @@
 name: Build Client Package
 
-on: 
+on:
   workflow_dispatch:
     inputs:
       clientVersion:
-        description: 'Version of the Client package'     
+        description: "Version of the Client package"
         required: true
 
 jobs:
@@ -15,7 +15,7 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@v1
         with:
-          dotnet-version: '3.1.x'
+          dotnet-version: "6.0.x"
 
       - name: Setup Package Name
         id: package_name
@@ -28,16 +28,15 @@ jobs:
 
       - name: Build Package
         run: |
-          dotnet new tool-manifest
-          dotnet tool install --version 5.6.3 Swashbuckle.AspNetCore.Cli
           cd ${{ steps.package_name.outputs.directory }}
+          dotnet tool restore
           dotnet build -c Release /p:version=${{ github.event.inputs.clientVersion }}
-          
+
       - name: Run Swagger
         run: |
           cd ${{ steps.package_name.outputs.directory }}
           dotnet swagger tofile --output ../${{ steps.package_name.outputs.name }}/swagger.json bin/Release/*/${{ steps.package_name.outputs.dll_name }}.dll v1
-                    
+
       - name: Run AutoRest
         run: |
           cd src/${{ steps.package_name.outputs.name }}
@@ -63,12 +62,12 @@ jobs:
           sed -i '/<\/version>/a \    <projectUrl>https:\/\/github.com\/cmu-sei\/crucible<\/projectUrl>' ${{ steps.package_name.outputs.name }}.nuspec
           sed -i '/<\/version>/a \    <repository type="git" url="https:\/\/github.com\/cmu-sei\/crucible.git" \/>' ${{ steps.package_name.outputs.name }}.nuspec
           zip -r ../${{ steps.package_name.outputs.name }}.${{ github.event.inputs.clientVersion }}.nupkg *
-       
+
       - name: Publish to Nuget.org as Unlisted
         run: |
           dotnet nuget push src/${{ steps.package_name.outputs.name }}/bin/Release/${{ steps.package_name.outputs.name }}.${{ github.event.inputs.clientVersion }}.nupkg -k ${{ secrets.NUGET_APIKEY }} -s https://api.nuget.org/v3/index.json
           dotnet nuget delete ${{ steps.package_name.outputs.name }} ${{ github.event.inputs.clientVersion }} --non-interactive -k ${{ secrets.NUGET_APIKEY_UNLIST }} -s https://api.nuget.org/v3/index.json
-      
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -81,7 +80,7 @@ jobs:
           prerelease: false
 
       - name: Upload Release Asset
-        id: upload-release-asset 
+        id: upload-release-asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

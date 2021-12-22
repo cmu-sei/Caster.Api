@@ -25,7 +25,7 @@ namespace Caster.Api.Infrastructure.HttpHandlers
         private TokenResponse _token;
         private AuthenticationHeaderValue _authenticationHeader;
 
-        public AuthenticatingHandler(IAuthenticationService authenticationService, ClientOptions clientOptions, ILogger<AuthenticatingHandler> logger)
+        public AuthenticatingHandler(IAuthenticationService authenticationService, Options.ClientOptions clientOptions, ILogger<AuthenticatingHandler> logger)
         {
             _authenticationService = authenticationService;
             _logger = logger;
@@ -67,7 +67,7 @@ namespace Caster.Api.Infrastructure.HttpHandlers
             if (!_token.IsError)
             {
                 _authenticationHeader = new AuthenticationHeaderValue(_token.TokenType, _token.AccessToken);
-            }            
+            }
             else
             {
                 _logger.LogError($"Error in {typeof(AuthenticatingHandler).Name}: {_token.Error}");
