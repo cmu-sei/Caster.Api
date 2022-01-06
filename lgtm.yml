@@ -1,30 +1,11 @@
-path_classifiers:
-  docs:
-    - generate_javadoc.py
-
-queries:
-  - exclude: "*"
-  - include:           
-      tags:
-        - "security"
-        - "correctness"           
-      severity: "error"
-  - exclude: cpp/use-of-goto
-  - exclude: java/equals-on-unrelated-types
-  - include: java/command-line-injection
-
-extraction: 
-  
+extraction:
   csharp:
     after_prepare:
       - export PATH=$LGTM_WORKSPACE/tools:$PATH
     index:
       all_solutions: false
-      solution: 
+      solution:
         - Caster.API.sln
       build_command:
         - dotnet build src/Caster.Api/Caster.Api.csproj
       buildless: false
-      dotnet:
-        arguments: ""
-        version: 3.1.101

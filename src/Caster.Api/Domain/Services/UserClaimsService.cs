@@ -5,21 +5,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
-using System.Security.Principal;
-using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
-using AutoMapper.QueryableExtensions;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Options;
-using Z.EntityFramework.Plus;
 
 namespace Caster.Api.Domain.Services
 {
@@ -57,7 +51,7 @@ namespace Caster.Api.Domain.Services
                 claims = new List<Claim>();
                 var user = await ValidateUser(userId, principal.FindFirst("name")?.Value, update);
 
-                if(user != null)
+                if (user != null)
                 {
                     claims.AddRange(await GetUserClaims(userId));
 
@@ -105,11 +99,13 @@ namespace Caster.Api.Domain.Services
 
         private async Task<User> ValidateUser(Guid subClaim, string nameClaim, bool update)
         {
-            var userQuery = _context.Users.Where(u => u.Id == subClaim).Future();
-            var anyUsers = _context.Users.DeferredAny().FutureValue();
-            var user = (await userQuery.ToListAsync()).SingleOrDefault();
+            var user = await _context.Users
+                .Where(u => u.Id == subClaim)
+                .FirstOrDefaultAsync();
 
-            if(update)
+            var anyUsers = await _context.Users.AnyAsync();
+
+            if (update)
             {
                 if (user == null)
                 {
@@ -120,7 +116,7 @@ namespace Caster.Api.Domain.Services
                     };
 
                     // First user is default SystemAdmin
-                    if (!(await anyUsers.ValueAsync()))
+                    if (!anyUsers)
                     {
                         var systemAdminPermission = await _context.Permissions.Where(p => p.Key == nameof(CasterClaimTypes.SystemAdmin)).FirstOrDefaultAsync();
 
@@ -182,7 +178,7 @@ namespace Caster.Api.Domain.Services
         private void addNewClaims(ClaimsIdentity identity, List<Claim> claims)
         {
             var newClaims = new List<Claim>();
-            claims.ForEach(delegate(Claim claim)
+            claims.ForEach(delegate (Claim claim)
             {
                 if (!identity.Claims.Any(identityClaim => identityClaim.Type == claim.Type))
                 {

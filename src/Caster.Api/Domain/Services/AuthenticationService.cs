@@ -23,12 +23,15 @@ namespace Caster.Api.Domain.Services
     {
         private readonly Object _lock = new Object();
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly IOptionsMonitor<ClientOptions> _clientOptions;
+        private readonly IOptionsMonitor<Infrastructure.Options.ClientOptions> _clientOptions;
         private readonly ILogger<AuthenticationService> _logger;
 
         private TokenResponse _tokenResponse;
 
-        public AuthenticationService(IHttpClientFactory httpClientFactory, IOptionsMonitor<ClientOptions> clientOptions, ILogger<AuthenticationService> logger)
+        public AuthenticationService(
+            IHttpClientFactory httpClientFactory,
+            IOptionsMonitor<Infrastructure.Options.ClientOptions> clientOptions,
+            ILogger<AuthenticationService> logger)
         {
             _httpClientFactory = httpClientFactory;
             _clientOptions = clientOptions;
@@ -46,7 +49,7 @@ namespace Caster.Api.Domain.Services
                     if (!ValidateToken())
                     {
                         _tokenResponse = RenewToken(ct);
-                    }                                        
+                    }
                 }
             }
 
@@ -68,7 +71,7 @@ namespace Caster.Api.Domain.Services
             {
                 return true;
             }
-        }        
+        }
 
         private TokenResponse RenewToken(CancellationToken ct)
         {
@@ -87,10 +90,10 @@ namespace Caster.Api.Domain.Services
 
                 return response;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _logger.LogError("Exception renewing auth token.", ex);
-            }            
+            }
 
             return null;
         }
