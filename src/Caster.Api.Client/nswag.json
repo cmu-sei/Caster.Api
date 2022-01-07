@@ -1,0 +1,22 @@
+{
+    "runtime": "Net60",
+    "swaggerGenerator":{
+      "fromSwagger":{
+        "json":"swagger.json"
+      }
+    },
+    "codeGenerators": {
+      "openApiToCSharpClient": {
+        "className": "CasterApiClient",
+        "namespace": "Caster.Api.Client",
+        "output": "Caster.Api.Client.cs",
+        "generateClientInterfaces": true,
+        "generateContractsOutput": true,
+        "contractsNamespace": "Caster.Api.Client",
+        "contractsOutputFilePath": "Caster.Api.Contracts.cs",
+        "jsonLibrary": "SystemTextJson",
+        "operationGenerationMode": "SingleClientFromOperationId",
+        "useBaseUrl": false
+      }
+    }
+  }

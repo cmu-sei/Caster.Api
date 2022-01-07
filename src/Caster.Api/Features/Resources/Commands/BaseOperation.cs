@@ -16,6 +16,7 @@ using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Linq;
+using System.Text.Json;
 
 namespace Caster.Api.Features.Resources
 {
@@ -27,7 +28,8 @@ namespace Caster.Api.Features.Resources
             untaint,
             refresh,
             remove,
-            import
+            import,
+            output
         }
 
         protected readonly CasterContext _db;
@@ -80,6 +82,7 @@ namespace Caster.Api.Features.Resources
         private async Task<ResourceCommandResult> OperationDoWork(Workspace workspace, ResourceOperation operation, string[] addresses, string args)
         {
             var errors = new List<string>();
+            JsonElement? outputs = null;
             var workingDir = workspace.GetPath(_terraformOptions.RootWorkingDirectory);
             var files = await _db.GetWorkspaceFiles(workspace, workspace.Directory);
             await workspace.PrepareFileSystem(workingDir, files);
@@ -130,6 +133,10 @@ namespace Caster.Api.Features.Resources
                     case ResourceOperation.import:
                         result = _terraformService.Import(workspace, addresses[0], args, statePath);
                         break;
+                    case ResourceOperation.output:
+                        result = _terraformService.GetOutputs(workspace, statePath);
+                        outputs = JsonDocument.Parse(result.Output).RootElement;
+                        break;
                 }
 
                 if (result != null && result.IsError)
@@ -145,7 +152,8 @@ namespace Caster.Api.Features.Resources
             return new ResourceCommandResult
             {
                 Resources = _mapper.Map<Resource[]>(workspace.GetState().GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes))),
-                Errors = errors.ToArray()
+                Errors = errors.ToArray(),
+                Outputs = outputs
             };
         }
 

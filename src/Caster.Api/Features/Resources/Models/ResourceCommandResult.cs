@@ -1,6 +1,8 @@
 // Copyright 2021 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
+using System.Text.Json;
+
 namespace Caster.Api.Features.Resources
 {
     /// <summary>
@@ -17,5 +19,7 @@ namespace Caster.Api.Features.Resources
         /// a list of errors, if any, encountered during execution of the command
         /// </summary>
         public string[] Errors { get; set; }
+
+        public JsonElement? Outputs { get; set; }
     }
 }
