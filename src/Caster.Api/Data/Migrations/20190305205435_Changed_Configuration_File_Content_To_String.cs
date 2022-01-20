@@ -13,9 +13,11 @@ namespace Caster.Api.Data.Migrations
             migrationBuilder.AlterColumn<string>(
                 name: "content",
                 table: "configuration_files",
+                type: "text",
                 nullable: true,
                 oldClrType: typeof(byte[]),
-                oldNullable: true);
+                oldNullable: true,
+                oldType: "bytea");
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
@@ -23,9 +25,11 @@ namespace Caster.Api.Data.Migrations
             migrationBuilder.AlterColumn<byte[]>(
                 name: "content",
                 table: "configuration_files",
+                type: "bytea",
                 nullable: true,
                 oldClrType: typeof(string),
-                oldNullable: true);
+                oldNullable: true,
+                oldType: "text");
         }
     }
 }

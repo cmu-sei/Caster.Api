@@ -13,9 +13,11 @@ namespace Caster.Api.Data.Migrations
             migrationBuilder.AlterColumn<string>(
                 name: "state",
                 table: "workspaces",
+                type: "text",
                 nullable: true,
                 oldClrType: typeof(byte[]),
-                oldNullable: true);
+                oldNullable: true,
+                oldType: "bytea");
 
             migrationBuilder.AddColumn<string>(
                 name: "state_backup",
@@ -32,9 +34,11 @@ namespace Caster.Api.Data.Migrations
             migrationBuilder.AlterColumn<byte[]>(
                 name: "state",
                 table: "workspaces",
+                type: "bytea",
                 nullable: true,
                 oldClrType: typeof(string),
-                oldNullable: true);
+                oldNullable: true,
+                oldType: "text");
         }
     }
 }

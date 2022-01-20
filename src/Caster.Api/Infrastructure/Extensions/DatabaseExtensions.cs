@@ -45,7 +45,7 @@ namespace Caster.Api.Infrastructure.Extensions
 
         private static void ProcessSeedDataOptions(SeedDataOptions options, CasterContext context)
         {
-            if (options.Permissions.Any())
+            if (options.Permissions?.Any() == true)
             {
                 var dbPermissions = context.Permissions.ToList();
 
@@ -59,7 +59,8 @@ namespace Caster.Api.Infrastructure.Extensions
 
                 context.SaveChanges();
             }
-            if (options.Users.Any())
+
+            if (options.Users?.Any() == true)
             {
                 var dbUsers = context.Users.ToList();
 
@@ -73,7 +74,8 @@ namespace Caster.Api.Infrastructure.Extensions
 
                 context.SaveChanges();
             }
-            if (options.UserPermissions.Any())
+
+            if (options.UserPermissions?.Any() == true)
             {
                 var dbUserPermissions = context.UserPermissions.ToList();
 
@@ -88,7 +90,5 @@ namespace Caster.Api.Infrastructure.Extensions
                 context.SaveChanges();
             }
         }
-
-
     }
 }
