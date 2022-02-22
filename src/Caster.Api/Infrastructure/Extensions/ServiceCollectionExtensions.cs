@@ -43,12 +43,13 @@ namespace Caster.Api.Infrastructure.Extensions
         {
             var retryPolicy = HttpPolicyExtensions
             .HandleTransientHttpError()
-            .WaitAndRetryForeverAsync(retryAttempt =>
-            {
-                var logger = loggerFactory.CreateLogger<Policy>();
-                logger.LogError($"Attempt {retryAttempt}: Retrying connection to {serviceName}");
-                return TimeSpan.FromSeconds(Math.Min(Math.Pow(2, retryAttempt), maxRetryDelaySeconds));
-            });
+            .WaitAndRetryForeverAsync(
+                sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Min(Math.Pow(2, retryAttempt), maxRetryDelaySeconds)),
+                onRetry: (exception, retryAttempt, calculatedWaitDuration) =>
+                {
+                    var logger = loggerFactory.CreateLogger<Policy>();
+                    logger.LogError(exception.Exception, $"Attempt {retryAttempt}. Retrying connection to {serviceName}");
+                });
 
             return retryPolicy;
         }
@@ -138,7 +139,7 @@ namespace Caster.Api.Infrastructure.Extensions
                         AuthorizationCode = new OpenApiOAuthFlow
                         {
                             AuthorizationUrl = new Uri(authOptions.AuthorizationUrl),
-                            TokenUrl = new Uri(authOptions.TokenUrl), 
+                            TokenUrl = new Uri(authOptions.TokenUrl),
                             Scopes = new Dictionary<string, string>()
                             {
                                 {authOptions.AuthorizationScope, "public api access"}

@@ -15,6 +15,7 @@ namespace Caster.Api.Features.Modules
                 .ForMember(m => m.Versions, opt => opt.ExplicitExpansion());
             CreateMap<Domain.Models.ModuleVersion, ModuleVersion>();
             CreateMap<Domain.Models.ModuleVariable, ModuleVariable>();
+            CreateMap<Domain.Models.ModuleOutput, ModuleOutput>();
         }
     }
 }

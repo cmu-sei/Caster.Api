@@ -15,12 +15,14 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Identity;
+using System;
+using System.Linq;
 
 namespace Caster.Api.Features.Modules
 {
     public class GetAll
     {
-        [DataContract(Name="GetModulesQuery")]
+        [DataContract(Name = "GetModulesQuery")]
         public class Query : IRequest<Module[]>
         {
             /// <summary>
@@ -28,11 +30,18 @@ namespace Caster.Api.Features.Modules
             /// </summary>
             [DataMember]
             public bool IncludeVersions { get; set; }
+
             /// <summary>
             /// force module update by ignoring DateModified.
             /// </summary>
             [DataMember]
             public bool ForceUpdate { get; set; }
+
+            /// <summary>
+            /// only return Modules in use by the specified Design
+            /// </summary>
+            [DataMember]
+            public Guid? DesignId { get; set; }
         }
 
         public class Handler : IRequestHandler<Query, Module[]>
@@ -66,19 +75,30 @@ namespace Caster.Api.Features.Modules
                 // get all modules from the repository and update the database
                 await _gitlabRepositoryService.GetModulesAsync(request.ForceUpdate, cancellationToken);
 
-                if(request.IncludeVersions)
+                IQueryable<Domain.Models.Module> query = _db.Modules;
+
+                if (request.DesignId.HasValue)
                 {
-                    var modules = await _db.Modules
-                        .Include(m => m.Versions)
-                        .ToArrayAsync();
-                    return _mapper.Map<Module[]>(modules);
+                    var designQuery = _db.DesignModules
+                        .Include(x => x.Module)
+                        .Where(x => x.DesignId == request.DesignId);
+
+                    if (request.IncludeVersions)
+                    {
+                        designQuery = designQuery
+                            .Include(x => x.Module)
+                            .ThenInclude(x => x.Versions);
+                    }
+
+                    query = designQuery.Select(x => x.Module);
                 }
-                else
+                else if (request.IncludeVersions)
                 {
-                    return await _db.Modules
-                        .ProjectTo<Module>(_mapper.ConfigurationProvider)
-                        .ToArrayAsync();
+                    query = query.Include(x => x.Versions);
                 }
+
+                var modules = await query.ToArrayAsync(cancellationToken);
+                return _mapper.Map<Module[]>(modules);
             }
         }
     }

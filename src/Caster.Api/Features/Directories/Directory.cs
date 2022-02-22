@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using Caster.Api.Features.Designs;
 using Caster.Api.Features.Files;
 using Caster.Api.Features.Workspaces;
 
@@ -39,6 +40,11 @@ namespace Caster.Api.Features.Directories
         /// List of workspaces in the directory. Null if not requested
         /// </summary>
         public List<Workspace> Workspaces { get; set; }
+
+        /// <summary>
+        /// List of designs in the directory. Null if not requested
+        /// </summary>
+        public List<Design> Designs { get; set; }
 
         /// <summary>
         /// The version of Terraform that will be set Workspaces created in this Directory.

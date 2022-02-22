@@ -25,16 +25,48 @@ namespace Caster.Api.Data
                             (pathDirectoryIds.Contains(f.DirectoryId) && f.Workspace == null))
                 .ToListAsync();
 
+            var designs = await this.Designs
+                .Include(x => x.Modules)
+                    .ThenInclude(x => x.Module)
+                .Include(x => x.Variables)
+                .Where(x => x.Enabled && pathDirectoryIds.Contains(x.DirectoryId))
+                .ToListAsync();
+
+            foreach (var design in designs)
+            {
+                var content = string.Empty;
+
+                foreach (var variable in design.Variables)
+                {
+                    content += $"{variable.ToSnippet()}\n";
+                }
+
+                foreach (var designModule in design.Modules.Where(x => x.Enabled))
+                {
+                    var moduleVersion = await this.ModuleVersions
+                        .Where(x => x.Name == designModule.ModuleVersion && x.ModuleId == designModule.ModuleId)
+                        .FirstOrDefaultAsync();
+
+                    content += $"{moduleVersion.ToSnippet(designModule.Name, designModule.Values)}\n";
+                }
+
+                files.Add(new File()
+                {
+                    Name = $"{design.Name}-design.tf",
+                    Content = content
+                });
+            }
+
             return files;
         }
 
         public async Task<bool> AnyIncompleteRuns(Guid workspaceId)
         {
-             return await this.Runs
-                .Where(r =>
-                    r.WorkspaceId == workspaceId &&
-                    r.Status != RunStatus.Applied && r.Status != RunStatus.Failed && r.Status != RunStatus.Rejected)
-                .AnyAsync();
+            return await this.Runs
+               .Where(r =>
+                   r.WorkspaceId == workspaceId &&
+                   r.Status != RunStatus.Applied && r.Status != RunStatus.Failed && r.Status != RunStatus.Rejected)
+               .AnyAsync();
         }
     }
 }

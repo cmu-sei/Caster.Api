@@ -25,7 +25,7 @@ namespace Caster.Api.Features.Modules
         public string Name { get; set; }
         public string Path { get; set; }
         public string Description { get; set; }
-        public List<ModuleVersion> Versions { get; set; } = new List<ModuleVersion>();
+        public List<ModuleVersion> Versions { get; set; }
         public DateTime? DateModified { get; set; }
     }
 
@@ -37,7 +37,7 @@ namespace Caster.Api.Features.Modules
         public string UrlLink { get; set; }
         public DateTime DateCreated { get; set; }
         public List<ModuleVariable> Variables { get; set; } = new List<ModuleVariable>();
-        public List<string> Outputs { get; set; } = new List<string>();
+        public List<ModuleOutput> Outputs { get; set; } = new List<ModuleOutput>();
 
     }
 
@@ -48,5 +48,11 @@ namespace Caster.Api.Features.Modules
         public string VariableType { get; set; }
         public string DefaultValue { get; set; }
         public bool IsOptional { get; set; }
+    }
+
+    public class ModuleOutput
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
     }
 }

@@ -14,16 +14,18 @@ namespace Caster.Api.Infrastructure.Extensions
 {
     public static class ContainerExtensions
     {
-        public static Container AddMediator(this Container container, params Assembly[] assemblies) {
-            return BuildMediator (container, (IEnumerable<Assembly>) assemblies);
+        public static Container AddMediator(this Container container, params Assembly[] assemblies)
+        {
+            return BuildMediator(container, (IEnumerable<Assembly>)assemblies);
         }
 
-        public static Container BuildMediator (this Container container, IEnumerable<Assembly> assemblies) {
-            var allAssemblies = new List<Assembly> { typeof (IMediator).GetTypeInfo().Assembly };
-            allAssemblies.AddRange (assemblies);
+        public static Container BuildMediator(this Container container, IEnumerable<Assembly> assemblies)
+        {
+            var allAssemblies = new List<Assembly> { typeof(IMediator).GetTypeInfo().Assembly };
+            allAssemblies.AddRange(assemblies);
 
             container.Register<IMediator, Mediator>();
-            container.Register(typeof (IRequestHandler<,>), allAssemblies);
+            container.Register(typeof(IRequestHandler<,>), allAssemblies);
 
             container.Collection.Register(typeof(INotificationHandler<>), GetTypesToRegister(typeof(INotificationHandler<>), container, assemblies));
             container.Collection.Register(typeof(IPipelineBehavior<,>), GetTypesToRegister(typeof(IPipelineBehavior<,>), container, assemblies));
@@ -31,14 +33,14 @@ namespace Caster.Api.Infrastructure.Extensions
             container.Collection.Register(typeof(IRequestPostProcessor<,>), GetTypesToRegister(typeof(IRequestPostProcessor<,>), container, assemblies));
 
             container.Register(() => new ServiceFactory(container.GetInstance));
-
             return container;
         }
 
         private static IEnumerable<Type> GetTypesToRegister(Type type, Container container, IEnumerable<Assembly> assemblies)
         {
             // we have to do this because by default, generic type definitions (such as the Constrained Notification Handler) won't be registered
-            return container.GetTypesToRegister(type, assemblies, new TypesToRegisterOptions {
+            return container.GetTypesToRegister(type, assemblies, new TypesToRegisterOptions
+            {
                 IncludeGenericTypeDefinitions = true,
                 IncludeComposites = false,
             });

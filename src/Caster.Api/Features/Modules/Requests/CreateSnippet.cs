@@ -17,12 +17,13 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
 using System.Linq;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Modules
 {
     public class CreateSnippet
     {
-        [DataContract(Name="CreateSnippetCommand")]
+        [DataContract(Name = "CreateSnippetCommand")]
         public class Command : IRequest<string>
         {
             /// <summary>
@@ -70,31 +71,32 @@ namespace Caster.Api.Features.Modules
                     throw new ForbiddenException();
 
                 var version = await _db.ModuleVersions.FirstOrDefaultAsync(v => v.Id == request.VersionId);
-                var snippet = $"module \"{request.ModuleName}\" {{\n" +
-                              $"  source = \"git::{version.UrlLink}?ref={version.Name}\"";
-                foreach (var variable in request.VariableValues)
-                {
-                    var v = version.Variables.Where(v => v.Name == variable.Name).SingleOrDefault();
-                    var value = variable.Value;
 
-                    if (v != null && v.RequiresQuotes)
-                    {
-                        value = $"\"{value}\"";
-                    }
+                if (version == null)
+                    throw new EntityNotFoundException<ModuleVersion>();
 
-                    snippet = $"{snippet}\n  {variable.Name} = {value}";
-                }
-                snippet = snippet + "\n}";
-
-                return snippet;
+                return version.ToSnippet(request.ModuleName, VariableValue.ToDomain(request.VariableValues));
             }
-
         }
 
         public class VariableValue
         {
             public string Name { get; set; }
             public string Value { get; set; }
+
+            public ModuleValue ToDomain()
+            {
+                return new ModuleValue
+                {
+                    Name = Name,
+                    Value = Value
+                };
+            }
+
+            public static IEnumerable<ModuleValue> ToDomain(IEnumerable<VariableValue> values)
+            {
+                return values.Select(x => x.ToDomain());
+            }
         }
     }
 }

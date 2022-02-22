@@ -26,7 +26,8 @@ namespace Caster.Api.Domain.Models
 
         public Module ToModule(DateTime requestTime)
         {
-            return new Module() {
+            return new Module()
+            {
                 Name = this.Name,
                 Path = this.Path,
                 Description = this.Description,
@@ -57,7 +58,8 @@ namespace Caster.Api.Domain.Models
 
             foreach (var outerPair in variables)
             {
-                if (outerPair.Key == "variable") {
+                if (outerPair.Key == "variable")
+                {
                     foreach (var innerPair in outerPair.Value)
                     {
                         innerPair.Value.Name = innerPair.Key;
@@ -81,7 +83,8 @@ namespace Caster.Api.Domain.Models
 
         public ModuleVariable ToModuleVariable()
         {
-            return new ModuleVariable() {
+            return new ModuleVariable()
+            {
                 Name = this.Name,
                 Description = this.Description,
                 VariableType = this.Type,
@@ -92,9 +95,9 @@ namespace Caster.Api.Domain.Models
 
     public static class GitlabModuleOutputResponse
     {
-        public static List<string> GetModuleOutputs(byte[] jsonResponse)
+        public static List<ModuleOutput> GetModuleOutputs(byte[] jsonResponse)
         {
-            List<string> moduleOutputs = new List<string>();
+            List<ModuleOutput> moduleOutputs = new List<ModuleOutput>();
 
             var outputs = System.Text.Json.JsonSerializer
             .Deserialize<Dictionary<string, Dictionary<string, GitlabModuleOutput>>>(
@@ -102,11 +105,12 @@ namespace Caster.Api.Domain.Models
 
             foreach (var outerPair in outputs)
             {
-                if (outerPair.Key == "output") {
+                if (outerPair.Key == "output")
+                {
                     foreach (var innerPair in outerPair.Value)
                     {
                         innerPair.Value.Name = innerPair.Key;
-                        moduleOutputs.Add(innerPair.Value.ToString());
+                        moduleOutputs.Add(innerPair.Value.ToModuleOutput());
                     }
                 }
             }
@@ -120,9 +124,13 @@ namespace Caster.Api.Domain.Models
         public string Name { get; set; }
         public string Description { get; set; }
 
-        public override string ToString()
+        public ModuleOutput ToModuleOutput()
         {
-            return $"{Name}: {Description}";
+            return new ModuleOutput()
+            {
+                Name = this.Name,
+                Description = this.Description
+            };
         }
     }
 }

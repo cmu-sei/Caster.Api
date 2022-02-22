@@ -11,6 +11,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
 using System.Text.Json;
 using Caster.Api.Infrastructure.Serialization;
+using FluentValidation;
+using System.Linq;
+using System.Collections.Generic;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace Caster.Api.Infrastructure.Exceptions.Middleware
 {
@@ -19,12 +24,18 @@ namespace Caster.Api.Infrastructure.Exceptions.Middleware
         private readonly IWebHostEnvironment _env;
         private readonly RequestDelegate _next;
         private readonly ILogger _logger;
+        private readonly ProblemDetailsFactory _problemDetailsFactory;
 
-        public ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger, IWebHostEnvironment env)
+        public ExceptionMiddleware(
+            RequestDelegate next,
+            ILogger<ExceptionMiddleware> logger,
+            IWebHostEnvironment env,
+            ProblemDetailsFactory problemDetailsFactory)
         {
             _logger = logger;
             _next = next;
             _env = env;
+            _problemDetailsFactory = problemDetailsFactory;
         }
 
         public async Task InvokeAsync(HttpContext httpContext)
@@ -36,7 +47,23 @@ namespace Caster.Api.Infrastructure.Exceptions.Middleware
             catch (Exception ex)
             {
                 _logger.LogError($"Unhandled Exception: {ex}");
-                await HandleExceptionAsync(httpContext, ex);
+
+                if (ex.GetType() == typeof(ValidationException))
+                {
+                    var error = new ValidationProblemDetails(((ValidationException)ex).Errors)
+                    {
+                        Type = _problemDetailsFactory.CreateValidationProblemDetails(httpContext, new ModelStateDictionary()).Type
+                    };
+                    var code = HttpStatusCode.BadRequest;
+                    httpContext.Response.ContentType = "application/problem+json";
+                    httpContext.Response.StatusCode = (int)code;
+                    error.Status = (int)code;
+                    await httpContext.Response.WriteAsync(JsonSerializer.Serialize(error));
+                }
+                else
+                {
+                    await HandleExceptionAsync(httpContext, ex);
+                }
             }
         }
 
@@ -48,9 +75,9 @@ namespace Caster.Api.Infrastructure.Exceptions.Middleware
             error.Status = statusCode;
 
             context.Response.StatusCode = statusCode;
-            context.Response.ContentType = "application/json";
+            context.Response.ContentType = "application/problem+json";
 
-            if(statusCode == (int)HttpStatusCode.InternalServerError)
+            if (statusCode == (int)HttpStatusCode.InternalServerError)
             {
                 if (_env.IsDevelopment())
                 {
