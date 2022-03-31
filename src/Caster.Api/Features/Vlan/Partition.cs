@@ -11,7 +11,6 @@ namespace Caster.Api.Features.Vlan
 
         public Guid Id { get; set; }
         public Guid PoolId { get; set; }
-        public Guid PartitionId { get; set; }
         public string Name { get; set; }
         public Vlan[] Vlans { get; set; }
     }

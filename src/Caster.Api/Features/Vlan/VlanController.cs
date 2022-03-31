@@ -74,7 +74,7 @@ namespace Caster.Api.Features.Vlan
         [HttpPost("/partitions/create/{name}")]
         [ProducesResponseType(typeof(IEnumerable<Partition>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "CreatePartition")]
-        public async Task<IActionResult> CreatePartition([FromQuery] Guid poolId, [FromQuery] Guid projectId, [FromRoute] String name, [FromQuery] int requestedVlans)
+        public async Task<IActionResult> CreatePartition([FromQuery] Guid poolId, [FromQuery] Guid? projectId, [FromRoute] String name, [FromQuery] int requestedVlans)
         {
            var result = await _mediator.Send(new CreatePartition.Command() { 
                 PoolId = poolId, 
@@ -93,10 +93,10 @@ namespace Caster.Api.Features.Vlan
         /// <param name="name">The name of the new partition</param>
         /// <param name="lo">The lowest vlan that the partition should include</param>
         /// <param name="hi">The highest vlan that the partition should include</param>
-        [HttpPost("/partitions/createwithrange/{name}")]
+        [HttpPost("/partitions/create/{name}/range")]
         [ProducesResponseType(typeof(IEnumerable<Partition>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "CreatePartitionWithRange")]
-        public async Task<IActionResult> CreatePartitionWithRange([FromQuery] Guid poolId, [FromQuery] Guid projectId, [FromRoute] String name, [FromQuery] int lo, [FromQuery] int hi)
+        public async Task<IActionResult> CreatePartitionWithRange([FromQuery] Guid poolId, [FromQuery] Guid? projectId, [FromRoute] String name, [FromQuery] int lo, [FromQuery] int hi)
         {
             var result = await _mediator.Send(new CreatePartitionWithRange.Command() { 
                 PoolId = poolId, 
@@ -104,6 +104,23 @@ namespace Caster.Api.Features.Vlan
                 Name = name,
                 Lo = lo,
                 Hi = hi
+            });
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Assign a partition to a project
+        /// </summary>
+        /// <param name="partitionId">The Id of a partition</param>
+        /// <param name="projectId">The Id of the project tied to this partition</param>
+        [HttpPost("/partitions/{partitionId}/assign/{projectId}")]
+        [ProducesResponseType(typeof(IEnumerable<Partition>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "AssignProjectToPartition")]
+        public async Task<IActionResult> AssignProjectToPartition([FromRoute] Guid partitionId, [FromRoute] Guid projectId)
+        {
+            var result = await _mediator.Send(new AssignProjectToPartition.Command() {
+                PartitionId = partitionId,
+                ProjectId = projectId
             });
             return Ok(result);
         }
@@ -118,6 +135,19 @@ namespace Caster.Api.Features.Vlan
         public async Task<IActionResult> GetVlan([FromRoute] Guid partitionId)
         {
             var result = await _mediator.Send(new GetVlan.Query() { PartitionId = partitionId });
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Get a vlan for a project
+        /// </summary>
+        /// <returns></returns>
+        [HttpPost("/vlan/get/project/{projectId}")]
+        [ProducesResponseType(typeof(IEnumerable<Vlan>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetVlanByProject")]
+        public async Task<IActionResult> GetVlanByProject([FromRoute] Guid projectId)
+        {
+            var result = await _mediator.Send(new GetVlanByProject.Query() { ProjectId = projectId });
             return Ok(result);
         }
 

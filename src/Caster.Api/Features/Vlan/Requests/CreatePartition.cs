@@ -34,10 +34,10 @@ namespace Caster.Api.Features.Vlan
             public Guid PoolId { get; set; }
 
             /// <summary>
-            /// The Id of project this partition is associated with
+            /// The Id of project that will be assigned to this partition
             /// </summary>
             [DataMember]
-            public Guid ProjectId { get; set; }
+            public Guid? ProjectId { get; set; }
 
             /// <summary>
             /// The Name of this partition is in
@@ -78,12 +78,22 @@ namespace Caster.Api.Features.Vlan
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
                 
-                // Find available vlans in this pool
+                // Input data validation
+                if (partitionCommand.RequestedVlans <= 0 || partitionCommand.RequestedVlans > 4096) {
+                    throw new Exception(
+                        String.Format(
+                            "The requested number of Vlans must be between (0, 4096], {0} requested vlans is invalid",
+                            partitionCommand.RequestedVlans
+                        )
+                    );
+                }
+
                 HashSet<int> available = new HashSet<int>();
                 for (int i = 0; i < 4096; i++) {
                     available.Add(i);
                 }
                 
+                // Find used vlans in this pool
                 var usedVlans = await _db.Vlans.Where(v => v.PoolId == partitionCommand.PoolId)
                     .ProjectTo<Vlan>(_mapper.ConfigurationProvider)
                     .ToArrayAsync();
@@ -92,6 +102,7 @@ namespace Caster.Api.Features.Vlan
                     available.Remove(vlan.vlan);
                 }
 
+                // Verify there are enough available vlans in this pool
                 if (available.Count < partitionCommand.RequestedVlans) {
                     throw new ConflictException(
                         String.Format(
@@ -102,12 +113,21 @@ namespace Caster.Api.Features.Vlan
                     );
                 }
 
+                // Create partition
                 var partition = _mapper.Map<Domain.Models.Partition>(partitionCommand);
                 await _db.Partitions.AddAsync(partition);
                 await _db.SaveChangesAsync();
                 
                 var finalPartition = _mapper.Map<Partition>(partition);
                 
+                // Update project with partitionId if ProjectId was provided
+                var project = await _db.Projects.SingleOrDefaultAsync(P => P.Id == partitionCommand.ProjectId);
+                if (project != null) {
+                    project.PartitionId = finalPartition.Id;
+                    await _db.SaveChangesAsync();
+                }
+
+                // Create vlans
                 int count = 0;
                 foreach (int vlan in available) {
                     

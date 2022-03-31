@@ -16,7 +16,6 @@ namespace Caster.Api.Domain.Models
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
         public Guid PoolId { get; set; }
-        public Guid ProjectId { get; set; }
         public string Name { get; set; }
         public ICollection<Vlan> Vlans { get; set; } = new List<Vlan>();
     }

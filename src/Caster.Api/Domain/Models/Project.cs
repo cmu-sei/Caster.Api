@@ -17,6 +17,7 @@ namespace Caster.Api.Domain.Models
         public string Name { get; set; }
 
         public virtual ICollection<Directory> Directories { get; set; } = new List<Directory>();
+        public Guid? PartitionId { get; set; }
 
         public Project() {}
 

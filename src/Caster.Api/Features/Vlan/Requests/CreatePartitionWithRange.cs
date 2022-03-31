@@ -34,10 +34,10 @@ namespace Caster.Api.Features.Vlan
             public Guid PoolId { get; set; }
             
             /// <summary>
-            /// The Id of project this partition is associated with
+            /// The Id of project that will be assigned to this partition
             /// </summary>
             [DataMember]
-            public Guid ProjectId { get; set; }
+            public Guid? ProjectId { get; set; }
 
             /// <summary>
             /// The Name of this partition is in
@@ -84,6 +84,7 @@ namespace Caster.Api.Features.Vlan
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
                 
+                // Input data validation
                 if (partitionCommand.Hi - partitionCommand.Lo < 1 || 
                     partitionCommand.Hi <= 0 || partitionCommand.Hi > 4096 ||
                     partitionCommand.Lo < 0 || partitionCommand.Lo >= 4096) {
@@ -96,12 +97,12 @@ namespace Caster.Api.Features.Vlan
                     );
                 }
 
-                // Find available vlans in this pool
                 HashSet<int> requested = new HashSet<int>();
                 for (int i = partitionCommand.Lo; i <= partitionCommand.Hi; i++) {
                     requested.Add(i);
                 }
                 
+                // Find used vlans in this pool
                 var usedVlans = _db.Vlans.Where(v => v.PoolId == partitionCommand.PoolId)
                     .ProjectTo<Vlan>(_mapper.ConfigurationProvider)
                     .ToHashSet<Vlan>();
@@ -119,11 +120,19 @@ namespace Caster.Api.Features.Vlan
                     }
                 }
 
+                // Create partition
                 var partition = _mapper.Map<Domain.Models.Partition>(partitionCommand);
                 await _db.Partitions.AddAsync(partition);
                 await _db.SaveChangesAsync();
                 
                 var finalPartition = _mapper.Map<Partition>(partition);
+
+                // Update project with partitionId if ProjectId was provided
+                var project = await _db.Projects.SingleOrDefaultAsync(P => P.Id == partitionCommand.ProjectId);
+                if (project != null) {
+                    project.PartitionId = finalPartition.Id;
+                    await _db.SaveChangesAsync();
+                }
 
                 foreach (int vlan in requested) {
                     var vlanRequest = await new CreateVlan.Handler(
@@ -141,7 +150,7 @@ namespace Caster.Api.Features.Vlan
                     );
                 }
 
-                return finalPartition;
+                return _mapper.Map<Partition>(_db.Partitions.Single(P => P.Id == finalPartition.Id));
             }
         }
     }
