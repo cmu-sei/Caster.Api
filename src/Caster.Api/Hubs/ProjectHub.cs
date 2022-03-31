@@ -70,6 +70,18 @@ public class ProjectHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.WorkspacesAdmin));
     }
 
+    [Authorize(Policy = nameof(CasterClaimTypes.SystemAdmin))]
+    public async Task JoinVlansAdmin()
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, nameof(HubGroups.VlansAdmin));
+    }
+
+    [Authorize(Policy = nameof(CasterClaimTypes.SystemAdmin))]
+    public async Task LeaveVlansAdmin()
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.VlansAdmin));
+    }
+
     #region RunOutput
 
     enum OutputType
@@ -172,5 +184,4 @@ public static class ProjectHubMethods
     public const string VariableCreated = "VariableCreated";
     public const string VariableUpdated = "VariableUpdated";
     public const string VariableDeleted = "VariableDeleted";
-
 }

@@ -13,6 +13,10 @@ public interface IValidationService
     Task<bool> DirectoryExists(Guid directoryId);
     Task<bool> DesignExists(Guid designId);
     Task<bool> ModuleExists(Guid moduleId);
+    Task<bool> ProjectExists(Guid projectId);
+    Task<bool> PartitionExists(Guid partitionId);
+    Task<bool> PoolExists(Guid poolId);
+    Task<bool> VlanExists(Guid vlanId);
 }
 
 public class ValidationService : IValidationService
@@ -37,5 +41,25 @@ public class ValidationService : IValidationService
     public async Task<bool> ModuleExists(Guid moduleId)
     {
         return await _dbContext.Modules.AnyAsync(x => x.Id == moduleId);
+    }
+
+    public async Task<bool> ProjectExists(Guid projectId)
+    {
+        return await _dbContext.Projects.AnyAsync(x => x.Id == projectId);
+    }
+
+    public async Task<bool> PartitionExists(Guid partitionId)
+    {
+        return await _dbContext.Partitions.AnyAsync(x => x.Id == partitionId);
+    }
+
+    public async Task<bool> PoolExists(Guid poolId)
+    {
+        return await _dbContext.Pools.AnyAsync(x => x.Id == poolId);
+    }
+
+    public async Task<bool> VlanExists(Guid vlanId)
+    {
+        return await _dbContext.Vlans.AnyAsync(x => x.Id == vlanId);
     }
 }

@@ -41,6 +41,9 @@ public partial class CasterContext : DbContext
     public DbSet<Design> Designs { get; set; }
     public DbSet<DesignModule> DesignModules { get; set; }
     public DbSet<Variable> Variables { get; set; }
+    public DbSet<Vlan> Vlans { get; set; }
+    public DbSet<Partition> Partitions { get; set; }
+    public DbSet<Pool> Pools { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,10 +83,7 @@ public partial class CasterContext : DbContext
             {
                 // if entry already exists, mark which properties were previously modified,
                 // remove old entry and add new one, to avoid duplicates
-                var modifiedProperties = e.Properties
-                    .Where(x => x.IsModified)
-                    .Select(x => x.Metadata.Name)
-                    .ToArray();
+                var modifiedProperties = e.GetModifiedProperties();
 
                 var newEntry = new Entry(entry);
 
