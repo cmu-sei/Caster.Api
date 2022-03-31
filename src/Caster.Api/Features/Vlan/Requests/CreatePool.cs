@@ -59,17 +59,6 @@ namespace Caster.Api.Features.Vlan
                 await _db.Pools.AddAsync(pool);
                 await _db.SaveChangesAsync();
 
-                // var partitionRequest = new CreatePartition.Handler(
-                //                         _db,
-                //                         _mapper,
-                //                         _authorizationService,
-                //                         _identityResolver)
-                //                         .Handle(
-                //                             new CreatePartition.Command() { PoolId = pool.Id, Name = "Default" },
-                //                             cancellationToken
-                //                         );
-                // var partition = _mapper.Map<Domain.Models.Partition>(partitionRequest);
-
                 return _mapper.Map<Pool>(pool);
             }
         }
