@@ -3,6 +3,7 @@ using System;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Caster.Api.Data.Migrations
 {
     [DbContext(typeof(CasterContext))]
-    partial class CasterContextModelSnapshot : ModelSnapshot
+    [Migration("20220202134728_vlan")]
+    partial class vlan
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -346,13 +348,9 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
-                    b.Property<Guid>("PoolId")
+                    b.Property<Guid?>("PoolId")
                         .HasColumnType("uuid")
                         .HasColumnName("pool_id");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("project_id");
 
                     b.HasKey("Id");
 
@@ -574,13 +572,9 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("in_use");
 
-                    b.Property<Guid>("PartitionId")
+                    b.Property<Guid?>("PartitionId")
                         .HasColumnType("uuid")
                         .HasColumnName("partition_id");
-
-                    b.Property<Guid>("PoolId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("pool_id");
 
                     b.Property<int>("vlan")
                         .HasColumnType("integer")
@@ -771,9 +765,7 @@ namespace Caster.Api.Data.Migrations
                 {
                     b.HasOne("Caster.Api.Domain.Models.Pool", null)
                         .WithMany("Partitions")
-                        .HasForeignKey("PoolId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("PoolId");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Plan", b =>
@@ -833,9 +825,7 @@ namespace Caster.Api.Data.Migrations
                 {
                     b.HasOne("Caster.Api.Domain.Models.Partition", null)
                         .WithMany("Vlans")
-                        .HasForeignKey("PartitionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("PartitionId");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Workspace", b =>

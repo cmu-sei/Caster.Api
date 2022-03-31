@@ -35,6 +35,9 @@ namespace Caster.Api.Data
         public DbSet<UserPermission> UserPermissions { get; set; }
         public DbSet<Host> Hosts { get; set; }
         public DbSet<HostMachine> HostMachines { get; set; }
+        public DbSet<Vlan> Vlans { get; set; }
+        public DbSet<Partition> Partitions { get; set; }
+        public DbSet<Pool> Pools { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
