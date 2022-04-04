@@ -32,13 +32,13 @@ namespace Caster.Api.Data
                 .Where(x => x.Enabled && pathDirectoryIds.Contains(x.DirectoryId))
                 .ToListAsync();
 
+            var contentBuilder = new StringBuilder();
+
             foreach (var design in designs)
             {
-                var content = new StringBuilder();
-
                 foreach (var variable in design.Variables)
                 {
-                    content.Append($"{variable.ToSnippet()}\n");
+                    contentBuilder.Append($"{variable.ToSnippet()}\n");
                 }
 
                 foreach (var designModule in design.Modules.Where(x => x.Enabled))
@@ -47,14 +47,16 @@ namespace Caster.Api.Data
                         .Where(x => x.Name == designModule.ModuleVersion && x.ModuleId == designModule.ModuleId)
                         .FirstOrDefaultAsync();
 
-                    content.Append($"{moduleVersion.ToSnippet(designModule.Name, designModule.Values)}\n");
+                    contentBuilder.Append($"{moduleVersion.ToSnippet(designModule.Name, designModule.Values)}\n");
                 }
 
                 files.Add(new File()
                 {
                     Name = $"{design.Name}-design.tf",
-                    Content = content.ToString()
+                    Content = contentBuilder.ToString()
                 });
+
+                contentBuilder.Clear();
             }
 
             return files;
