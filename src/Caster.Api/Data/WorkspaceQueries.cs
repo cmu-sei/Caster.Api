@@ -4,9 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
-using Caster.Api.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Data
@@ -34,11 +34,11 @@ namespace Caster.Api.Data
 
             foreach (var design in designs)
             {
-                var content = string.Empty;
+                var content = new StringBuilder();
 
                 foreach (var variable in design.Variables)
                 {
-                    content += $"{variable.ToSnippet()}\n";
+                    content.Append($"{variable.ToSnippet()}\n");
                 }
 
                 foreach (var designModule in design.Modules.Where(x => x.Enabled))
@@ -47,13 +47,13 @@ namespace Caster.Api.Data
                         .Where(x => x.Name == designModule.ModuleVersion && x.ModuleId == designModule.ModuleId)
                         .FirstOrDefaultAsync();
 
-                    content += $"{moduleVersion.ToSnippet(designModule.Name, designModule.Values)}\n";
+                    content.Append($"{moduleVersion.ToSnippet(designModule.Name, designModule.Values)}\n");
                 }
 
                 files.Add(new File()
                 {
                     Name = $"{design.Name}-design.tf",
-                    Content = content
+                    Content = content.ToString()
                 });
             }
 

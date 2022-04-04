@@ -82,10 +82,14 @@ public class DesignModule
                 .Where(x => x.Name == val.Name)
                 .FirstOrDefault();
 
-            if (currentVal == null && !string.IsNullOrEmpty(val.Value))
+            if (currentVal == null)
             {
                 // Add value if it doesn't exist
-                currentValues.Add(val);
+                // If no new value, do nothing since it already didn't exist
+                if (!string.IsNullOrEmpty(val.Value))
+                {
+                    currentValues.Add(val);
+                }
             }
             else
             {
