@@ -13,8 +13,10 @@ namespace Caster.Api.Infrastructure.Serialization
             get
             {
                 // must be synced with Startup.cs
-                var settings = new JsonSerializerOptions {
-                    PropertyNameCaseInsensitive = true
+                var settings = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    AllowTrailingCommas = true
                 };
 
                 settings.Converters.Add(new JsonStringEnumMemberConverter());

@@ -64,10 +64,11 @@ namespace Caster.Api.Domain.Services
                 updateCutoffDate = dbDateModified == null ? DateTime.MinValue : (DateTime)dbDateModified;
             }
             _httpClient = _httpClientFactory.CreateClient("gitlab");
-            _token =  _terraformOptions.CurrentValue.GitlabToken;
-            var groupId =  _terraformOptions.CurrentValue.GitlabGroupId;
+            _token = _terraformOptions.CurrentValue.GitlabToken;
+            var groupId = _terraformOptions.CurrentValue.GitlabGroupId;
 
-            if (!groupId.HasValue) {
+            if (!groupId.HasValue)
+            {
                 var groupIdName = nameof(_terraformOptions.CurrentValue.GitlabGroupId);
                 throw new ArgumentNullException(groupIdName, $"{groupIdName} must be set in order to retrieve Modules");
             }
@@ -115,7 +116,7 @@ namespace Caster.Api.Domain.Services
         {
             var requestTime = DateTime.UtcNow;
             _httpClient = _httpClientFactory.CreateClient("gitlab");
-            _token =  _terraformOptions.CurrentValue.GitlabToken;
+            _token = _terraformOptions.CurrentValue.GitlabToken;
             // get module info from Gitlab and insert/update the database
             var response = await _httpClient.GetAsync($"projects/{id}?private_token={_token}");
             var json = await response.Content.ReadAsByteArrayAsync();
@@ -169,7 +170,8 @@ namespace Caster.Api.Domain.Services
                 // get the module variables
                 var variables = await GetVariablesAsync(id, release.Name, cancellationToken);
 
-                var version = new Caster.Api.Domain.Models.ModuleVersion(){
+                var version = new Caster.Api.Domain.Models.ModuleVersion()
+                {
                     ModuleId = moduleId,
                     Name = release.Name,
                     UrlLink = _baseUrl.Replace("ref=master", $"ref={release.Name}"),
@@ -184,13 +186,13 @@ namespace Caster.Api.Domain.Services
             return true;
         }
 
-        private async Task<List<string>> GetOutputsAsync(int id, string versionName, CancellationToken cancellationToken)
+        private async Task<List<ModuleOutput>> GetOutputsAsync(int id, string versionName, CancellationToken cancellationToken)
         {
             var response = await _httpClient.GetAsync($"projects/{id}/repository/files/outputs.tf.json/raw?ref={versionName}&private_token={_token}");
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                return new List<string>();
+                return new List<ModuleOutput>();
             }
 
             var json = await response.Content.ReadAsByteArrayAsync();

@@ -19,11 +19,11 @@ namespace Caster.Api.Features.Directories
             {
                 if (includeFileContent)
                 {
-                    newQuery = query.ProjectTo<Directory>(configuration, dest => dest.Files, dest => dest.Files.Select(f => f.Content), dest => dest.Workspaces);
+                    newQuery = query.ProjectTo<Directory>(configuration, dest => dest.Files, dest => dest.Files.Select(f => f.Content), dest => dest.Workspaces, dest => dest.Designs);
                 }
                 else
                 {
-                    newQuery = query.ProjectTo<Directory>(configuration, dest => dest.Files, dest => dest.Workspaces);
+                    newQuery = query.ProjectTo<Directory>(configuration, dest => dest.Files, dest => dest.Workspaces, dest => dest.Designs);
                 }
             }
             else

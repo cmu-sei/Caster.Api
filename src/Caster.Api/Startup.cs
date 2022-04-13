@@ -10,14 +10,18 @@ using Caster.Api.Data;
 using Caster.Api.Domain.Services;
 using Caster.Api.Extensions;
 using Caster.Api.Features.Files;
+using Caster.Api.Features.Shared;
+using Caster.Api.Features.Shared.Services;
 using Caster.Api.Hubs;
 using Caster.Api.Infrastructure.ClaimsTransformers;
+using Caster.Api.Infrastructure.DbInterceptors;
 using Caster.Api.Infrastructure.Exceptions.Middleware;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Infrastructure.Mapping;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
+using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -71,7 +75,11 @@ namespace Caster.Api
                     "service_responsive",
                     failureStatus: HealthStatus.Unhealthy,
                     tags: new[] { "live" });
-            services.AddDbContextPool<CasterContext>(builder => builder.UseNpgsql(Configuration.GetConnectionString("PostgreSQL")));
+
+            services.AddDbContextPool<CasterContext>((serviceProvider, builder) =>
+                builder.AddInterceptors(serviceProvider.GetRequiredService<EventTransactionInterceptor>())
+                .UseNpgsql(Configuration.GetConnectionString("PostgreSQL")));
+
             services.AddHealthChecks().AddNpgSql(Configuration.GetConnectionString("PostgreSQL"), tags: new[] { "ready", "live" });
             services.AddCors(options => options.UseConfiguredCors(Configuration.GetSection("CorsPolicy")));
 
@@ -107,14 +115,14 @@ namespace Caster.Api
                 options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
                 options.JsonSerializerOptions.Converters.Add(new JsonStringEnumMemberConverter());
                 options.JsonSerializerOptions.Converters.Add(new OptionalConverter());
-            })
-            .AddFluentValidation(fv => fv.RegisterValidatorsFromAssemblyContaining<Startup>());
+            });
 
             services.AddSignalR()
                 .AddJsonProtocol(options =>
                 {
                     // must be synced with DefaultJsonSettings.cs
                     options.PayloadSerializerOptions.PropertyNameCaseInsensitive = true;
+                    options.PayloadSerializerOptions.AllowTrailingCommas = true;
                     options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumMemberConverter());
                     options.PayloadSerializerOptions.Converters.Add(new OptionalConverter());
                 });
@@ -129,6 +137,10 @@ namespace Caster.Api
             }, typeof(Startup));
 
             services.AddMediator(container);
+
+            // Adding Fluent Validation here so we don't get errors when requests aren't fully populated by the controller
+            services.AddValidatorsFromAssemblyContaining<Startup>();
+            container.Collection.Register(typeof(FluentValidation.IValidator<>), typeof(Startup).Assembly);
 
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
@@ -182,6 +194,8 @@ namespace Caster.Api
             services.AddScoped<IGitlabRepositoryService, GitlabRepositoryService>();
             services.AddScoped<IArchiveService, ArchiveService>();
             services.AddScoped<IImportService, ImportService>();
+            services.AddScoped<IValidationService, ValidationService>();
+            services.AddScoped(typeof(IDependencyAggregate<>), typeof(DependencyAggregate<>));
 
             services.AddSingleton<Caster.Api.Domain.Services.IAuthenticationService, Caster.Api.Domain.Services.AuthenticationService>();
             services.AddSingleton<ILockService, LockService>();
@@ -195,6 +209,7 @@ namespace Caster.Api
             services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(x => x.GetService<IPlayerSyncService>());
 
             services.AddScoped<IGetFileQuery, GetFileQuery>();
+            services.AddTransient<EventTransactionInterceptor>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

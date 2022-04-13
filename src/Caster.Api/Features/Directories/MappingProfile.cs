@@ -13,7 +13,8 @@ namespace Caster.Api.Features.Directories
         {
             CreateMap<Domain.Models.Directory, Directory>()
                 .ForMember(m => m.Files, opt => opt.ExplicitExpansion())
-                .ForMember(m => m.Workspaces, opt => opt.ExplicitExpansion());
+                .ForMember(m => m.Workspaces, opt => opt.ExplicitExpansion())
+                .ForMember(m => m.Designs, opt => opt.ExplicitExpansion());
             CreateMap<Create.Command, Domain.Models.Directory>();
             CreateMap<Edit.Command, Domain.Models.Directory>();
             CreateMap<PartialEdit.Command, Domain.Models.Directory>()
