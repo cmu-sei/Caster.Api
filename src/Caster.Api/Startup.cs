@@ -3,6 +3,7 @@
 
 using System;
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -147,8 +148,24 @@ namespace Caster.Api
                 {
                     options.Authority = _authOptions.Authority;
                     options.RequireHttpsMetadata = _authOptions.RequireHttpsMetadata;
-                    options.Audience = _authOptions.AuthorizationScope;
                     options.SaveToken = true;
+
+                    string[] validAudiences;
+
+                    if (_authOptions.ValidAudiences != null && _authOptions.ValidAudiences.Any())
+                    {
+                        validAudiences = _authOptions.ValidAudiences;
+                    }
+                    else
+                    {
+                        validAudiences = _authOptions.AuthorizationScope.Split(' ');
+                    }
+
+                    options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+                    {
+                        ValidateAudience = _authOptions.ValidateAudience,
+                        ValidAudiences = validAudiences
+                    };
 
                     // We have to hook the OnMessageReceived event in order to
                     // allow the JWT authentication handler to read the access
@@ -182,7 +199,7 @@ namespace Caster.Api
 
             JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
-            services.AddAuthorizationPolicy();
+            services.AddAuthorizationPolicy(_authOptions);
 
             services.AddApiClients(_clientOptions, _terraformOptions, _loggerFactory);
 

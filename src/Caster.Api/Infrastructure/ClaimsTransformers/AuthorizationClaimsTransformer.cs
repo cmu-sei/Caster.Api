@@ -4,12 +4,13 @@
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Services;
+using Caster.Api.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Authentication;
 
 namespace Caster.Api.Infrastructure.ClaimsTransformers
 {
     class AuthorizationClaimsTransformer : IClaimsTransformation
-    {        
+    {
         private IUserClaimsService _claimsService;
 
         public AuthorizationClaimsTransformer(IUserClaimsService claimsService)
@@ -19,10 +20,11 @@ namespace Caster.Api.Infrastructure.ClaimsTransformers
 
         public async Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
         {
-            var user = await _claimsService.AddUserClaims(principal, true);
+            var user = principal.NormalizeScopeClaims();
+            user = await _claimsService.AddUserClaims(user, true);
             _claimsService.SetCurrentClaimsPrincipal(user);
             return user;
-        }       
+        }
     }
 }
 
