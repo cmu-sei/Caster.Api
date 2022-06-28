@@ -42,6 +42,23 @@ public class Variable
         }}";
     }
 
+    /// <summary>
+    /// Computes additional NotMapped modified properties  
+    /// </summary>
+    public string[] GetModifiedProperties(string[] modifiedProperties)
+    {
+        if (modifiedProperties.Contains(nameof(Name)))
+        {
+            var newList = new List<string> { nameof(Terraform) };
+            newList.AddRange(modifiedProperties);
+            return newList.ToArray();
+        }
+        else
+        {
+            return modifiedProperties;
+        }
+    }
+
     private string GetDefaultValueSnippet()
     {
         switch (Type)
