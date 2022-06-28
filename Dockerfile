@@ -24,6 +24,6 @@ ENV ASPNETCORE_URLS=http://*:80
 CMD [ "dotnet", "Caster.Api.dll" ]
 
 #Install git and set credential store
-RUN apt-get update              && \
-    apt-get install -y git jq   && \
+RUN apt-get update                   && \
+    apt-get install -y git jq curl   && \
     git config --global credential.helper store
