@@ -40,7 +40,7 @@ public class VariableUpdatedSignalRHandler : VariableBaseSignalRHandler, INotifi
         await base.HandleCreateOrUpdate(
             notification.Entity,
             ProjectHubMethods.VariableUpdated,
-            notification.ModifiedProperties.Select(x => x.TitleCaseToCamelCase()).ToArray(),
+            notification.Entity.GetModifiedProperties(notification.ModifiedProperties).Select(x => x.TitleCaseToCamelCase()).ToArray(),
             cancellationToken);
     }
 }
