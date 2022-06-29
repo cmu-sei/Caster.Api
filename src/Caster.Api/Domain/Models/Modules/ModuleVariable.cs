@@ -21,7 +21,7 @@ public class ModuleVariable
     /// </summary>
     public string GetDefaultValue()
     {
-        if (VariableType.ToLower().Contains("object"))
+        if (VariableType != null && VariableType.ToLower().Contains("object"))
         {
             try
             {
