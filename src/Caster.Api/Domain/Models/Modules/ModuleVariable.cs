@@ -59,9 +59,9 @@ public class ModuleVariable
                     DefaultValue = stringBuilder.ToString();
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-
+                return DefaultValue;
             }
         }
 
