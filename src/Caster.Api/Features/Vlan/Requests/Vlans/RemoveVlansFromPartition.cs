@@ -98,7 +98,7 @@ public class RemoveVlansFromPartition
                         .Where(x => command.VlanIds.Contains(x.Id))
                         .ToArrayAsync(cancellationToken);
                 }
-                else
+                else if (command.Vlans.HasValue)
                 {
                     vlans = await query
                         .OrderBy(x => x.VlanId)
@@ -107,6 +107,10 @@ public class RemoveVlansFromPartition
 
                     if (vlans.Length < command.Vlans)
                         throw new ConflictException($"Not enough VLANs available. Requested {command.Vlans} but only {vlans.Length} VLANs in this partition are not in use");
+                }
+                else
+                {
+                    throw new ConflictException("Either VlanIds or Vlans must be specified.");
                 }
 
                 foreach (var vlan in vlans)
