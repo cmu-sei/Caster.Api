@@ -99,7 +99,6 @@ public class ReassignVlans
                 locks.Add(_lockService.GetPartitionLock(lockId));
             }
 
-            // Lock poolId as proxy for unassigned partition of that pool
             using (var firstLockResult = await locks[0].LockAsync(10000))
             using (var secondLockResult = await locks[1].LockAsync(10000))
             {

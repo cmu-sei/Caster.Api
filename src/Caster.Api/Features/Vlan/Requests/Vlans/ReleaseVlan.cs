@@ -29,7 +29,7 @@ public class ReleaseVlan
     public class Command : IRequest<Vlan>
     {
         /// <summary>
-        /// The Id of the vlan to be returned
+        /// The Id of the vlan to be released
         /// </summary>
         [JsonIgnore]
         public Guid Id { get; set; }
