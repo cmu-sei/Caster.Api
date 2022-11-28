@@ -32,7 +32,7 @@ public class GetAll
     {
         public Validator(IValidationService validationService)
         {
-            RuleFor(x => x.DesignId).DesignExists(validationService);
+            RuleFor(x => x.DesignId.Value).DesignExists(validationService).When(x => x.DesignId.HasValue);
         }
     }
 

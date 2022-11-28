@@ -102,10 +102,7 @@ public class EventTransactionInterceptor : DbTransactionInterceptor
                         break;
                     case EntityState.Modified:
                         eventType = typeof(EntityUpdated<>).MakeGenericType(entityType);
-                        modifiedProperties = entry.Properties
-                            .Where(x => x.IsModified)
-                            .Select(x => x.Metadata.Name)
-                            .ToArray();
+                        modifiedProperties = entry.GetModifiedProperties();
                         break;
                     case EntityState.Deleted:
                         eventType = typeof(EntityDeleted<>).MakeGenericType(entityType);

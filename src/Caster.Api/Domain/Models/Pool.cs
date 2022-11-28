@@ -8,24 +8,15 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Caster.Api.Domain.Models
 {
-    public class Project
+    public class Pool
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public Guid Id { get; set; }
-
         public string Name { get; set; }
-
-        public virtual ICollection<Directory> Directories { get; set; } = new List<Directory>();
-
-        public Guid? PartitionId { get; set; }
-        public virtual Partition Partition { get; set; }
-
-        public Project() { }
-
-        public Project(string name)
-        {
-            this.Name = name;
-        }
+        public bool IsDefault { get; set; }
+        public virtual ICollection<Partition> Partitions { get; set; } = new List<Partition>();
+        public virtual ICollection<Vlan> Vlans { get; set; } = new List<Vlan>();
     }
 }
+

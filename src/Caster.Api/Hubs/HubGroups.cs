@@ -5,6 +5,7 @@ namespace Caster.Api.Hubs
 {
     public enum HubGroups
     {
-        WorkspacesAdmin
+        WorkspacesAdmin,
+        VlansAdmin
     }
 }

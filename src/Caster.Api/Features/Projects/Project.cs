@@ -15,5 +15,9 @@ namespace Caster.Api.Features.Projects
         /// Name of the project.
         /// </summary>
         public string Name { get; set; }
+        /// <summary>
+        /// The vlan partition this project is a part of.
+        /// </summary>
+        public Guid? PartitionId { get; set; }
     }
 }

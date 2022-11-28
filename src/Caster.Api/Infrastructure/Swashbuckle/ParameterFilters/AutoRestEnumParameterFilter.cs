@@ -12,7 +12,7 @@ namespace Caster.Api.Infrastructure.Swashbuckle.ParameterFilters
         {
             var type = context.ApiParameterDescription.Type;
 
-            if (type.IsEnum)
+            if (type != null && type.IsEnum)
             {
                 parameter.Extensions.Add(
                     "x-ms-enum",
