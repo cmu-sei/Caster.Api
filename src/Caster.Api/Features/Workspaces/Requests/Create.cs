@@ -9,15 +9,15 @@ using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Domain.Models;
 using System.Security.Claims;
-using System.Security.Principal;
 using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Workspaces.Interfaces;
 using FluentValidation;
 using Caster.Api.Infrastructure.Options;
+using Caster.Api.Features.Shared.Services;
+using Caster.Api.Infrastructure.Extensions;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -50,13 +50,24 @@ namespace Caster.Api.Features.Workspaces
             /// </summary>
             [DataMember]
             public string TerraformVersion { get; set; }
+
+            /// <summary>
+            /// Limit the number of concurrent operations as Terraform walks the graph. 
+            /// If null, the Terraform default will be used.
+            /// </summary>
+            [DataMember]
+            public int? Parallelism { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidator<IWorkspaceUpdateRequest> baseValidator)
+            public CommandValidator(IValidator<IWorkspaceUpdateRequest> baseValidator, IValidationService validationService)
             {
                 Include(baseValidator);
+                RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
+                RuleFor(x => x.Parallelism)
+                    .GreaterThan(0)
+                    .LessThan(25);
             }
         }
 
@@ -87,36 +98,34 @@ namespace Caster.Api.Features.Workspaces
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
 
-                var directory = await this.GetDirectory(request.DirectoryId, cancellationToken);
-
                 var workspace = _mapper.Map<Domain.Models.Workspace>(request);
-                workspace.TerraformVersion = !string.IsNullOrEmpty(request.TerraformVersion) ?
-                    request.TerraformVersion :
-                    await GetTerraformVersion(directory.Id, cancellationToken);
+                workspace = await SetCascadedProperties(workspace, request, cancellationToken);
 
-                await _db.Workspaces.AddAsync(workspace, cancellationToken);
+                _db.Workspaces.Add(workspace);
                 await _db.SaveChangesAsync(cancellationToken);
                 return _mapper.Map<Workspace>(workspace);
             }
 
-            private async Task<Directory> GetDirectory(Guid id, CancellationToken ct)
+            private async Task<Domain.Models.Workspace> SetCascadedProperties(Domain.Models.Workspace workspace, Command request, CancellationToken ct)
             {
-                var directory = await _db.Directories.FindAsync(id);
+                if (!request.Parallelism.HasValue && string.IsNullOrEmpty(request.TerraformVersion))
+                {
+                    // Load parent directories from database
+                    var directory = await _db.GetDirectoryWithAncestors(workspace.DirectoryId, ct);
 
-                if (directory == null)
-                    throw new EntityNotFoundException<Directory>();
+                    workspace.TerraformVersion = !string.IsNullOrEmpty(request.TerraformVersion) ?
+                        request.TerraformVersion :
+                        GetTerraformVersion(directory);
 
-                return directory;
+                    workspace.Parallelism = request.Parallelism.HasValue ?
+                        request.Parallelism.Value :
+                        GetParallelism(directory);
+                }
+
+                return workspace;
             }
 
-            private async Task<string> GetTerraformVersion(Guid id, CancellationToken ct)
-            {
-                // Load parent directories from database
-                var directory = await _db.GetDirectoryWithAncestors(id, ct);
-                return this.GetTerraformVersion(directory);
-            }
-
-            private string GetTerraformVersion(Directory directory)
+            private string GetTerraformVersion(Domain.Models.Directory directory)
             {
                 if (!string.IsNullOrEmpty(directory.TerraformVersion))
                 {
@@ -129,6 +138,22 @@ namespace Caster.Api.Features.Workspaces
                 else
                 {
                     return _terraformOptions.DefaultVersion;
+                }
+            }
+
+            private int? GetParallelism(Domain.Models.Directory directory)
+            {
+                if (directory.Parallelism.HasValue)
+                {
+                    return directory.Parallelism;
+                }
+                else if (directory.Parent != null)
+                {
+                    return GetParallelism(directory.Parent);
+                }
+                else
+                {
+                    return null;
                 }
             }
         }

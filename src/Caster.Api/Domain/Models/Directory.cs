@@ -29,6 +29,8 @@ namespace Caster.Api.Domain.Models
 
         public string TerraformVersion { get; set; }
 
+        public int? Parallelism { get; set; }
+
         public virtual ICollection<File> Files { get; set; } = new HashSet<File>();
         public virtual ICollection<Workspace> Workspaces { get; set; } = new HashSet<Workspace>();
         public virtual ICollection<Directory> Children { get; set; } = new HashSet<Directory>(); // Only immediate children

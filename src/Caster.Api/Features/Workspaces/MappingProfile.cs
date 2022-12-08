@@ -13,7 +13,8 @@ namespace Caster.Api.Features.Workspaces
             CreateMap<Create.Command, Domain.Models.Workspace>();
             CreateMap<Edit.Command, Domain.Models.Workspace>();
             CreateMap<PartialEdit.Command, Domain.Models.Workspace>()
-                .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
+                .ForMember(dest => dest.Parallelism, opt => opt.MapFrom((src, dest) => src.Parallelism.HasValue ? src.Parallelism.Value : dest.Parallelism))
+                .ForAllOtherMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
         }
     }
 }

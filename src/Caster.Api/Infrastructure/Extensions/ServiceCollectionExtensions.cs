@@ -169,6 +169,7 @@ namespace Caster.Api.Infrastructure.Extensions
 
                 c.IncludeXmlComments(commentsFilePath);
                 c.MapType<Optional<Guid?>>(() => new OpenApiSchema { Type = "string", Format = "uuid" });
+                c.MapType<Optional<int?>>(() => new OpenApiSchema { Type = "integer", Format = "int32", Nullable = true });
                 c.MapType<JsonElement?>(() => new OpenApiSchema { Type = "object", Nullable = true });
             });
         }

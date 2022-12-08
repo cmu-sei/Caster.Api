@@ -18,6 +18,8 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Directories.Interfaces;
 using FluentValidation;
+using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared.Services;
 
 namespace Caster.Api.Features.Directories
 {
@@ -51,13 +53,22 @@ namespace Caster.Api.Features.Directories
             /// </summary>
             [DataMember]
             public string TerraformVersion { get; set; }
+
+            /// <summary>
+            /// Limit the number of concurrent operations as Terraform walks the graph. 
+            /// If not set, will traverse parents until a value is found.
+            /// If still not set, the Terraform default will be used.
+            /// </summary>
+            [DataMember]
+            public int? Parallelism { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidator<IDirectoryUpdateRequest> baseValidator)
+            public CommandValidator(IValidator<IDirectoryUpdateRequest> baseValidator, IValidationService validationService)
             {
                 Include(baseValidator);
+                RuleFor(x => x.ProjectId).ProjectExists(validationService);
             }
         }
 
@@ -85,22 +96,12 @@ namespace Caster.Api.Features.Directories
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
 
-                await ValidateProject(request.ProjectId);
-
                 var directory = _mapper.Map<Domain.Models.Directory>(request);
                 await SetPath(directory);
 
-                await _db.Directories.AddAsync(directory, cancellationToken);
+                _db.Directories.Add(directory);
                 await _db.SaveChangesAsync(cancellationToken);
                 return _mapper.Map<Directory>(directory);
-            }
-
-            private async Task ValidateProject(Guid projectId)
-            {
-                var project = await _db.Projects.FirstOrDefaultAsync(x => x.Id == projectId);
-
-                if (project == null)
-                    throw new EntityNotFoundException<Project>();
             }
 
             private async Task SetPath(Domain.Models.Directory directory)

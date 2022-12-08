@@ -209,7 +209,15 @@ namespace Caster.Api.Domain.Services
 
         public TerraformResult Apply(Workspace workspace, DataReceivedEventHandler outputHandler)
         {
-            List<string> args = new List<string> { "apply", "plan" };
+            List<string> args = new List<string> { "apply" };
+
+            if (workspace.Parallelism.HasValue)
+            {
+                args.Add($"-parallelism={workspace.Parallelism}");
+            }
+
+            args.Add("plan");
+
             return this.Run(workspace, args, outputHandler);
         }
 

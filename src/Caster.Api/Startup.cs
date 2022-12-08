@@ -115,7 +115,8 @@ namespace Caster.Api
                 // must be synced with DefaultJsonSettings.cs
                 options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
                 options.JsonSerializerOptions.Converters.Add(new JsonStringEnumMemberConverter());
-                options.JsonSerializerOptions.Converters.Add(new OptionalConverter());
+                options.JsonSerializerOptions.Converters.Add(new OptionalGuidConverter());
+                options.JsonSerializerOptions.Converters.Add(new OptionalIntConverter());
             });
 
             services.AddSignalR()
@@ -125,7 +126,8 @@ namespace Caster.Api
                     options.PayloadSerializerOptions.PropertyNameCaseInsensitive = true;
                     options.PayloadSerializerOptions.AllowTrailingCommas = true;
                     options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumMemberConverter());
-                    options.PayloadSerializerOptions.Converters.Add(new OptionalConverter());
+                    options.PayloadSerializerOptions.Converters.Add(new OptionalGuidConverter());
+                    options.PayloadSerializerOptions.Converters.Add(new OptionalIntConverter());
                 });
 
             services.AddSwagger(_authOptions);

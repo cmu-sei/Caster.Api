@@ -16,6 +16,9 @@ using System.Security.Claims;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Directories.Interfaces;
 using FluentValidation;
+using Caster.Api.Features.Shared.Services;
+using Caster.Api.Infrastructure.Extensions;
+using System.Text.Json.Serialization;
 
 namespace Caster.Api.Features.Directories
 {
@@ -24,6 +27,7 @@ namespace Caster.Api.Features.Directories
         [DataContract(Name = "PartialEditDirectoryCommand")]
         public class Command : IRequest<Directory>, IDirectoryUpdateRequest
         {
+            [JsonIgnore]
             public Guid Id { get; set; }
 
             /// <summary>
@@ -45,13 +49,22 @@ namespace Caster.Api.Features.Directories
             /// </summary>
             [DataMember]
             public string TerraformVersion { get; set; }
+
+            /// <summary>
+            /// Limit the number of concurrent operations as Terraform walks the graph. 
+            /// If not set, will traverse parents until a value is found.
+            /// If still not set, the Terraform default will be used.
+            /// </summary>
+            [DataMember]
+            public Optional<int?> Parallelism { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidator<IDirectoryUpdateRequest> baseValidator)
+            public CommandValidator(IValidator<IDirectoryUpdateRequest> baseValidator, IValidationService validationService)
             {
                 Include(baseValidator);
+                RuleFor(x => x.ParentId.Value.Value).DirectoryExists(validationService).When(x => x.ParentId.HasValue && x.ParentId.Value.HasValue);
             }
         }
 

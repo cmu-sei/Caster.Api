@@ -11,12 +11,15 @@ using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
 using System.Security.Claims;
-using System.Security.Principal;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.CodeAnalysis;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Workspaces.Interfaces;
 using FluentValidation;
+using Caster.Api.Features.Shared.Services;
+using Caster.Api.Infrastructure.Extensions;
+using System.Text.Json.Serialization;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -25,6 +28,7 @@ namespace Caster.Api.Features.Workspaces
         [DataContract(Name = "PartialEditWorkspaceCommand")]
         public class Command : IRequest<Workspace>, IWorkspaceUpdateRequest
         {
+            [JsonIgnore]
             public Guid Id { get; set; }
 
             /// <summary>
@@ -37,7 +41,7 @@ namespace Caster.Api.Features.Workspaces
             /// The Id of the Directory of the Workspace
             /// </summary>
             [DataMember]
-            public Guid? Directoryid { get; set; }
+            public Guid? DirectoryId { get; set; }
 
             /// <summary>
             /// True if this Workspace will be dynamically assigned a Host on first Run
@@ -51,13 +55,25 @@ namespace Caster.Api.Features.Workspaces
             /// </summary>
             [DataMember]
             public string TerraformVersion { get; set; }
+
+            /// <summary>
+            /// Limit the number of concurrent operations as Terraform walks the graph. 
+            /// If null, the Terraform default will be used.
+            /// </summary>
+            [DataMember]
+            public Optional<int?> Parallelism { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidator<IWorkspaceUpdateRequest> baseValidator)
+            public CommandValidator(IValidator<IWorkspaceUpdateRequest> baseValidator, IValidationService validationService)
             {
                 Include(baseValidator);
+                RuleFor(x => x.DirectoryId.Value).DirectoryExists(validationService).When(x => x.DirectoryId.HasValue);
+                RuleFor(x => x.Parallelism.Value)
+                    .GreaterThan(0)
+                    .LessThan(25)
+                    .When(x => x.Parallelism.HasValue);
             }
         }
 
@@ -85,27 +101,15 @@ namespace Caster.Api.Features.Workspaces
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
 
-                var item = await _db.Workspaces.FindAsync(request.Id);
+                var workspace = await _db.Workspaces.FindAsync(request.Id);
 
-                await ValidateEntities(item, request.Directoryid);
-
-                _mapper.Map(request, item);
-                await _db.SaveChangesAsync(cancellationToken);
-                return _mapper.Map<Workspace>(item);
-            }
-
-            private async Task ValidateEntities(Domain.Models.Workspace workspace, Guid? directoryId)
-            {
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
 
-                if (directoryId.HasValue)
-                {
-                    var directory = await _db.Directories.FindAsync(directoryId.Value);
+                _mapper.Map(request, workspace);
 
-                    if (directory == null)
-                        throw new EntityNotFoundException<Directory>();
-                }
+                await _db.SaveChangesAsync(cancellationToken);
+                return _mapper.Map<Workspace>(workspace);
             }
         }
     }

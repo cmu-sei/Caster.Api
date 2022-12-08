@@ -20,7 +20,8 @@ namespace Caster.Api.Infrastructure.Serialization
                 };
 
                 settings.Converters.Add(new JsonStringEnumMemberConverter());
-                settings.Converters.Add(new OptionalConverter());
+                settings.Converters.Add(new OptionalGuidConverter());
+                settings.Converters.Add(new OptionalIntConverter());
 
                 return settings;
             }
