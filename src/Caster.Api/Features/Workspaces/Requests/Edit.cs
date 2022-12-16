@@ -17,6 +17,8 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Workspaces.Interfaces;
 using FluentValidation;
+using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared.Services;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -51,13 +53,24 @@ namespace Caster.Api.Features.Workspaces
             /// </summary>
             [DataMember]
             public string TerraformVersion { get; set; }
+
+            /// <summary>
+            /// Limit the number of concurrent operations as Terraform walks the graph. 
+            /// If null, the Terraform default will be used.
+            /// </summary>
+            [DataMember]
+            public int? Parallelism { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidator<IWorkspaceUpdateRequest> baseValidator)
+            public CommandValidator(IValidator<IWorkspaceUpdateRequest> baseValidator, IValidationService validationService)
             {
                 Include(baseValidator);
+                RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
+                RuleFor(x => x.Parallelism)
+                    .GreaterThan(0)
+                    .LessThan(25);
             }
         }
 
@@ -87,22 +100,13 @@ namespace Caster.Api.Features.Workspaces
 
                 var workspace = await _db.Workspaces.FindAsync(request.Id);
 
-                await ValidateEntities(workspace, request.DirectoryId);
-
-                _mapper.Map(request, workspace);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<Workspace>(workspace);
-            }
-
-            private async Task ValidateEntities(Domain.Models.Workspace workspace, Guid directoryId)
-            {
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
 
-                var directory = await _db.Directories.FindAsync(directoryId);
+                _mapper.Map(request, workspace);
 
-                if (directory == null)
-                    throw new EntityNotFoundException<Directory>();
+                await _db.SaveChangesAsync();
+                return _mapper.Map<Workspace>(workspace);
             }
         }
     }

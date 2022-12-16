@@ -32,5 +32,11 @@ namespace Caster.Api.Features.Workspaces
         /// If null or empty, the default version will be used.
         /// </summary>
         public string TerraformVersion { get; set; }
+
+        /// <summary>
+        /// Limit the number of concurrent operations as Terraform walks the graph. 
+        /// If null, the Terraform default will be used.
+        /// </summary>
+        public int? Parallelism { get; set; }
     }
 }

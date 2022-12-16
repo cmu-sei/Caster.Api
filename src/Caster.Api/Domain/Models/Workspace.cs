@@ -41,6 +41,8 @@ namespace Caster.Api.Domain.Models
 
         public string TerraformVersion { get; set; }
 
+        public int? Parallelism { get; set; }
+
         public virtual ICollection<Run> Runs { get; set; } = new List<Run>();
         public virtual ICollection<File> Files { get; set; } = new List<File>();
 

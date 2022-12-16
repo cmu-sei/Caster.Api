@@ -47,10 +47,17 @@ namespace Caster.Api.Features.Directories
         public List<Design> Designs { get; set; }
 
         /// <summary>
-        /// The version of Terraform that will be set Workspaces created in this Directory.
+        /// The version of Terraform that will be set on Workspaces created in this Directory.
         /// If not set, will traverse parents until a version is found.
         /// If still not set, the default version will be used.
         /// </summary>
         public string TerraformVersion { get; set; }
+
+        /// <summary>
+        /// Limit the number of concurrent Terraform operations on Workspaces created in this Directory.
+        /// If not set, will traverse parents until a version is found.
+        /// If still not set, the Terraform default will be used.
+        /// </summary>
+        public int? Parallelism { get; set; }
     }
 }

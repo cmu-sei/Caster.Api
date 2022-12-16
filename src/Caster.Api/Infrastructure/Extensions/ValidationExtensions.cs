@@ -59,4 +59,11 @@ public static class ValidationExtensions
             .MustAsync(async (id, cancellationToken) => await validationService.VlanExists(id))
             .WithMessage("VLAN does not exist");
     }
+
+    public static IRuleBuilderOptions<T, Guid> WorkspaceExists<T>(this IRuleBuilder<T, Guid> ruleBuilder, IValidationService validationService)
+    {
+        return ruleBuilder
+            .MustAsync(async (id, cancellationToken) => await validationService.WorkspaceExists(id))
+            .WithMessage("Workspace does not exist");
+    }
 }
