@@ -61,9 +61,8 @@ namespace Caster.Api.Features.Directories
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidator<IDirectoryUpdateRequest> baseValidator, IValidationService validationService)
+            public CommandValidator(IValidationService validationService)
             {
-                Include(baseValidator);
                 RuleFor(x => x.ParentId.Value.Value).DirectoryExists(validationService).When(x => x.ParentId.HasValue && x.ParentId.Value.HasValue);
             }
         }
