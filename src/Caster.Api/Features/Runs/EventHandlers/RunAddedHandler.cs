@@ -144,6 +144,18 @@ namespace Caster.Api.Features.Runs.EventHandlers
 
             if (!isError)
             {
+                if (run.IsDestroy && (run.Targets == null || !run.Targets.Any()) && initResult.Output.Contains("azurerm"))
+                {
+                    var resources = workspace.GetState().GetResources();
+
+                    if (resources.Any(x => x.Type == "azurerm_resource_group"))
+                    {
+                        var targetResources = resources.Where(x => x.Type.StartsWith("azurerm") && x.Type != "azurerm_resource_group").ToArray();
+                        var targets = targetResources.Select(x => x.Address).ToArray();
+                        _terraformService.RemoveResources(workspace, targets, workspace.GetStatePath(workingDir, backupState: false));
+                    }
+                }
+
                 // Plan
                 var planResult = _terraformService.Plan(workspace, run.IsDestroy, run.Targets, OutputHandler);
                 isError = planResult.IsError;

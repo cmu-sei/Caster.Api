@@ -105,11 +105,33 @@ namespace Caster.Api.Features.Runs
             private async Task<Domain.Models.Run> DoWork(Command request)
             {
                 var run = _mapper.Map<Domain.Models.Run>(request);
+                // run.Targets = await GetTargets(request);
+
                 run.CreatedById = _user.GetId();
                 run.Modify(_user.GetId());
-                await _db.Runs.AddAsync(run);
+
+                _db.Runs.Add(run);
                 await _db.SaveChangesAsync();
                 return run;
+            }
+
+            private async Task<string[]> GetTargets(Command request)
+            {
+                var targets = request.Targets;
+
+                if (request.IsDestroy && request.Targets == null || !request.Targets.Any())
+                {
+                    var workspace = await _db.Workspaces.FindAsync(request.WorkspaceId);
+                    var resources = workspace.GetState().GetResources();
+
+                    if (resources.Any(x => x.Type == "azurerm_resource_group"))
+                    {
+                        var targetResources = resources.Where(x => x.Type == "azurerm_resource_group" || !x.Type.Contains("azurerm")).ToArray();
+                        targets = targetResources.Select(x => x.Address).ToArray();
+                    }
+                }
+
+                return targets;
             }
 
             private async Task ValidateWorkspace(Guid workspaceId)
