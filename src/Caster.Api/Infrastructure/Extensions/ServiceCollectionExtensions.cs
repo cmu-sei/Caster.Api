@@ -23,6 +23,7 @@ using Polly;
 using Polly.Extensions.Http;
 using Player.Vm.Api;
 using SimpleInjector;
+using Caster.Api.Infrastructure.Swashbuckle.DocumentFilters;
 
 namespace Caster.Api.Infrastructure.Extensions
 {
@@ -129,6 +130,7 @@ namespace Caster.Api.Infrastructure.Extensions
                 c.OperationFilter<DefaultResponseOperationFilter>();
                 c.SchemaFilter<AutoRestEnumSchemaFilter>();
                 c.ParameterFilter<AutoRestEnumParameterFilter>();
+                c.DocumentFilter<ValidationProblemDetailsDocumentFilter>();
 
                 c.AddSecurityDefinition("oauth2", new OpenApiSecurityScheme
                 {

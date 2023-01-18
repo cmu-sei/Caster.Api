@@ -66,9 +66,8 @@ namespace Caster.Api.Features.Workspaces
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidator<IWorkspaceUpdateRequest> baseValidator, IValidationService validationService)
+            public CommandValidator(IValidationService validationService)
             {
-                Include(baseValidator);
                 RuleFor(x => x.DirectoryId.Value).DirectoryExists(validationService).When(x => x.DirectoryId.HasValue);
                 RuleFor(x => x.Parallelism.Value)
                     .GreaterThan(0)
