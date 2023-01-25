@@ -18,6 +18,7 @@ using Caster.Api.Features.Directories.Interfaces;
 using FluentValidation;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Features.Shared.Services;
+using Caster.Api.Features.Shared.Validators;
 
 namespace Caster.Api.Features.Directories
 {
@@ -55,6 +56,20 @@ namespace Caster.Api.Features.Directories
             /// </summary>
             [DataMember]
             public int? Parallelism { get; set; }
+
+            /// <summary>
+            /// If set, the number of consecutive failed destroys in an Azure Workspace before 
+            /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
+            /// If not set, will traverse parents until a value is found.
+            /// </summary>
+            [DataMember]
+            public int? AzureDestroyFailureThreshold { get; set; }
+
+            /// <summary>
+            /// If false, ignore AzureDestroyFailureThreshold and set value to null for all new Workspaces in this Directory
+            /// </summary>
+            [DataMember]
+            public bool AzureDestroyFailureThresholdEnabled { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
@@ -62,6 +77,12 @@ namespace Caster.Api.Features.Directories
             public CommandValidator(IValidationService validationService)
             {
                 RuleFor(x => x.ParentId.Value).DirectoryExists(validationService).When(x => x.ParentId.HasValue);
+                RuleFor(x => x.Parallelism.Value)
+                    .ParalellismValidation()
+                    .When(x => x.Parallelism.HasValue);
+                RuleFor(x => x.AzureDestroyFailureThreshold.Value)
+                    .AzureThresholdValidation()
+                    .When(x => x.AzureDestroyFailureThreshold.HasValue);
             }
         }
 

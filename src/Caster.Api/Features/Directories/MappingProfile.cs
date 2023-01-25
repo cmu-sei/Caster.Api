@@ -21,6 +21,8 @@ namespace Caster.Api.Features.Directories
             CreateMap<PartialEdit.Command, Domain.Models.Directory>()
                 .ForMember(dest => dest.ParentId, opt => opt.MapFrom((src, dest) => src.ParentId.HasValue ? src.ParentId.Value : dest.ParentId))
                 .ForMember(dest => dest.Parallelism, opt => opt.MapFrom((src, dest) => src.Parallelism.HasValue ? src.Parallelism.Value : dest.Parallelism))
+                .ForMember(dest => dest.AzureDestroyFailureThreshold,
+                    opt => opt.MapFrom((src, dest) => src.AzureDestroyFailureThreshold.HasValue ? src.AzureDestroyFailureThreshold.Value : dest.AzureDestroyFailureThreshold))
                 .ForAllOtherMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
             CreateMap<ImportResult, Import.ImportDirectoryResult>()
                 .ForMember(dest => dest.LockedFiles, opt => opt.MapFrom((src) => src.LockedFiles.Select(x => x.Path)));

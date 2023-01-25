@@ -38,6 +38,10 @@ namespace Caster.Api.Features.Runs.EventHandlers
         private bool _timerComplete = false;
         private Output _output = null;
 
+        const string AZURERM_RESOURCE_GROUP = "azurerm_resource_group";
+        const string AZURERM = "azurerm";
+        const string RESOURCE_GROUP_NAME = "resource_group_name";
+
         public RunAddedHandler(
             CasterContext db,
             DbContextOptions<CasterContext> dbOptions,
@@ -144,6 +148,11 @@ namespace Caster.Api.Features.Runs.EventHandlers
 
             if (!isError)
             {
+                if (run.IsDestroy && (run.Targets == null || !run.Targets.Any()) && initResult.Output.Contains(AZURERM))
+                {
+                    await HandleAzureDestroy(workspace, workingDir);
+                }
+
                 // Plan
                 var planResult = _terraformService.Plan(workspace, run.IsDestroy, run.Targets, OutputHandler);
                 isError = planResult.IsError;
@@ -266,6 +275,77 @@ namespace Caster.Api.Features.Runs.EventHandlers
                 {
                     _timer.Start();
                 }
+            }
+        }
+
+        /// <summary>
+        /// Attempts to mitigate common issues with destroying Azure workspaces.
+        /// If previous destroys failed, remove from the state any resources that exist within an 
+        /// azurerm_resource_group managed by this workspace. They will be destroyed implicitly when destroying the workspace and
+        /// can avoid errors with destroying those resources directly.
+        /// </summary>
+        /// <param name="workspace">The terraform Workspace to operate on</param>
+        /// <param name="workingDirectory">The location of the Workspace's current working directory</param>
+        /// <returns></returns>
+        private async Task HandleAzureDestroy(Workspace workspace, string workingDirectory)
+        {
+            try
+            {
+                if (!workspace.AzureDestroyFailureThreshold.HasValue)
+                    return;
+
+                var recentRuns = await _db.Runs
+                               .Where(x => x.WorkspaceId == workspace.Id)
+                               .OrderByDescending(x => x.CreatedAt)
+                               .Skip(1)
+                               .Take(workspace.AzureDestroyFailureThreshold.Value)
+                               .ToListAsync();
+
+                if (recentRuns.Count == workspace.AzureDestroyFailureThreshold.Value &&
+                    recentRuns.Where(x => x.Status == RunStatus.Failed && x.IsDestroy).ToList().Count == workspace.AzureDestroyFailureThreshold.Value)
+                {
+                    var resources = workspace.GetState().GetResources();
+
+                    if (resources.Any(x => x.Type == AZURERM_RESOURCE_GROUP))
+                    {
+                        List<string> resourceGroupNames = resources
+                            .Where(x => x.Type == AZURERM_RESOURCE_GROUP)
+                            .Select(x => x.Name)
+                            .ToList();
+
+                        List<string> targetAddresses = new List<string>();
+                        var targetResources = resources.Where(x => x.Type.StartsWith(AZURERM) && x.Type != AZURERM_RESOURCE_GROUP).ToArray();
+
+                        // find resources that reside in a resource group managed by this workspace
+                        foreach (var targetResource in targetResources)
+                        {
+                            JsonElement resourceGroup;
+                            if (targetResource.Attributes.TryGetProperty(RESOURCE_GROUP_NAME, out resourceGroup))
+                            {
+                                if (resourceGroup.ValueKind == JsonValueKind.String && resourceGroupNames.Contains(resourceGroup.ToString()))
+                                {
+                                    targetAddresses.Add(targetResource.Address);
+                                }
+                            }
+                        }
+
+                        _terraformService.RemoveResources(workspace, targetAddresses.ToArray(), workspace.GetStatePath(workingDirectory, backupState: false));
+
+                        _output.AddLine("");
+                        _output.AddLine($"Azure workspace errors detected. Removed the following resources from state to attempt to recover:");
+
+                        foreach (var targetAddress in targetAddresses)
+                        {
+                            _output.AddLine(targetAddress);
+                        }
+
+                        _output.AddLine("");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("Error checking azure destroy state. No changes were made.", ex);
             }
         }
     }

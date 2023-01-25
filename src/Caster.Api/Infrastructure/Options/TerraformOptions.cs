@@ -15,5 +15,6 @@ namespace Caster.Api.Infrastructure.Options
         public int? GitlabGroupId { get; set; }
         public int StateRetryCount { get; set; }
         public int StateRetryIntervalSeconds { get; set; }
+        public int? AzureDestroyFailureThreshhold { get; set; }
     }
 }

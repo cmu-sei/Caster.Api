@@ -38,5 +38,11 @@ namespace Caster.Api.Features.Workspaces
         /// If null, the Terraform default will be used.
         /// </summary>
         public int? Parallelism { get; set; }
+
+        /// <summary>
+        /// If set, the number of consecutive failed destroys in an Azure Workspace before 
+        /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
+        /// </summary>
+        public int? AzureDestroyFailureThreshold { get; set; }
     }
 }

@@ -14,6 +14,8 @@ namespace Caster.Api.Features.Workspaces
             CreateMap<Edit.Command, Domain.Models.Workspace>();
             CreateMap<PartialEdit.Command, Domain.Models.Workspace>()
                 .ForMember(dest => dest.Parallelism, opt => opt.MapFrom((src, dest) => src.Parallelism.HasValue ? src.Parallelism.Value : dest.Parallelism))
+                .ForMember(dest => dest.AzureDestroyFailureThreshold,
+                    opt => opt.MapFrom((src, dest) => src.AzureDestroyFailureThreshold.HasValue ? src.AzureDestroyFailureThreshold.Value : dest.AzureDestroyFailureThreshold))
                 .ForAllOtherMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
         }
     }
