@@ -19,6 +19,7 @@ using Caster.Api.Features.Workspaces.Interfaces;
 using FluentValidation;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Features.Shared.Services;
+using Caster.Api.Features.Shared.Validators;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -60,6 +61,13 @@ namespace Caster.Api.Features.Workspaces
             /// </summary>
             [DataMember]
             public int? Parallelism { get; set; }
+
+            /// <summary>
+            /// If set, the number of consecutive failed destroys in an Azure Workspace before 
+            /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
+            /// </summary>
+            [DataMember]
+            public int? AzureDestroyFailureThreshold { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
@@ -67,9 +75,12 @@ namespace Caster.Api.Features.Workspaces
             public CommandValidator(IValidationService validationService)
             {
                 RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
-                RuleFor(x => x.Parallelism)
-                    .GreaterThan(0)
-                    .LessThan(25);
+                RuleFor(x => x.Parallelism.Value)
+                    .ParalellismValidation()
+                    .When(x => x.Parallelism.HasValue);
+                RuleFor(x => x.AzureDestroyFailureThreshold.Value)
+                    .AzureThresholdValidation()
+                    .When(x => x.AzureDestroyFailureThreshold.HasValue);
             }
         }
 

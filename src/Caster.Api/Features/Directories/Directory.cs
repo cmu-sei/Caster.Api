@@ -55,9 +55,21 @@ namespace Caster.Api.Features.Directories
 
         /// <summary>
         /// Limit the number of concurrent Terraform operations on Workspaces created in this Directory.
-        /// If not set, will traverse parents until a version is found.
+        /// If not set, will traverse parents until a value is found.
         /// If still not set, the Terraform default will be used.
         /// </summary>
         public int? Parallelism { get; set; }
+
+        /// <summary>
+        /// If set, the number of consecutive failed destroys in an Azure Workspace before 
+        /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
+        /// If not set, will traverse parents until a value is found.
+        /// </summary>
+        public int? AzureDestroyFailureThreshold { get; set; }
+
+        /// <summary>
+        /// If false, ignore AzureDestroyFailureThreshold and set value to null for all new Workspaces in this Directory
+        /// </summary>
+        public bool AzureDestroyFailureThresholdEnabled { get; set; }
     }
 }

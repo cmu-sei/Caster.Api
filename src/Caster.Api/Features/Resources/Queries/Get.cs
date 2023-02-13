@@ -17,6 +17,7 @@ using System.Linq;
 using Caster.Api.Infrastructure.Identity;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using System.Web;
 
 namespace Caster.Api.Features.Resources
 {
@@ -76,7 +77,10 @@ namespace Caster.Api.Features.Resources
 
                 var state = workspace.GetState();
                 var resources = state.GetResources();
-                var resource = resources.Where(r => r.Type == request.Type && r.Id == request.Id).FirstOrDefault();
+
+                var id = HttpUtility.UrlDecode(request.Id);
+
+                var resource = resources.Where(r => r.Type == request.Type && r.Id == id).FirstOrDefault();
                 return _mapper.Map<Resource>(resource, opts => opts.ExcludeMembers());
             }
         }

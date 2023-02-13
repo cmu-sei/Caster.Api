@@ -18,6 +18,8 @@ using FluentValidation;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Features.Shared.Validators;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -57,6 +59,13 @@ namespace Caster.Api.Features.Workspaces
             /// </summary>
             [DataMember]
             public int? Parallelism { get; set; }
+
+            /// <summary>
+            /// If set, the number of consecutive failed destroys in an Azure Workspace before 
+            /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
+            /// </summary>
+            [DataMember]
+            public int? AzureDestroyFailureThreshold { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
@@ -64,9 +73,12 @@ namespace Caster.Api.Features.Workspaces
             public CommandValidator(IValidationService validationService)
             {
                 RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
-                RuleFor(x => x.Parallelism)
-                    .GreaterThan(0)
-                    .LessThan(25);
+                RuleFor(x => x.Parallelism.Value)
+                    .ParalellismValidation()
+                    .When(x => x.Parallelism.HasValue);
+                RuleFor(x => x.AzureDestroyFailureThreshold.Value)
+                    .AzureThresholdValidation()
+                    .When(x => x.AzureDestroyFailureThreshold.HasValue);
             }
         }
 
@@ -119,6 +131,10 @@ namespace Caster.Api.Features.Workspaces
                     workspace.Parallelism = request.Parallelism.HasValue ?
                         request.Parallelism.Value :
                         GetParallelism(directory);
+
+                    workspace.AzureDestroyFailureThreshold = request.AzureDestroyFailureThreshold.HasValue ?
+                        request.AzureDestroyFailureThreshold.Value :
+                        GetAzureDestroyThreshold(directory);
                 }
 
                 return workspace;
@@ -153,6 +169,26 @@ namespace Caster.Api.Features.Workspaces
                 else
                 {
                     return null;
+                }
+            }
+
+            private int? GetAzureDestroyThreshold(Domain.Models.Directory directory)
+            {
+                if (!directory.AzureDestroyFailureThresholdEnabled)
+                {
+                    return null;
+                }
+                else if (directory.AzureDestroyFailureThreshold.HasValue)
+                {
+                    return directory.AzureDestroyFailureThreshold;
+                }
+                else if (directory.Parent != null)
+                {
+                    return GetAzureDestroyThreshold(directory.Parent);
+                }
+                else
+                {
+                    return _terraformOptions.AzureDestroyFailureThreshhold;
                 }
             }
         }

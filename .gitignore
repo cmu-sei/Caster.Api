@@ -39,3 +39,4 @@ msbuild.wrn
 **/appsettings.[Dd]evelopment.json
 **/appsettings.[Ss]taging.json
 **/appsettings.[Pp]roduction.json
+omnisharp.json

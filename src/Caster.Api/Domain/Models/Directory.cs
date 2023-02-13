@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
@@ -30,6 +31,9 @@ namespace Caster.Api.Domain.Models
         public string TerraformVersion { get; set; }
 
         public int? Parallelism { get; set; }
+
+        public bool AzureDestroyFailureThresholdEnabled { get; set; }
+        public int? AzureDestroyFailureThreshold { get; set; }
 
         public virtual ICollection<File> Files { get; set; } = new HashSet<File>();
         public virtual ICollection<Workspace> Workspaces { get; set; } = new HashSet<Workspace>();
@@ -137,6 +141,8 @@ namespace Caster.Api.Domain.Models
                 .WithMany(d => d.Children)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            builder.Property(x => x.AzureDestroyFailureThresholdEnabled)
+                .HasDefaultValue(true);
         }
     }
 }
