@@ -214,6 +214,7 @@ namespace Caster.Api
             services.AddScoped<IArchiveService, ArchiveService>();
             services.AddScoped<IImportService, ImportService>();
             services.AddScoped<IValidationService, ValidationService>();
+            services.AddScoped<IProxmoxService, ProxmoxService>();
             services.AddScoped(typeof(IDependencyAggregate<>), typeof(DependencyAggregate<>));
 
             services.AddSingleton<Caster.Api.Domain.Services.IAuthenticationService, Caster.Api.Domain.Services.AuthenticationService>();

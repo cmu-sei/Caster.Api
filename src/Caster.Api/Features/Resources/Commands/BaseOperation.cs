@@ -20,7 +20,7 @@ using System.Text.Json;
 
 namespace Caster.Api.Features.Resources
 {
-    public class BaseOperationHandler
+    public abstract class BaseOperationHandler
     {
         protected enum ResourceOperation
         {
@@ -100,48 +100,53 @@ namespace Caster.Api.Features.Resources
             {
                 TerraformResult result = null;
 
-                switch (operation)
+                errors.AddRange(await this.PreDoWork(workspace, addresses));
+
+                if (!errors.Any())
                 {
-                    case ResourceOperation.taint:
-                    case ResourceOperation.untaint:
-                        foreach (string address in addresses)
-                        {
-                            TerraformResult taintResult = null;
-
-                            switch (operation)
+                    switch (operation)
+                    {
+                        case ResourceOperation.taint:
+                        case ResourceOperation.untaint:
+                            foreach (string address in addresses)
                             {
-                                case ResourceOperation.taint:
-                                    taintResult = _terraformService.Taint(workspace, address, statePath);
-                                    break;
-                                case ResourceOperation.untaint:
-                                    taintResult = _terraformService.Untaint(workspace, address, statePath);
-                                    break;
-                            }
+                                TerraformResult taintResult = null;
 
-                            if (taintResult != null && taintResult.IsError)
-                            {
-                                errors.Add(taintResult.Output);
-                            }
-                        }
-                        break;
-                    case ResourceOperation.refresh:
-                        result = _terraformService.Refresh(workspace, statePath);
-                        break;
-                    case ResourceOperation.remove:
-                        result = _terraformService.RemoveResources(workspace, addresses, statePath);
-                        break;
-                    case ResourceOperation.import:
-                        result = _terraformService.Import(workspace, addresses[0], args, statePath);
-                        break;
-                    case ResourceOperation.output:
-                        result = _terraformService.GetOutputs(workspace, statePath);
-                        outputs = JsonDocument.Parse(result.Output).RootElement;
-                        break;
-                }
+                                switch (operation)
+                                {
+                                    case ResourceOperation.taint:
+                                        taintResult = _terraformService.Taint(workspace, address, statePath);
+                                        break;
+                                    case ResourceOperation.untaint:
+                                        taintResult = _terraformService.Untaint(workspace, address, statePath);
+                                        break;
+                                }
 
-                if (result != null && result.IsError)
-                {
-                    errors.Add(result.Output);
+                                if (taintResult != null && taintResult.IsError)
+                                {
+                                    errors.Add(taintResult.Output);
+                                }
+                            }
+                            break;
+                        case ResourceOperation.refresh:
+                            result = _terraformService.Refresh(workspace, statePath);
+                            break;
+                        case ResourceOperation.remove:
+                            result = _terraformService.RemoveResources(workspace, addresses, statePath);
+                            break;
+                        case ResourceOperation.import:
+                            result = _terraformService.Import(workspace, addresses[0], args, statePath);
+                            break;
+                        case ResourceOperation.output:
+                            result = _terraformService.GetOutputs(workspace, statePath);
+                            outputs = JsonDocument.Parse(result.Output).RootElement;
+                            break;
+                    }
+
+                    if (result != null && result.IsError)
+                    {
+                        errors.Add(result.Output);
+                    }
                 }
 
                 await workspace.RetrieveState(workingDir);
@@ -167,6 +172,11 @@ namespace Caster.Api.Features.Resources
             if (workspace == null) throw new EntityNotFoundException<Workspace>();
 
             return workspace;
+        }
+
+        protected virtual async Task<string[]> PreDoWork(Workspace workspace, string[] addresses)
+        {
+            return Array.Empty<string>();
         }
     }
 }
