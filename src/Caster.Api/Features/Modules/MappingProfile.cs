@@ -12,7 +12,8 @@ namespace Caster.Api.Features.Modules
         public MappingProfile()
         {
             CreateMap<Domain.Models.Module, Module>()
-                .ForMember(m => m.Versions, opt => opt.ExplicitExpansion());
+                .ForMember(m => m.Versions, opt => opt.ExplicitExpansion())
+                .ForMember(m => m.VersionsCount, opt => opt.ExplicitExpansion());
             CreateMap<Domain.Models.ModuleVersion, ModuleVersion>();
             CreateMap<Domain.Models.ModuleVariable, ModuleVariable>();
             CreateMap<Domain.Models.ModuleOutput, ModuleOutput>();
