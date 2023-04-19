@@ -32,6 +32,12 @@ namespace Caster.Api.Features.Modules
             public bool IncludeVersions { get; set; }
 
             /// <summary>
+            /// Whether or not to retrieve the number of versions.
+            /// </summary>
+            [DataMember]
+            public bool IncludeVersionCount { get; set; }
+
+            /// <summary>
             /// force module update by ignoring DateModified.
             /// </summary>
             [DataMember]
@@ -97,8 +103,11 @@ namespace Caster.Api.Features.Modules
                     query = query.Include(x => x.Versions);
                 }
 
-                var modules = await query.ToArrayAsync(cancellationToken);
-                return _mapper.Map<Module[]>(modules);
+                var modules = await query
+                    .ProjectTo<Module>(_mapper.ConfigurationProvider, (request.IncludeVersionCount ? (dest => dest.VersionsCount) : null))
+                    .ToArrayAsync(cancellationToken);
+
+                return modules;
             }
         }
     }

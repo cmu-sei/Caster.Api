@@ -27,6 +27,7 @@ namespace Caster.Api.Features.Modules
         public string Description { get; set; }
         public List<ModuleVersion> Versions { get; set; }
         public DateTime? DateModified { get; set; }
+        public int? VersionsCount { get; set; }
     }
 
     public class ModuleVersion
