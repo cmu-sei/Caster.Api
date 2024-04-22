@@ -35,5 +35,17 @@ namespace Caster.Api.Features.Terraform
             var result = await this._mediator.Send(new GetVersions.Query());
             return Ok(result);
         }
+
+        /// <summary>
+        /// Get the maximum allowed parallelism setting value
+        /// </summary>
+        [HttpGet("terraform/max-parallelism")]
+        [ProducesResponseType(typeof(int), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetTerraformMaxParallelism")]
+        public async Task<IActionResult> GetMaxParallelism()
+        {
+            var result = await this._mediator.Send(new GetMaxParallelism.Query());
+            return Ok(result);
+        }
     }
 }

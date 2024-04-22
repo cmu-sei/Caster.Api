@@ -21,6 +21,8 @@ using FluentValidation;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Features.Shared.Validators;
+using Microsoft.Extensions.Options;
+using Caster.Api.Infrastructure.Options;
 
 namespace Caster.Api.Features.Directories
 {
@@ -80,11 +82,11 @@ namespace Caster.Api.Features.Directories
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidationService validationService)
+            public CommandValidator(IValidationService validationService, TerraformOptions options)
             {
                 RuleFor(x => x.ProjectId).ProjectExists(validationService);
                 RuleFor(x => x.Parallelism.Value)
-                    .ParalellismValidation()
+                    .ParalellismValidation(options)
                     .When(x => x.Parallelism.HasValue);
                 RuleFor(x => x.AzureDestroyFailureThreshold.Value)
                     .AzureThresholdValidation()

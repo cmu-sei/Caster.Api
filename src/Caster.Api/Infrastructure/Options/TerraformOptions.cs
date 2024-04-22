@@ -16,5 +16,6 @@ namespace Caster.Api.Infrastructure.Options
         public int StateRetryCount { get; set; }
         public int StateRetryIntervalSeconds { get; set; }
         public int? AzureDestroyFailureThreshhold { get; set; }
+        public int MaxParallelism { get; set; }
     }
 }
