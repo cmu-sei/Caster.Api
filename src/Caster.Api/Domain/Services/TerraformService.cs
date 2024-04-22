@@ -194,6 +194,11 @@ namespace Caster.Api.Domain.Services
         {
             List<string> args = new List<string> { "plan", "-input=false", "-out=plan" };
 
+            if (workspace.Parallelism.HasValue)
+            {
+                args.Add($"-parallelism={workspace.Parallelism}");
+            }
+
             if (destroy)
             {
                 args.Add("-destroy");

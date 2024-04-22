@@ -70,11 +70,11 @@ namespace Caster.Api.Features.Workspaces
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidationService validationService)
+            public CommandValidator(IValidationService validationService, TerraformOptions options)
             {
                 RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
                 RuleFor(x => x.Parallelism.Value)
-                    .ParalellismValidation()
+                    .ParalellismValidation(options)
                     .When(x => x.Parallelism.HasValue);
                 RuleFor(x => x.AzureDestroyFailureThreshold.Value)
                     .AzureThresholdValidation()
