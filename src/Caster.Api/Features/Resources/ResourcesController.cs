@@ -27,13 +27,13 @@ namespace Caster.Api.Features.Resources
         /// <summary>
         /// Get a single resource in a Workspace.
         /// </summary>
-        [HttpGet("workspaces/{workspaceId}/resources/{id}")]
+        [HttpGet("workspaces/{workspaceId}/resources/{address}")]
         [ProducesResponseType(typeof(Resource), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "GetResource")]
-        public async Task<IActionResult> Get([FromRoute] Guid workspaceId, [FromRoute] string id, [FromQuery] Get.Query query)
+        public async Task<IActionResult> Get([FromRoute] Guid workspaceId, [FromRoute] string address, [FromQuery] Get.Query query)
         {
             query.WorkspaceId = workspaceId;
-            query.Id = id;
+            query.Address = address;
             var result = await _mediator.Send(query);
             return Ok(result);
         }

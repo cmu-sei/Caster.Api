@@ -33,17 +33,10 @@ namespace Caster.Api.Features.Resources
             public Guid WorkspaceId { get; set; }
 
             /// <summary>
-            /// Id of the Resource.
+            /// Address of the Resource
             /// </summary>
             [JsonIgnore]
-            public string Id { get; set; }
-
-            /// <summary>
-            /// Type of the Resource.
-            /// </summary>
-            [DataMember]
-            [Required]
-            public string Type { get; set; }
+            public string Address { get; set; }
         }
 
         public class Handler : IRequestHandler<Query, Resource>
@@ -70,7 +63,7 @@ namespace Caster.Api.Features.Resources
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
 
-                var workspace = await _db.Workspaces.FindAsync(request.WorkspaceId);
+                var workspace = await _db.Workspaces.FindAsync(request.WorkspaceId, cancellationToken);
 
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
@@ -78,9 +71,9 @@ namespace Caster.Api.Features.Resources
                 var state = workspace.GetState();
                 var resources = state.GetResources();
 
-                var id = HttpUtility.UrlDecode(request.Id);
+                var address = HttpUtility.UrlDecode(request.Address);
 
-                var resource = resources.Where(r => r.Type == request.Type && r.Id == id).FirstOrDefault();
+                var resource = resources.Where(r => r.Address == address).FirstOrDefault();
                 return _mapper.Map<Resource>(resource, opts => opts.ExcludeMembers());
             }
         }
