@@ -63,7 +63,7 @@ namespace Caster.Api.Features.Resources
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
 
-                var workspace = await _db.Workspaces.FindAsync(request.WorkspaceId, cancellationToken);
+                var workspace = await _db.Workspaces.FindAsync(new object[] { request.WorkspaceId }, cancellationToken);
 
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
