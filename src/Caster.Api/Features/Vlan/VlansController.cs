@@ -97,7 +97,7 @@ public class VlansController : ControllerBase
     /// <param name="id">ID of a VLAN Pool</param>
     /// <param name="command"></param>
     /// <returns></returns>
-    [HttpDelete("/vlans/pools/{id}")]
+    [HttpDelete("vlans/pools/{id}")]
     [ProducesResponseType((int)HttpStatusCode.NoContent)]
     [SwaggerOperation(OperationId = "DeletePool")]
     public async Task<IActionResult> DeletePool([FromRoute] Guid id, [FromBody] DeletePool.Command command)
@@ -228,7 +228,7 @@ public class VlansController : ControllerBase
     /// </summary>
     /// <param name="id">ID of a VLAN Partition</param>
     /// <returns></returns>
-    [HttpDelete("/vlans/partitions/{id}")]
+    [HttpDelete("vlans/partitions/{id}")]
     [ProducesResponseType((int)HttpStatusCode.NoContent)]
     [SwaggerOperation(OperationId = "DeletePartition")]
     public async Task<IActionResult> DeletePartition([FromRoute] Guid id)
