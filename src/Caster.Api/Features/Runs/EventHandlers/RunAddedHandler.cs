@@ -345,7 +345,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
             }
             catch (Exception ex)
             {
-                _logger.LogError("Error checking azure destroy state. No changes were made.", ex);
+                _logger.LogError(ex, "Error checking azure destroy state. No changes were made.");
             }
         }
     }

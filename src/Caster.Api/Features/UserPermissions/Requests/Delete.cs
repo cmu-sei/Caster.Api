@@ -20,7 +20,7 @@ namespace Caster.Api.Features.UserPermissions
 {
     public class Delete
     {
-        [DataContract(Name="DeleteUserPermissionCommand")]
+        [DataContract(Name = "DeleteUserPermissionCommand")]
         public class Command : IRequest
         {
             public Guid? Id { get; set; }
@@ -28,7 +28,7 @@ namespace Caster.Api.Features.UserPermissions
             public Guid? PermissionId { get; set; }
         }
 
-        public class Handler : AsyncRequestHandler<Command>
+        public class Handler : IRequestHandler<Command>
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
@@ -47,7 +47,7 @@ namespace Caster.Api.Features.UserPermissions
                 _user = identityResolver.GetClaimsPrincipal();
             }
 
-            protected override async Task Handle(Command request, CancellationToken cancellationToken)
+            public async Task Handle(Command request, CancellationToken cancellationToken)
             {
                 Caster.Api.Domain.Models.UserPermission entry;
 
