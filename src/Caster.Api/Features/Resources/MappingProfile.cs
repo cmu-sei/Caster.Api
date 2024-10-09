@@ -4,9 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using AutoMapper;
-using Caster.Api.Domain.Models;
+using AutoMapper.Internal;
 
 namespace Caster.Api.Features.Resources
 {
@@ -17,7 +16,7 @@ namespace Caster.Api.Features.Resources
             CreateMap<Domain.Models.Resource, Resource>();
 
             // Allows passing in of a property name to exclude it from mapping at runtime
-            ForAllMaps((typeMap, mappingExpression) =>
+            this.Internal().ForAllMaps((typeMap, mappingExpression) =>
             {
                 mappingExpression.ForAllMembers(memberOptions =>
                 {

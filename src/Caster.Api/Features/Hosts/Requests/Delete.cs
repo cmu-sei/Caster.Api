@@ -20,13 +20,13 @@ namespace Caster.Api.Features.Hosts
 {
     public class Delete
     {
-        [DataContract(Name="DeleteHostCommand")]
+        [DataContract(Name = "DeleteHostCommand")]
         public class Command : IRequest
         {
             public Guid Id { get; set; }
         }
 
-        public class Handler : AsyncRequestHandler<Command>
+        public class Handler : IRequestHandler<Command>
         {
             private readonly CasterContext _db;
             private readonly IAuthorizationService _authorizationService;
@@ -39,7 +39,7 @@ namespace Caster.Api.Features.Hosts
                 _user = identityResolver.GetClaimsPrincipal();
             }
 
-            protected override async Task Handle(Command request, CancellationToken cancellationToken)
+            public async Task Handle(Command request, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
                     throw new ForbiddenException();

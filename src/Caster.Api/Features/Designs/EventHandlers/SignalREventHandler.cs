@@ -42,7 +42,7 @@ public class DesignUpdatedSignalRHandler : DesignBaseSignalRHandler, INotificati
         await base.HandleCreateOrUpdate(
             notification.Entity,
             ProjectHubMethods.DesignUpdated,
-            notification.ModifiedProperties.Select(x => x.TitleCaseToCamelCase()).ToArray(),
+            notification.ModifiedProperties,
             cancellationToken);
     }
 }

@@ -17,7 +17,7 @@ namespace Caster.Api.Features.DesignModules;
 public class Delete
 {
     [DataContract(Name = "DeleteDesignModuleCommand")]
-    public record Command : IRequest<Unit>
+    public record Command : IRequest
     {
         [JsonIgnore]
         public Guid Id { get; set; }
@@ -27,7 +27,7 @@ public class Delete
     {
         public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
 
-        public async Task<Unit> Handle(Command request, CancellationToken cancellationToken)
+        public async Task Handle(Command request, CancellationToken cancellationToken)
         {
             if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                 throw new ForbiddenException();
@@ -39,8 +39,6 @@ public class Delete
 
             _db.DesignModules.Remove(designModule);
             await _db.SaveChangesAsync(cancellationToken);
-
-            return Unit.Value;
         }
     }
 }

@@ -23,19 +23,18 @@ namespace Caster.Api.Features.Workspaces
 {
     public class Delete
     {
-        [DataContract(Name="DeleteWorkspaceCommand")]
+        [DataContract(Name = "DeleteWorkspaceCommand")]
         public class Command : IRequest, IWorkspaceDeleteRequest
         {
             public Guid Id { get; set; }
         }
 
-        public class Handler : AsyncRequestHandler<Command>
+        public class Handler : IRequestHandler<Command>
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
             private readonly IAuthorizationService _authorizationService;
             private readonly ClaimsPrincipal _user;
-            private readonly IMediator _mediator;
             private readonly ILockService _lockService;
 
             public Handler(
@@ -52,7 +51,7 @@ namespace Caster.Api.Features.Workspaces
                 _lockService = lockService;
             }
 
-            protected override async Task Handle(Command request, CancellationToken cancellationToken)
+            public async Task Handle(Command request, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();

@@ -12,16 +12,42 @@ namespace Caster.Api.Data;
 
 public class Entry
 {
-    public Entry(EntityEntry entry)
+    public object Entity { get; set; }
+    public EntityState State { get; set; }
+    public IEnumerable<PropertyEntry> Properties { get; set; }
+    private Dictionary<string, bool> IsPropertyModified { get; set; } = new();
+
+    public Entry(EntityEntry entry, Entry oldEntry = null)
     {
         Entity = entry.Entity;
         State = entry.State;
         Properties = entry.Properties;
 
-        IsPropertyModified = new Dictionary<string, bool>();
+        ProcessOldEntry(oldEntry);
+
         foreach (var prop in Properties)
         {
             IsPropertyModified[prop.Metadata.Name] = prop.IsModified;
+        }
+    }
+
+    private void ProcessOldEntry(Entry oldEntry)
+    {
+        if (oldEntry == null) return;
+
+        if (oldEntry.State != EntityState.Unchanged && oldEntry.State != EntityState.Detached)
+        {
+            State = oldEntry.State;
+        }
+
+        var modifiedProperties = oldEntry.GetModifiedProperties();
+
+        foreach (var property in Properties)
+        {
+            if (modifiedProperties.Contains(property.Metadata.Name))
+            {
+                property.IsModified = true;
+            }
         }
     }
 
@@ -32,9 +58,4 @@ public class Entry
             .Select(x => x.Key)
             .ToArray();
     }
-
-    public object Entity { get; set; }
-    public EntityState State { get; set; }
-    public IEnumerable<PropertyEntry> Properties { get; set; }
-    private Dictionary<string, bool> IsPropertyModified { get; set; }
 }

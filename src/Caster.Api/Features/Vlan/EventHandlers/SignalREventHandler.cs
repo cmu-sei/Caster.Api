@@ -39,9 +39,7 @@ public class PoolUpdatedSignalRHandler : VlanBaseSignalRHandler<Pool>, INotifica
         await base.HandleCreateOrUpdate(
             notification.Entity,
             PoolHubMethods.Updated,
-            notification.ModifiedProperties
-                .Select(x => x.TitleCaseToCamelCase())
-                .ToArray(),
+            notification.ModifiedProperties,
             cancellationToken);
     }
 }
@@ -84,9 +82,7 @@ public class PartitionUpdatedSignalRHandler : VlanBaseSignalRHandler<Partition>,
         await base.HandleCreateOrUpdate(
             notification.Entity,
             PartitionHubMethods.Updated,
-            notification.ModifiedProperties
-                .Select(x => x.TitleCaseToCamelCase())
-                .ToArray(),
+            notification.ModifiedProperties,
             cancellationToken);
     }
 }
@@ -129,9 +125,7 @@ public class VlanUpdatedSignalRHandler : VlanBaseSignalRHandler<Vlan>, INotifica
         await base.HandleCreateOrUpdate(
             notification.Entity,
             VlanHubMethods.Updated,
-            notification.ModifiedProperties
-                .Select(x => x.TitleCaseToCamelCase())
-                .ToArray(),
+            notification.ModifiedProperties,
             cancellationToken);
     }
 }

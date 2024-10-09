@@ -44,8 +44,8 @@ namespace Caster.Api.Infrastructure.Extensions
                 .GetEntityTypes()
                     .SelectMany(t => t.GetProperties())
                         .Where(p => p.ClrType == typeof(Guid))
-                            .Select(p => builder.Entity(p.DeclaringEntityType.ClrType).Property(p.Name))
-                                .Where(p => p.Metadata.ValueGenerated == Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAdd &&
+                            .Select(p => builder.Entity(p.DeclaringType.ClrType).Property(p.Name))
+                                .Where(p => p.Metadata.ValueGenerated == ValueGenerated.OnAdd &&
                                             p.Metadata.IsPrimaryKey())
             )
             {

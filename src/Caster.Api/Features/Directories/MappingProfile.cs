@@ -23,7 +23,7 @@ namespace Caster.Api.Features.Directories
                 .ForMember(dest => dest.Parallelism, opt => opt.MapFrom((src, dest) => src.Parallelism.HasValue ? src.Parallelism.Value : dest.Parallelism))
                 .ForMember(dest => dest.AzureDestroyFailureThreshold,
                     opt => opt.MapFrom((src, dest) => src.AzureDestroyFailureThreshold.HasValue ? src.AzureDestroyFailureThreshold.Value : dest.AzureDestroyFailureThreshold))
-                .ForAllOtherMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
+                .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
             CreateMap<ImportResult, Import.ImportDirectoryResult>()
                 .ForMember(dest => dest.LockedFiles, opt => opt.MapFrom((src) => src.LockedFiles.Select(x => x.Path)));
         }

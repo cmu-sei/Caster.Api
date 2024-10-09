@@ -7,21 +7,18 @@ using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation;
 using FluentValidation.Results;
-using MediatR;
+using MediatR.Pipeline;
 
 namespace Caster.Api.Features.Shared.Behaviors;
 
-public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+public class ValidationBehavior<TRequest> : IRequestPreProcessor<TRequest>
 {
     private readonly IEnumerable<IValidator<TRequest>> _validators;
 
     public ValidationBehavior(IEnumerable<IValidator<TRequest>> validators)
       => _validators = validators;
 
-    public async Task<TResponse> Handle(
-        TRequest request,
-        CancellationToken cancellationToken,
-        RequestHandlerDelegate<TResponse> next)
+    public async Task Process(TRequest request, CancellationToken cancellationToken)
     {
         // Invoke the validators
         var failures = new List<ValidationFailure>();
@@ -45,8 +42,6 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
                 .ToDictionary(k => k.Key, v => v.Select(x => x.ErrorMessage).ToArray());
             throw new Infrastructure.Exceptions.ValidationException(errors);
         }
-
-        return await next();
     }
 }
 

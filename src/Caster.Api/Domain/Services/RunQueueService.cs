@@ -1,6 +1,7 @@
 // Copyright 2021 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
+using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,8 +9,6 @@ using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using SimpleInjector;
-using SimpleInjector.Lifestyles;
 
 namespace Caster.Api.Domain.Services
 {
@@ -20,14 +19,14 @@ namespace Caster.Api.Domain.Services
 
     public class RunQueueService : IRunQueueService
     {
-        private readonly Container _container;
+        private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<RunQueueService> _logger;
 
         private readonly BlockingCollection<INotification> _queue = new BlockingCollection<INotification>();
 
-        public RunQueueService(Container container, ILogger<RunQueueService> logger)
+        public RunQueueService(IServiceProvider serviceProvider, ILogger<RunQueueService> logger)
         {
-            _container = container;
+            _serviceProvider = serviceProvider;
             _logger = logger;
         }
 
@@ -63,9 +62,9 @@ namespace Caster.Api.Domain.Services
 
         private async Task Handle(INotification notification)
         {
-            using (var scope = AsyncScopedLifestyle.BeginScope(_container))
+            using (var scope = _serviceProvider.CreateScope())
             {
-                var mediator = scope.GetRequiredService<IMediator>();
+                var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
                 await mediator.Publish(notification);
             }
         }

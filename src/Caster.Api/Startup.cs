@@ -2,16 +2,16 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
-using AutoMapper;
+using AutoMapper.Internal;
 using Caster.Api.Data;
 using Caster.Api.Domain.Services;
 using Caster.Api.Extensions;
 using Caster.Api.Features.Files;
 using Caster.Api.Features.Shared;
+using Caster.Api.Features.Shared.Behaviors;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Hubs;
 using Caster.Api.Infrastructure.ClaimsTransformers;
@@ -23,7 +23,6 @@ using Caster.Api.Infrastructure.Mapping;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
 using FluentValidation;
-using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
@@ -38,14 +37,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SimpleInjector;
+using Microsoft.IdentityModel.JsonWebTokens;
 
 [assembly: ApiController]
 namespace Caster.Api
 {
     public class Startup
     {
-        private Container container = new SimpleInjector.Container();
         public IConfiguration Configuration { get; }
 
         private readonly AuthorizationOptions _authOptions = new AuthorizationOptions();
@@ -77,9 +75,12 @@ namespace Caster.Api
                     failureStatus: HealthStatus.Unhealthy,
                     tags: new[] { "live" });
 
-            services.AddDbContextPool<CasterContext>((serviceProvider, builder) =>
-                builder.AddInterceptors(serviceProvider.GetRequiredService<EventTransactionInterceptor>())
+            services.AddPooledDbContextFactory<CasterContext>((serviceProvider, builder) =>
+                builder.AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>())
                 .UseNpgsql(Configuration.GetConnectionString("PostgreSQL")));
+
+            services.AddScoped<CasterContextFactory>();
+            services.AddScoped(sp => sp.GetRequiredService<CasterContextFactory>().CreateDbContext());
 
             services.AddHealthChecks().AddNpgSql(Configuration.GetConnectionString("PostgreSQL"), tags: new[] { "ready", "live" });
             services.AddCors(options => options.UseConfiguredCors(Configuration.GetSection("CorsPolicy")));
@@ -134,16 +135,19 @@ namespace Caster.Api
 
             services.AddAutoMapper(cfg =>
             {
-                cfg.ForAllPropertyMaps(
+                cfg.Internal().ForAllPropertyMaps(
                     pm => pm.SourceType != null && Nullable.GetUnderlyingType(pm.SourceType) == pm.DestinationType,
                     (pm, c) => c.MapFrom<object, object, object, object>(new IgnoreNullSourceValues(), pm.SourceMember.Name));
             }, typeof(Startup));
 
-            services.AddMediator(container);
+            services.AddMediatR(cfg =>
+            {
+                cfg.RegisterServicesFromAssemblyContaining<Startup>();
+                cfg.AddOpenRequestPreProcessor(typeof(ValidationBehavior<>));
+            });
 
             // Adding Fluent Validation here so we don't get errors when requests aren't fully populated by the controller
             services.AddValidatorsFromAssemblyContaining<Startup>();
-            container.Collection.Register(typeof(FluentValidation.IValidator<>), typeof(Startup).Assembly);
 
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
@@ -199,7 +203,7 @@ namespace Caster.Api
                     };
                 });
 
-            JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
+            JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
             services.AddAuthorizationPolicy(_authOptions);
 
@@ -227,8 +231,11 @@ namespace Caster.Api
             services.AddSingleton<IPlayerSyncService, PlayerSyncService>();
             services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(x => x.GetService<IPlayerSyncService>());
 
+            services.AddSingleton<IRunQueueService, RunQueueService>();
+            services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(x => x.GetService<IRunQueueService>());
+
             services.AddScoped<IGetFileQuery, GetFileQuery>();
-            services.AddTransient<EventTransactionInterceptor>();
+            services.AddTransient<EventInterceptor>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -236,7 +243,6 @@ namespace Caster.Api
         {
             app.UsePathBase(_pathbase);
 
-            app.UseSimpleInjector(container);
             app.UseCustomExceptionHandler();
             app.UseRouting();
             app.UseCors();
@@ -269,8 +275,6 @@ namespace Caster.Api
                 c.OAuthAppName(_authOptions.ClientName);
                 c.OAuthUsePkce();
             });
-
-            container.Verify();
         }
     }
 }
