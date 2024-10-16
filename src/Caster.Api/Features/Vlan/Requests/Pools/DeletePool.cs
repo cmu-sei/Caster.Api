@@ -4,7 +4,6 @@
 using System;
 using System.Runtime.Serialization;
 using System.Security.Claims;
-using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -15,8 +14,6 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
 using System.Linq;
-using System.ComponentModel;
-using EFCore.BulkExtensions;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
@@ -49,7 +46,7 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler : AsyncRequestHandler<Command>
+        public class Handler : IRequestHandler<Command>
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
@@ -68,7 +65,7 @@ namespace Caster.Api.Features.Vlan
                 _user = identityResolver.GetClaimsPrincipal();
             }
 
-            protected override async Task Handle(Command request, CancellationToken cancellationToken)
+            public async Task Handle(Command request, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();

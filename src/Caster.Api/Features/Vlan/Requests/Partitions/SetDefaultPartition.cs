@@ -28,7 +28,7 @@ namespace Caster.Api.Features.Vlan
     public class SetDefaultPartition
     {
         [DataContract(Name = "SetDefaultPartitionCommand")]
-        public class Command : IRequest<Unit>
+        public class Command : IRequest
         {
             [JsonIgnore]
             public Guid? Id { get; set; }
@@ -61,7 +61,7 @@ namespace Caster.Api.Features.Vlan
                 _user = identityResolver.GetClaimsPrincipal();
             }
 
-            public async Task<Unit> Handle(Command command, CancellationToken cancellationToken)
+            public async Task Handle(Command command, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
@@ -96,8 +96,6 @@ namespace Caster.Api.Features.Vlan
 
                 await _db.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
-
-                return Unit.Value;
             }
         }
     }

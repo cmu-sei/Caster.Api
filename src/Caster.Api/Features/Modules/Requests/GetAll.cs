@@ -79,7 +79,11 @@ namespace Caster.Api.Features.Modules
 
                 // TODO: add handling for other repositories?
                 // get all modules from the repository and update the database
-                await _gitlabRepositoryService.GetModulesAsync(request.ForceUpdate, cancellationToken);
+                try
+                {
+                    await _gitlabRepositoryService.GetModulesAsync(request.ForceUpdate, cancellationToken);
+                }
+                catch (Exception) { }
 
                 IQueryable<Domain.Models.Module> query = _db.Modules;
 

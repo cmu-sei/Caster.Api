@@ -22,7 +22,6 @@ using Microsoft.OpenApi.Models;
 using Polly;
 using Polly.Extensions.Http;
 using Player.Vm.Api;
-using SimpleInjector;
 using Caster.Api.Infrastructure.Swashbuckle.DocumentFilters;
 
 namespace Caster.Api.Infrastructure.Extensions
@@ -180,26 +179,6 @@ namespace Caster.Api.Infrastructure.Extensions
         {
             var dataContractAttribute = currentClass.GetCustomAttribute<DataContractAttribute>();
             return dataContractAttribute != null && dataContractAttribute.Name != null ? dataContractAttribute.Name : currentClass.Name;
-        }
-
-        #endregion
-
-        #region MediatR
-
-        public static void AddMediator(this IServiceCollection services, Container container)
-        {
-            services.AddSimpleInjector(container, options =>
-            {
-                options.AddAspNetCore().AddControllerActivation();
-                options.AddHostedService<RunQueueService>();
-            });
-
-            // use SimpleInjector DI container for MediatR
-            // in order to support constrained open generics for Behaviors
-            container.BuildMediator(new[] { Assembly.GetExecutingAssembly() });
-
-            // register with simpleinjector because it uses MediatR
-            container.RegisterSingleton<IRunQueueService, RunQueueService>();
         }
 
         #endregion

@@ -22,13 +22,13 @@ namespace Caster.Api.Features.Projects
 {
     public class Delete
     {
-        [DataContract(Name="DeleteProjectCommand")]
+        [DataContract(Name = "DeleteProjectCommand")]
         public class Command : IRequest
         {
             public Guid Id { get; set; }
         }
 
-        public class Handler : AsyncRequestHandler<Command>
+        public class Handler : IRequestHandler<Command>
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
@@ -47,7 +47,7 @@ namespace Caster.Api.Features.Projects
                 _user = identityResolver.GetClaimsPrincipal();
             }
 
-            protected override async Task Handle(Command request, CancellationToken cancellationToken)
+            public async Task Handle(Command request, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
                     throw new ForbiddenException();
