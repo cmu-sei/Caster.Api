@@ -7,21 +7,16 @@ using MediatR;
 using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
-using System.Linq;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Files
 {
     public class GetAll
     {
-        [DataContract(Name="GetFilesQuery")]
+        [DataContract(Name = "GetFilesQuery")]
         public class Query : IRequest<File[]>
         {
             /// <summary>
@@ -37,36 +32,19 @@ namespace Caster.Api.Features.Files
             public bool IncludeDeleted { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, File[]>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, File[]>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<File[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<File[]> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                return await _db.Files
+                return await dbContext.Files
                     .GetAll(
-                        configurationProvider: _mapper.ConfigurationProvider,
+                        configurationProvider: mapper.ConfigurationProvider,
                         includeDeleted: request.IncludeDeleted,
                         includeContent: request.IncludeContent)
-                    .ToArrayAsync();
+                    .ToArrayAsync(cancellationToken);
             }
         }
     }

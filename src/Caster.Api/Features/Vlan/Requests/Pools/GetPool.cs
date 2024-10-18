@@ -4,19 +4,17 @@
 using System;
 using System.Linq;
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
+using Caster.Api.Domain.Models;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Vlan
 {
@@ -32,34 +30,17 @@ namespace Caster.Api.Features.Vlan
             public Guid PoolId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Pool>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Pool>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ViewVLANs], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Pool> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Pool> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var pool = await _db.Pools
+                var pool = await dbContext.Pools
                     .Where(p => p.Id == request.PoolId)
-                    .ProjectTo<Pool>(_mapper.ConfigurationProvider)
-                    .FirstOrDefaultAsync();
+                    .ProjectTo<Pool>(mapper.ConfigurationProvider)
+                    .FirstOrDefaultAsync(cancellationToken);
 
                 if (pool == null)
                     throw new EntityNotFoundException<Pool>();

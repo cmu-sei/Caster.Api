@@ -45,15 +45,15 @@ namespace Caster.Api.Infrastructure.Extensions
 
         private static void ProcessSeedDataOptions(SeedDataOptions options, CasterContext context)
         {
-            if (options.Permissions?.Any() == true)
+            if (options.Roles?.Any() == true)
             {
-                var dbPermissions = context.Permissions.ToList();
+                var dbRoles = context.SystemRoles.ToHashSet();
 
-                foreach (Permission permission in options.Permissions)
+                foreach (var role in options.Roles)
                 {
-                    if (!dbPermissions.Where(x => x.Key == permission.Key && x.Value == permission.Value).Any())
+                    if (!dbRoles.Any(x => x.Name == role.Name))
                     {
-                        context.Permissions.Add(permission);
+                        context.SystemRoles.Add(role);
                     }
                 }
 
@@ -62,12 +62,27 @@ namespace Caster.Api.Infrastructure.Extensions
 
             if (options.Users?.Any() == true)
             {
-                var dbUsers = context.Users.ToList();
+                var dbUserIds = context.Users.Select(x => x.Id).ToHashSet();
 
                 foreach (User user in options.Users)
                 {
-                    if (!dbUsers.Where(x => x.Id == user.Id).Any())
+                    if (!dbUserIds.Contains(user.Id))
                     {
+                        if (user.Role?.Id == Guid.Empty && !string.IsNullOrEmpty(user.Role.Name))
+                        {
+                            var role = context.SystemRoles.FirstOrDefault(x => x.Name == user.Role.Name);
+                            if (role != null)
+                            {
+                                user.RoleId = role.Id;
+                                user.Role = role;
+                            }
+                            else
+                            {
+                                user.RoleId = null;
+                                user.Role = null;
+                            }
+                        }
+
                         context.Users.Add(user);
                     }
                 }
@@ -75,15 +90,15 @@ namespace Caster.Api.Infrastructure.Extensions
                 context.SaveChanges();
             }
 
-            if (options.UserPermissions?.Any() == true)
+            if (options.Groups?.Any() == true)
             {
-                var dbUserPermissions = context.UserPermissions.ToList();
+                var dbGroup = context.Groups.ToHashSet();
 
-                foreach (UserPermission userPermission in options.UserPermissions)
+                foreach (var group in options.Groups)
                 {
-                    if (!dbUserPermissions.Where(x => x.UserId == userPermission.UserId && x.PermissionId == userPermission.PermissionId).Any())
+                    if (!dbGroup.Any(x => x.Name == group.Name))
                     {
-                        context.UserPermissions.Add(userPermission);
+                        context.Groups.Add(group);
                     }
                 }
 

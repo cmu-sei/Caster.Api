@@ -11,18 +11,15 @@ using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Files
 {
     public class GetFileVersions
     {
-        [DataContract(Name="GetFileVersionsQuery")]
+        [DataContract(Name = "GetFileVersionsQuery")]
         public class Query : IRequest<FileVersion[]>
         {
             /// <summary>
@@ -32,34 +29,17 @@ namespace Caster.Api.Features.Files
             public Guid FileId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, FileVersion[]>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbcontext) : BaseHandler<Query, FileVersion[]>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.File>(request.FileId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<FileVersion[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal() as ClaimsPrincipal;
-            }
-
-            public async Task<FileVersion[]> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var fileVersions = await _db.FileVersions
+                var fileVersions = await dbcontext.FileVersions
                     .Where(fv => fv.FileId == request.FileId)
-                    .ProjectTo<FileVersion>(_mapper.ConfigurationProvider)
-                    .ToArrayAsync();
+                    .ProjectTo<FileVersion>(mapper.ConfigurationProvider)
+                    .ToArrayAsync(cancellationToken);
 
                 return fileVersions;
             }

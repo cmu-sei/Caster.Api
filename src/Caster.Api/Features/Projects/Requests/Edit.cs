@@ -9,19 +9,15 @@ using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Projects
 {
     public class Edit
     {
-        [DataContract(Name="EditProjectCommand")]
+        [DataContract(Name = "EditProjectCommand")]
         public class Command : IRequest<Project>
         {
             public Guid Id { get; set; }
@@ -33,38 +29,21 @@ namespace Caster.Api.Features.Projects
             public string Name { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Project>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Project>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Project> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Project> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var project = await _db.Projects.FindAsync(request.Id);
+                var project = await dbContext.Projects.FindAsync([request.Id], cancellationToken);
 
                 if (project == null)
                     throw new EntityNotFoundException<Project>();
 
-                _mapper.Map(request, project);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<Project>(project);
+                mapper.Map(request, project);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<Project>(project);
             }
         }
     }

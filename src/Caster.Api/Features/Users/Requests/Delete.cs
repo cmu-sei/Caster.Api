@@ -2,19 +2,15 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Domain.Models;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Users
 {
@@ -26,37 +22,20 @@ namespace Caster.Api.Features.Users
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ManageUsers], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
+                var user = await dbContext.Users.FindAsync([request.Id], cancellationToken);
 
-            public async Task Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var entry = _db.Users.FirstOrDefault(e => e.Id == request.Id);
-
-                if (entry == null)
+                if (user == null)
                     throw new EntityNotFoundException<User>();
 
-                _db.Users.Remove(entry);
-                await _db.SaveChangesAsync(cancellationToken);
+                dbContext.Users.Remove(user);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
     }

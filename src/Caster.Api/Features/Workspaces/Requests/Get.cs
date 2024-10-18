@@ -11,17 +11,15 @@ using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Workspaces
 {
     public class Get
     {
-        [DataContract(Name="GetWorkspaceQuery")]
+        [DataContract(Name = "GetWorkspaceQuery")]
         public class Query : IRequest<Workspace>
         {
             /// <summary>
@@ -31,32 +29,15 @@ namespace Caster.Api.Features.Workspaces
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Workspace>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Workspace>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Workspace> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Workspace> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var workspace = await _db.Workspaces
-                    .ProjectTo<Workspace>(_mapper.ConfigurationProvider)
+                var workspace = await dbContext.Workspaces
+                    .ProjectTo<Workspace>(mapper.ConfigurationProvider)
                     .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken);
 
                 if (workspace == null)

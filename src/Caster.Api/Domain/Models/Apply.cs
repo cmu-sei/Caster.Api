@@ -8,7 +8,7 @@ using System.Runtime.Serialization;
 
 namespace Caster.Api.Domain.Models
 {
-    public class Apply
+    public class Apply : IEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

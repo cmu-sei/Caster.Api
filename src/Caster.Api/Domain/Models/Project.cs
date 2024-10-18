@@ -8,7 +8,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Caster.Api.Domain.Models
 {
-    public class Project
+    public class Project : IEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -20,6 +20,8 @@ namespace Caster.Api.Domain.Models
 
         public Guid? PartitionId { get; set; }
         public virtual Partition Partition { get; set; }
+
+        public virtual ICollection<ProjectMembership> Memberships { get; set; } = new List<ProjectMembership>();
 
         public Project() { }
 

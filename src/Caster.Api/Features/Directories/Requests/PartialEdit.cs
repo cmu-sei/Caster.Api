@@ -21,6 +21,7 @@ using Caster.Api.Infrastructure.Extensions;
 using System.Text.Json.Serialization;
 using Caster.Api.Features.Shared.Validators;
 using Caster.Api.Infrastructure.Options;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Directories
 {
@@ -89,22 +90,14 @@ namespace Caster.Api.Features.Directories
             }
         }
 
-        public class Handler : BaseEdit.Handler, IRequestHandler<Command, Directory>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext db) : BaseEdit.Handler<Command, Directory>(db)
         {
-            protected readonly IAuthorizationService _authorizationService;
-            protected readonly ClaimsPrincipal _user;
-            public Handler(CasterContext db, IMapper mapper, IAuthorizationService authorizationService, IIdentityResolver identityResolver) : base(db, mapper)
-            {
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.Directory>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-            public async Task<Directory> Handle(Command request, CancellationToken cancellationToken)
+            public override async Task<Directory> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var directory = await _db.Directories.FindAsync(request.Id);
+                var directory = await dbContext.Directories.FindAsync(request.Id);
 
                 if (directory == null)
                     throw new EntityNotFoundException<Directory>();
@@ -114,10 +107,10 @@ namespace Caster.Api.Features.Directories
                     await UpdatePaths(directory, request.ParentId.Value);
                 }
 
-                _mapper.Map(request, directory);
+                mapper.Map(request, directory);
 
-                await _db.SaveChangesAsync();
-                return _mapper.Map<Directory>(directory);
+                await dbContext.SaveChangesAsync();
+                return mapper.Map<Directory>(directory);
             }
         }
     }

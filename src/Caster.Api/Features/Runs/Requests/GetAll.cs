@@ -10,18 +10,15 @@ using Caster.Api.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Runs
 {
     public class GetAll
     {
-        [DataContract(Name="GetAllRunsQuery")]
+        [DataContract(Name = "GetAllRunsQuery")]
         public class Query : RunQuery, IRequest<Run[]>
         {
             /// <summary>
@@ -35,34 +32,17 @@ namespace Caster.Api.Features.Runs
             public int? Limit { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Run[]>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Run[]>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ViewProjects, SystemPermission.ViewWorkspaces], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Run[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Run[]> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var query = _db.Runs
+                var query = dbContext.Runs
                     .OrderByDescending(r => r.CreatedAt)
                     .Limit(request.Limit)
-                    .Expand(_mapper.ConfigurationProvider,
+                    .Expand(mapper.ConfigurationProvider,
                             includePlan: request.IncludePlan,
                             includeApply: request.IncludeApply);
 
@@ -71,7 +51,7 @@ namespace Caster.Api.Features.Runs
                     query = query.Where(x => RunHelpers.GetActiveStatuses().Contains(x.Status));
                 }
 
-                return await query.ToArrayAsync();
+                return await query.ToArrayAsync(cancellationToken);
             }
         }
     }

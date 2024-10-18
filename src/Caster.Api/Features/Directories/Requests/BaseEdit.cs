@@ -8,20 +8,21 @@ using AutoMapper;
 using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Data.Extensions;
+using Caster.Api.Features.Shared;
+using MediatR;
 
 namespace Caster.Api.Features.Directories
 {
     public abstract class BaseEdit
     {
-        public abstract class Handler
+        public abstract class Handler<TRequest, TResponse> : BaseHandler<TRequest, TResponse>
+        where TRequest : IRequest<TResponse>
         {
-            protected readonly CasterContext _db;
-            protected readonly IMapper _mapper;
+            protected readonly CasterContext dbContext;
 
-            public Handler(CasterContext db, IMapper mapper)
+            public Handler(CasterContext db)
             {
-                _db = db;
-                _mapper = mapper;
+                dbContext = db;
             }
 
             protected async Task UpdatePaths(Domain.Models.Directory directory, Guid? parentId)
@@ -31,7 +32,7 @@ namespace Caster.Api.Features.Directories
 
                 if (parentId.HasValue)
                 {
-                    var parentDirectory = await _db.Directories.FindAsync(parentId);
+                    var parentDirectory = await dbContext.Directories.FindAsync(parentId);
 
                     if (parentDirectory == null)
                         throw new EntityNotFoundException<Directory>("Parent Directory Not Found");
@@ -39,11 +40,11 @@ namespace Caster.Api.Features.Directories
                     parentPath = parentDirectory.Path;
                 }
 
-                var descendants = await _db.Directories.GetChildren(directory, false).ToListAsync();
+                var descendants = await dbContext.Directories.GetChildren(directory, false).ToListAsync();
 
                 directory.SetPath(parentPath);
 
-                foreach(var desc in descendants)
+                foreach (var desc in descendants)
                 {
                     desc.Path = desc.Path.Replace(oldPath, directory.Path);
                 }

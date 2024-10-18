@@ -9,22 +9,20 @@ using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.Authorization;
-using System.Security.Claims;
-using System.Security.Principal;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Hosts
 {
     public class Edit
     {
-        [DataContract(Name="EditHostCommand")]
+        [DataContract(Name = "EditHostCommand")]
         public class Command : IRequest<Host>
         {
             public Guid Id { get; set; }
 
-                        /// <summary>
+            /// <summary>
             /// Name of the Host
             /// </summary>
             [DataMember]
@@ -61,34 +59,21 @@ namespace Caster.Api.Features.Hosts
             public Guid? ProjectId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Host>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Host>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ManageHosts], cancellationToken);
 
-            public Handler(CasterContext db, IMapper mapper, IAuthorizationService authorizationService, IIdentityResolver identityResolver)
+            public override async Task<Host> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Host> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var host = await _db.Hosts.FindAsync(request.Id);
+                var host = await dbContext.Hosts.FindAsync([request.Id], cancellationToken);
 
                 if (host == null)
                     throw new EntityNotFoundException<Host>();
 
-                _mapper.Map(request, host);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<Host>(host);
+                mapper.Map(request, host);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<Host>(host);
             }
         }
     }

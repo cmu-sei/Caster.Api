@@ -6,54 +6,34 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Domain.Services;
-using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Features.Files.Interfaces;
-using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Authorization;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Files
 {
     public class AdminLock
     {
-        [DataContract(Name="AdministrativelyLockFileCommand")]
+        [DataContract(Name = "AdministrativelyLockFileCommand")]
         public class Command : FileMetadataUpdateRequest, IRequest<File>, IFileCommand
         {
             public Guid Id { get; set; }
         }
 
-        public class Handler : FileCommandHandler, IRequestHandler<Command, File>
+        public class Handler(
+            CasterContext dbContext,
+            ILockService lockService,
+            IGetFileQuery fileQuery,
+            ICasterAuthorizationService authorizationService) : FileCommandHandler<Command, File>(dbContext, lockService, fileQuery, authorizationService)
         {
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                ILockService lockService,
-                IGetFileQuery fileQuery)
-                : base(db, mapper, authorizationService, identityResolver, lockService, fileQuery) {}
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await AuthorizationService.Authorize<Domain.Models.File>(request.Id, [SystemPermission.LockFiles], [ProjectPermission.LockFiles], cancellationToken);
 
-            public async Task<File> Handle(Command request, CancellationToken cancellationToken)
+            protected override async Task PerformOperation(Domain.Models.File file, CancellationToken cancellationToken)
             {
-                return await base.Handle(request, cancellationToken);
-            }
-
-            protected override async Task PerformOperation(Domain.Models.File file)
-            {
-                file.AdministrativelyLock((await _identityResolver.IsAdminAsync()));
-            }
-
-            protected override async Task Authorize()
-            {
-                if (!(await _authorizationService.AuthorizeAsync(
-                    _user, null, new FullRightsRequirement())).Succeeded)
-                {
-                    throw new ForbiddenException();
-                }
+                file.AdministrativelyLock(await CanLock(file.Id, cancellationToken));
             }
         }
     }

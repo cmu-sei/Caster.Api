@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Caster.Api.Infrastructure.Authorization;
 using System;
 using Microsoft.AspNetCore.Authorization;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Infrastructure.Extensions
 {
@@ -19,19 +20,10 @@ namespace Caster.Api.Infrastructure.Extensions
                 Array.ForEach(authOptions.AuthorizationScope.Split(' '), x => policyBuilder.RequireClaim("scope", x));
 
                 options.DefaultPolicy = policyBuilder.Build();
-
-                options.AddPolicy(nameof(CasterClaimTypes.SystemAdmin), policy => policy.Requirements.Add(new FullRightsRequirement()));
-                options.AddPolicy(nameof(CasterClaimTypes.ContentDeveloper), policy => policy.Requirements.Add(new ContentDeveloperRequirement()));
-                options.AddPolicy(nameof(CasterClaimTypes.BaseUser), policy => policy.Requirements.Add(new BaseUserRequirement()));
-                options.AddPolicy(nameof(CasterClaimTypes.Operator), policy => policy.Requirements.Add(new OperatorRequirement()));
             });
 
-            services.AddSingleton<IAuthorizationHandler, FullRightsHandler>();
-            services.AddSingleton<IAuthorizationHandler, ContentDeveloperHandler>();
-            services.AddSingleton<IAuthorizationHandler, OperatorHandler>();
-            services.AddSingleton<IAuthorizationHandler, BaseUserHandler>();
+            services.AddSingleton<IAuthorizationHandler, SystemPermissionsHandler>();
+            services.AddSingleton<IAuthorizationHandler, ProjectPermissionsHandler>();
         }
-
-
     }
 }

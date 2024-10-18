@@ -5,19 +5,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Domain.Services;
-using System;
-using Caster.Api.Data;
-using AutoMapper;
-using System.Text.Json.Serialization;
-using System.Collections.Generic;
 using Caster.Api.Infrastructure.Options;
 using System.Linq;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Terraform
 {
@@ -28,28 +20,24 @@ namespace Caster.Api.Features.Terraform
         {
         }
 
-        public class Handler : IRequestHandler<Query, int>
+        public class Handler(
+            ICasterAuthorizationService authorizationService, TerraformOptions terraformOptions) : BaseHandler<Query, int>
         {
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly TerraformOptions _terraformOptions;
-
-            public Handler(
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                TerraformOptions terraformOptions)
+            public async override Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _terraformOptions = terraformOptions;
+                if (authorizationService.GetAuthorizedProjectIds().Any())
+                {
+                    return true;
+                }
+                else
+                {
+                    return await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken);
+                }
             }
 
-            public async Task<int> Handle(Query request, CancellationToken cancellationToken)
+            public override Task<int> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                return _terraformOptions.MaxParallelism;
+                return Task.FromResult(terraformOptions.MaxParallelism);
             }
         }
     }

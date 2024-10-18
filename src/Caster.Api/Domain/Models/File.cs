@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class File
+    public class File : IEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -19,7 +19,7 @@ namespace Caster.Api.Domain.Models
 
         public string Name { get; set; }
 
-        public Guid DirectoryId { get; private set;}
+        public Guid DirectoryId { get; private set; }
         public virtual Directory Directory { get; set; }
 
         public Guid? WorkspaceId { get; private set; }
@@ -31,7 +31,7 @@ namespace Caster.Api.Domain.Models
         public Guid? LockedById { get; private set; }
         public virtual User LockedBy { get; private set; }
 
-        public string Content { get; set;}
+        public string Content { get; set; }
 
         public DateTime? DateSaved { get; private set; }
 
@@ -62,11 +62,11 @@ namespace Caster.Api.Domain.Models
             this.FileVersions.Add(fileVersion);
         }
 
-        public void Save(Guid userId, bool isAdmin, bool bypassLock = false)
+        public void Save(Guid userId, bool canLock, bool bypassLock = false)
         {
             if (!bypassLock)
             {
-                if (this.AdministrativelyLocked && !isAdmin)
+                if (this.AdministrativelyLocked && !canLock)
                     throw new FileAdminLockedException();
 
                 this.VerifyLock(userId);
@@ -78,17 +78,17 @@ namespace Caster.Api.Domain.Models
             this.FileVersions.Add(new FileVersion(this));
         }
 
-        public void Delete(bool isAdmin)
+        public void Delete(bool canLock)
         {
-            if (this.AdministrativelyLocked && !isAdmin)
+            if (this.AdministrativelyLocked && !canLock)
                 throw new FileAdminLockedException();
 
             this.IsDeleted = true;
         }
 
-        public void Lock(Guid userId, bool isAdmin)
+        public void Lock(Guid userId, bool canLock)
         {
-            if (this.AdministrativelyLocked && !isAdmin)
+            if (this.AdministrativelyLocked && !canLock)
                 throw new FileAdminLockedException();
 
             this.VerifyLock(userId, invalidOnUnlocked: false);
@@ -101,23 +101,23 @@ namespace Caster.Api.Domain.Models
             this.LockedById = null;
         }
 
-        public void AdministrativelyLock(bool isAdmin)
+        public void AdministrativelyLock(bool canLock)
         {
-            if (!isAdmin)
+            if (!canLock)
                 throw new FileInsufficientPrivilegesException();
 
             this.AdministrativelyLocked = true;
         }
 
-        public void AdministrativelyUnlock(bool isAdmin)
+        public void AdministrativelyUnlock(bool canLock)
         {
-            if (!isAdmin)
+            if (!canLock)
                 throw new FileInsufficientPrivilegesException();
 
             this.AdministrativelyLocked = false;
         }
 
-        public bool CanLock(Guid userId, bool isAdmin)
+        public bool CanLock(Guid userId, bool canLock)
         {
             if (this.LockedById.HasValue)
             {
@@ -131,7 +131,7 @@ namespace Caster.Api.Domain.Models
                 }
             }
 
-            if (this.AdministrativelyLocked && !isAdmin)
+            if (this.AdministrativelyLocked && !canLock)
             {
                 return false;
             }

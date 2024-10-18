@@ -14,7 +14,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models;
 
-public class ModuleVersion
+public class ModuleVersion : IEntity
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

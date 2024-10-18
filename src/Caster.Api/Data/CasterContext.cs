@@ -28,9 +28,7 @@ public partial class CasterContext : DbContext
     public DbSet<RemovedResource> RemovedResources { get; set; }
     public DbSet<Module> Modules { get; set; }
     public DbSet<ModuleVersion> ModuleVersions { get; set; }
-    public DbSet<Permission> Permissions { get; set; }
     public DbSet<User> Users { get; set; }
-    public DbSet<UserPermission> UserPermissions { get; set; }
     public DbSet<Host> Hosts { get; set; }
     public DbSet<HostMachine> HostMachines { get; set; }
     public DbSet<Design> Designs { get; set; }
@@ -39,6 +37,11 @@ public partial class CasterContext : DbContext
     public DbSet<Vlan> Vlans { get; set; }
     public DbSet<Partition> Partitions { get; set; }
     public DbSet<Pool> Pools { get; set; }
+    public DbSet<SystemRole> SystemRoles { get; set; }
+    public DbSet<ProjectRole> ProjectRoles { get; set; }
+    public DbSet<ProjectMembership> ProjectMemberships { get; set; }
+    public DbSet<Group> Groups { get; set; }
+    public DbSet<GroupMembership> GroupMemberships { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
