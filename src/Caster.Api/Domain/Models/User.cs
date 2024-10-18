@@ -15,6 +15,10 @@ namespace Caster.Api.Domain.Models
         [Key]
         public Guid Id { get; set; }
         public string Name { get; set; }
+
+        public Guid? RoleId { get; set; }
+        public virtual SystemRole Role { get; set; }
+
         public ICollection<UserPermission> UserPermissions { get; set; } = new List<UserPermission>();
     }
 }

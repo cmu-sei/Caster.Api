@@ -15,12 +15,12 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
 
-namespace Caster.Api.Features.Users
+namespace Caster.Api.Features.SystemRoles
 {
     public class Create
     {
-        [DataContract(Name = "CreateUserCommand")]
-        public class Command : IRequest<User>
+        [DataContract(Name = "CreateSystemRoleCommand")]
+        public class Command : IRequest<SystemRole>
         {
             [DataMember]
             public Guid Id { get; set; }
@@ -33,10 +33,10 @@ namespace Caster.Api.Features.Users
             public bool AllPermissions { get; set; }
 
             [DataMember]
-            public string RoleId { get; set; }
+            public Domain.Models.SystemPermissions[] Permissions { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, User>
+        public class Handler : IRequestHandler<Command, SystemRole>
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
@@ -55,15 +55,15 @@ namespace Caster.Api.Features.Users
                 _user = identityResolver.GetClaimsPrincipal();
             }
 
-            public async Task<User> Handle(Command request, CancellationToken cancellationToken)
+            public async Task<SystemRole> Handle(Command request, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
                     throw new ForbiddenException();
 
-                var user = _mapper.Map<Domain.Models.User>(request);
-                await _db.Users.AddAsync(user);
+                var SystemRole = _mapper.Map<Domain.Models.SystemRole>(request);
+                await _db.SystemRoles.AddAsync(SystemRole);
                 await _db.SaveChangesAsync();
-                return _mapper.Map<User>(user);
+                return _mapper.Map<SystemRole>(SystemRole);
             }
         }
     }

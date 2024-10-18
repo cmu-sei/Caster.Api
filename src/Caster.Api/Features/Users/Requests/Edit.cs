@@ -19,7 +19,7 @@ namespace Caster.Api.Features.Users
 {
     public class Edit
     {
-        [DataContract(Name="EditUserCommand")]
+        [DataContract(Name = "EditUserCommand")]
         public class Command : IRequest<User>
         {
             [DataMember]
@@ -27,6 +27,9 @@ namespace Caster.Api.Features.Users
 
             [DataMember]
             public string Name { get; set; }
+
+            [DataMember]
+            public string RoleId { get; set; }
         }
 
         public class Handler : IRequestHandler<Command, User>

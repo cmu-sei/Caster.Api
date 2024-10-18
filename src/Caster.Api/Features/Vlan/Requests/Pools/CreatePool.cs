@@ -61,7 +61,7 @@ namespace Caster.Api.Features.Vlan
 
             public async Task<Pool> Handle(Command request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                if (!(await _authorizationService.AuthorizeAsync(_user, null, new PermissionsRequirement(Domain.Models.SystemPermissions.EditVLANs))).Succeeded)
                     throw new ForbiddenException();
 
                 var pool = _mapper.Map<Domain.Models.Pool>(request);

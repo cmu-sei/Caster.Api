@@ -3,6 +3,7 @@ using System;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Caster.Api.Data.Migrations
 {
     [DbContext(typeof(CasterContext))]
-    partial class CasterContextModelSnapshot : ModelSnapshot
+    [Migration("20241016182715_Added_SystemRole")]
+    partial class Added_SystemRole
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -619,10 +622,6 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
-                    b.Property<bool>("AllPermissions")
-                        .HasColumnType("boolean")
-                        .HasColumnName("all_permissions");
-
                     b.Property<string>("Description")
                         .HasColumnType("text")
                         .HasColumnName("description");
@@ -637,7 +636,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("system_roles");
+                    b.ToTable("system_role");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.User", b =>

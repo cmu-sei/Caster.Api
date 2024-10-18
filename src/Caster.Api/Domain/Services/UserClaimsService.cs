@@ -14,6 +14,7 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Options;
+using System.Text.Json;
 
 namespace Caster.Api.Domain.Services
 {
@@ -54,6 +55,7 @@ namespace Caster.Api.Domain.Services
                 if (user != null)
                 {
                     claims.AddRange(await GetUserClaims(userId));
+                    claims.AddRange(await GetPermissionClaims(userId, principal));
 
                     if (_options.EnableCaching)
                     {
@@ -173,6 +175,91 @@ namespace Caster.Api.Domain.Services
             }
 
             return claims;
+        }
+
+        private async Task<IEnumerable<Claim>> GetPermissionClaims(Guid userId, ClaimsPrincipal principal)
+        {
+            List<Claim> claims = new();
+
+            var tokenRoleNames = this.GetRolesFromToken(principal).Select(x => x.ToLower());
+
+            var roles = await _context.SystemRoles
+                .Where(x => tokenRoleNames.Contains(x.Name.ToLower()))
+                .ToListAsync();
+
+            var userRole = await _context.Users
+                .Where(x => x.Id == userId)
+                .Select(x => x.Role)
+                .FirstOrDefaultAsync();
+
+            if (userRole != null)
+            {
+                roles.Add(userRole);
+            }
+
+            roles = roles.Distinct().ToList();
+
+            foreach (var role in roles)
+            {
+                List<string> permissions;
+
+                if (role.AllPermissions)
+                {
+                    permissions = Enum.GetNames(typeof(SystemPermissions)).ToList();
+                }
+                else
+                {
+                    permissions = role.Permissions.Select(x => x.ToString()).ToList();
+                }
+
+                foreach (var permission in permissions)
+                {
+                    if (!claims.Any(x => x.Type == "Permission" && x.Value == permission))
+                    {
+                        claims.Add(new Claim("Permission", permission));
+                    };
+                }
+            }
+
+            return claims;
+        }
+
+        private List<string> GetRolesFromToken(ClaimsPrincipal principal)
+        {
+            List<string> roleNames = new();
+            var tokenClaim = principal.Claims.Where(x => x.Type == _options.RoleClaimType).FirstOrDefault();
+
+            if (tokenClaim.ValueType == "String")
+            {
+                roleNames.Add(tokenClaim.Value);
+            }
+            else if (tokenClaim.ValueType == "JSON")
+            {
+                try
+                {
+                    using (JsonDocument doc = JsonDocument.Parse(tokenClaim.Value))
+                    {
+                        if (doc.RootElement.TryGetProperty(_options.RoleArrayPropertyName, out JsonElement propertyElement) &&
+                            propertyElement.ValueKind == JsonValueKind.Array)
+                        {
+                            List<string> result = new List<string>();
+                            foreach (var item in propertyElement.EnumerateArray())
+                            {
+                                if (item.ValueKind == JsonValueKind.String)
+                                {
+                                    roleNames.Add(item.GetString());
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Handle invalid JSON format
+                }
+            }
+
+            return roleNames;
         }
 
         private void addNewClaims(ClaimsIdentity identity, List<Claim> claims)

@@ -39,6 +39,7 @@ public partial class CasterContext : DbContext
     public DbSet<Vlan> Vlans { get; set; }
     public DbSet<Partition> Partitions { get; set; }
     public DbSet<Pool> Pools { get; set; }
+    public DbSet<SystemRole> SystemRoles { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

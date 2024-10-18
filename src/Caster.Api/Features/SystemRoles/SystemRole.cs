@@ -4,16 +4,17 @@
 using System;
 using Caster.Api.Features.Permissions;
 
-namespace Caster.Api.Features.Users
+namespace Caster.Api.Features.SystemRoles
 {
-    public class User
+    public class SystemRole
     {
 
         public Guid Id { get; set; }
 
         public string Name { get; set; }
-        public string RoleId { get; set; }
-        public Permission[] Permissions { get; set; }
+
+        public bool AllPermissions { get; set; }
+        public Domain.Models.SystemPermissions[] Permissions { get; set; }
     }
 }
 

@@ -12,6 +12,9 @@ namespace Caster.Api.Infrastructure.Options
     {
         public bool EnableCaching { get; set; }
         public double CacheExpirationSeconds { get; set; }
+        public bool UseRolesFromIdP { get; set; }
+        public string RoleClaimType { get; set; }
+        public string RoleArrayPropertyName { get; set; }
     }
 }
 

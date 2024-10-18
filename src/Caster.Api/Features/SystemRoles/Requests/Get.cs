@@ -5,8 +5,10 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using System.Runtime.Serialization;
 using AutoMapper;
+using Microsoft.EntityFrameworkCore;
+using AutoMapper.QueryableExtensions;
+using System.Runtime.Serialization;
 using Caster.Api.Data;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -15,28 +17,21 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
 
-namespace Caster.Api.Features.Users
+namespace Caster.Api.Features.SystemRoles
 {
-    public class Create
+    public class Get
     {
-        [DataContract(Name = "CreateUserCommand")]
-        public class Command : IRequest<User>
+        [DataContract(Name = "GetSystemRoleQuery")]
+        public class Query : IRequest<SystemRole>
         {
+            /// <summary>
+            /// The Id of the SystemRole to retrieve
+            /// </summary>
             [DataMember]
             public Guid Id { get; set; }
-
-            [DataMember]
-            public string Name { get; set; }
-
-            [DataMember]
-
-            public bool AllPermissions { get; set; }
-
-            [DataMember]
-            public string RoleId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, User>
+        public class Handler : IRequestHandler<Query, SystemRole>
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
@@ -55,15 +50,19 @@ namespace Caster.Api.Features.Users
                 _user = identityResolver.GetClaimsPrincipal();
             }
 
-            public async Task<User> Handle(Command request, CancellationToken cancellationToken)
+            public async Task<SystemRole> Handle(Query request, CancellationToken cancellationToken)
             {
                 if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
                     throw new ForbiddenException();
 
-                var user = _mapper.Map<Domain.Models.User>(request);
-                await _db.Users.AddAsync(user);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<User>(user);
+                var SystemRole = await _db.SystemRoles
+                    .ProjectTo<SystemRole>(_mapper.ConfigurationProvider, dest => dest.Permissions)
+                    .SingleOrDefaultAsync(e => e.Id == request.Id);
+
+                if (SystemRole == null)
+                    throw new EntityNotFoundException<SystemRole>();
+
+                return SystemRole;
             }
         }
     }
