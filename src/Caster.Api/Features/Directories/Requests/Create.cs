@@ -23,6 +23,7 @@ using Caster.Api.Features.Shared.Services;
 using Caster.Api.Features.Shared.Validators;
 using Microsoft.Extensions.Options;
 using Caster.Api.Infrastructure.Options;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Directories
 {
@@ -58,7 +59,7 @@ namespace Caster.Api.Features.Directories
             public string TerraformVersion { get; set; }
 
             /// <summary>
-            /// Limit the number of concurrent operations as Terraform walks the graph. 
+            /// Limit the number of concurrent operations as Terraform walks the graph.
             /// If not set, will traverse parents until a value is found.
             /// If still not set, the Terraform default will be used.
             /// </summary>
@@ -66,7 +67,7 @@ namespace Caster.Api.Features.Directories
             public int? Parallelism { get; set; }
 
             /// <summary>
-            /// If set, the number of consecutive failed destroys in an Azure Workspace before 
+            /// If set, the number of consecutive failed destroys in an Azure Workspace before
             /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
             /// If not set, will traverse parents until a value is found.
             /// </summary>
@@ -94,36 +95,19 @@ namespace Caster.Api.Features.Directories
             }
         }
 
-        public class Handler : IRequestHandler<Command, Directory>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Directory>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Project>(request.ProjectId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Directory> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Directory> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var directory = _mapper.Map<Domain.Models.Directory>(request);
+                var directory = mapper.Map<Domain.Models.Directory>(request);
                 await SetPath(directory);
 
-                _db.Directories.Add(directory);
-                await _db.SaveChangesAsync(cancellationToken);
-                return _mapper.Map<Directory>(directory);
+                dbContext.Directories.Add(directory);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<Directory>(directory);
             }
 
             private async Task SetPath(Domain.Models.Directory directory)
@@ -136,7 +120,7 @@ namespace Caster.Api.Features.Directories
                 }
                 else
                 {
-                    var parentDirectory = await _db.Directories.FindAsync(directory.ParentId);
+                    var parentDirectory = await dbContext.Directories.FindAsync(directory.ParentId);
 
                     if (parentDirectory == null)
                         throw new EntityNotFoundException<Directory>("Parent Directory not found");

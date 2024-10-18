@@ -8,18 +8,15 @@ using MediatR;
 using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
-using Microsoft.AspNetCore.Authorization;
-using Caster.Api.Infrastructure.Identity;
-using CodeAnalysis = Microsoft.CodeAnalysis;
 using System.Text.Json.Serialization;
-using System.Security.Claims;
 using System.Linq;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Vlan
 {
@@ -51,39 +48,21 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler : IRequestHandler<Command, Vlan>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Vlan>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Vlan> HandleRequest(Command command, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-
-            public async Task<Vlan> Handle(Command command, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var vlan = await _db.Vlans
+                var vlan = await dbContext.Vlans
                     .Where(x => x.Id == command.Id)
                     .FirstOrDefaultAsync(cancellationToken);
 
-                _mapper.Map(command, vlan);
-                await _db.SaveChangesAsync(cancellationToken);
+                mapper.Map(command, vlan);
+                await dbContext.SaveChangesAsync(cancellationToken);
 
-                return _mapper.Map<Vlan>(vlan);
+                return mapper.Map<Vlan>(vlan);
             }
         }
     }

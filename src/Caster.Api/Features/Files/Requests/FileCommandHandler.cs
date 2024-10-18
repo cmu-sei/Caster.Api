@@ -4,17 +4,13 @@
 using System;
 using System.Threading.Tasks;
 using Caster.Api.Data;
-using AutoMapper;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Linq;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
-using System.Security.Claims;
 using Caster.Api.Domain.Services;
-using Caster.Api.Infrastructure.Identity;
 using System.Threading;
+using Caster.Api.Features.Shared;
+using MediatR;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Files
 {
@@ -23,65 +19,42 @@ namespace Caster.Api.Features.Files
         Guid Id { get; set; }
     }
 
-    public abstract class FileCommandHandler
+    public abstract class FileCommandHandler<TRequest, TResponse>(
+        CasterContext dbContext,
+        ILockService lockService,
+        IGetFileQuery fileQuery,
+        ICasterAuthorizationService authorizationService) : BaseHandler<TRequest, TResponse>
+        where TRequest : IRequest<TResponse>, IFileCommand
+        where TResponse : File
     {
-        protected readonly CasterContext _db;
-        protected readonly IMapper _mapper;
-        protected readonly IAuthorizationService _authorizationService;
-        protected readonly ClaimsPrincipal _user;
-        protected readonly ILockService _lockService;
-        protected readonly IGetFileQuery _fileQuery;
-        protected readonly IIdentityResolver _identityResolver;
+        protected ICasterAuthorizationService AuthorizationService => authorizationService;
 
-        public FileCommandHandler(
-            CasterContext db,
-            IMapper mapper,
-            IAuthorizationService authorizationService,
-            IIdentityResolver identityResolver,
-            ILockService lockService,
-            IGetFileQuery fileQuery)
+        public override async Task<TResponse> HandleRequest(TRequest request, CancellationToken cancellationToken)
         {
-            _db = db;
-            _mapper = mapper;
-            _authorizationService = authorizationService;
-            _user = identityResolver.GetClaimsPrincipal();
-            _lockService = lockService;
-            _fileQuery = fileQuery;
-            _identityResolver = identityResolver;
-        }
-
-        protected async Task<File> Handle(IFileCommand request, CancellationToken cancellationToken)
-        {
-            await this.Authorize();
-
-            using (var lockResult = await _lockService.GetFileLock(request.Id).LockAsync(0))
+            using (var lockResult = await lockService.GetFileLock(request.Id).LockAsync(0))
             {
                 if (!lockResult.AcquiredLock)
                     throw new FileConflictException();
 
-                var file = await _db.Files.FindAsync(request.Id);
+                var file = await dbContext.Files.FindAsync(request.Id);
 
                 if (file == null)
                     throw new EntityNotFoundException<File>();
 
-                await this.PerformOperation(file);
+                await this.PerformOperation(file, cancellationToken);
 
-                await _db.SaveChangesAsync(cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            return await _fileQuery.ExecuteAsync(request.Id);
+            return (TResponse)await fileQuery.ExecuteAsync(request.Id);
         }
 
-        protected virtual async Task Authorize() {
-            if (!(await _authorizationService.AuthorizeAsync(
-                _user, null, new ContentDeveloperRequirement())).Succeeded)
-            {
-                throw new ForbiddenException();
-            }
+        protected async Task<bool> CanLock(Guid fileId, CancellationToken cancellationToken)
+        {
+            return await authorizationService.Authorize<Domain.Models.File>(fileId, [SystemPermission.LockFiles], [ProjectPermission.LockFiles], cancellationToken);
         }
 
-        protected abstract Task PerformOperation(Domain.Models.File file);
-
+        protected abstract Task PerformOperation(Domain.Models.File file, CancellationToken cancellationToken);
     }
 }
 

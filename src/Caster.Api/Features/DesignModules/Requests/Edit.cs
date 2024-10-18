@@ -16,6 +16,9 @@ using Caster.Api.Infrastructure.Extensions;
 using System.Linq;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using Caster.Api.Domain.Models;
+using Caster.Api.Data;
+using AutoMapper;
 
 namespace Caster.Api.Features.DesignModules;
 
@@ -65,26 +68,24 @@ public class Edit
         }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Command, DesignModule>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, DesignModule>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Domain.Models.DesignModule>(request.DesignModuleId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-        public async Task<DesignModule> Handle(Command request, CancellationToken cancellationToken)
+        public override async Task<DesignModule> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var designModule = await _db.DesignModules
+            var designModule = await dbContext.DesignModules
                 .Where(x => x.Id == request.DesignModuleId)
                 .SingleOrDefaultAsync(cancellationToken);
 
             if (designModule == null)
                 throw new EntityNotFoundException<DesignModule>();
 
-            _mapper.Map(request, designModule);
-            await _db.SaveChangesAsync(cancellationToken);
+            mapper.Map(request, designModule);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-            return _mapper.Map<DesignModule>(designModule);
+            return mapper.Map<DesignModule>(designModule);
         }
     }
 }

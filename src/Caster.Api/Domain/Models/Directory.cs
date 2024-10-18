@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class Directory
+    public class Directory : IEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

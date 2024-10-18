@@ -10,12 +10,17 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class User
+    public class User : IEntity
     {
         [Key]
         public Guid Id { get; set; }
         public string Name { get; set; }
-        public ICollection<UserPermission> UserPermissions { get; set; } = new List<UserPermission>();
+
+        public Guid? RoleId { get; set; }
+        public virtual SystemRole Role { get; set; }
+
+        public ICollection<ProjectMembership> ProjectMemberships { get; set; } = new List<ProjectMembership>();
+        public ICollection<GroupMembership> GroupMemberships { get; set; } = new List<GroupMembership>();
     }
 }
 

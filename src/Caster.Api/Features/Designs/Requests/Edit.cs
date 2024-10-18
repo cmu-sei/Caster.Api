@@ -16,6 +16,9 @@ using Caster.Api.Infrastructure.Extensions;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
+using AutoMapper;
+using Caster.Api.Data;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Designs;
 
@@ -34,27 +37,25 @@ public class Edit
         public string Name { get; init; }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Command, Design>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Design>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Domain.Models.Design>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-        public async Task<Design> Handle(Command request, CancellationToken cancellationToken)
+        public override async Task<Design> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var design = await _db.Designs
+            var design = await dbContext.Designs
                 .Where(x => x.Id == request.Id)
                 .SingleOrDefaultAsync(cancellationToken);
 
             if (design == null)
                 throw new EntityNotFoundException<Design>();
 
-            _mapper.Map(request, design);
+            mapper.Map(request, design);
 
-            await _db.SaveChangesAsync(cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-            return _mapper.Map<Design>(design);
+            return mapper.Map<Design>(design);
         }
     }
 }

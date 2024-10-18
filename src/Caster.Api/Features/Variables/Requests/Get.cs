@@ -15,6 +15,9 @@ using System.Linq;
 using Caster.Api.Features.Shared;
 using FluentValidation;
 using AutoMapper.QueryableExtensions;
+using Caster.Api.Domain.Models;
+using AutoMapper;
+using Caster.Api.Data;
 
 namespace Caster.Api.Features.Variables;
 
@@ -27,18 +30,16 @@ public class Get
         public Guid Id { get; set; }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Query, Variable>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Variable>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Domain.Models.Variable>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
-        public async Task<Variable> Handle(Query request, CancellationToken cancellationToken)
+        public override async Task<Variable> HandleRequest(Query request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var variable = await _db.Variables
+            var variable = await dbContext.Variables
                 .Where(x => x.Id == request.Id)
-                .ProjectTo<Variable>(_mapper.ConfigurationProvider)
+                .ProjectTo<Variable>(mapper.ConfigurationProvider)
                 .SingleOrDefaultAsync(cancellationToken);
 
             if (variable == null)

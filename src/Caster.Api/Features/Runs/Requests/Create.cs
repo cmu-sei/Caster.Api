@@ -8,19 +8,18 @@ using MediatR;
 using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
-using System.Linq;
 using Caster.Api.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Events;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Identity;
 using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
+using FluentValidation;
+using Caster.Api.Features.Shared.Services;
 
 namespace Caster.Api.Features.Runs
 {
@@ -54,76 +53,57 @@ namespace Caster.Api.Features.Runs
             public string[] ReplaceAddresses { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Run>
+        public class CommandValidator : AbstractValidator<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IMediator _mediator;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly ILockService _lockService;
-
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IMediator mediator,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                ILockService lockService)
+            public CommandValidator(IValidationService validationService)
             {
-                _db = db;
-                _mapper = mapper;
-                _mediator = mediator;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _lockService = lockService;
+                RuleFor(x => x.WorkspaceId).WorkspaceExists(validationService);
             }
+        }
 
-            public async Task<Run> Handle(Command request, CancellationToken cancellationToken)
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            IMapper mapper,
+            CasterContext dbContext,
+            IMediator mediator,
+            ILockService lockService,
+            IIdentityResolver identityResolver) : BaseHandler<Command, Run>
+        {
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.Workspace>(request.WorkspaceId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
+
+            public override async Task<Run> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                await ValidateWorkspace(request.WorkspaceId);
-
                 Domain.Models.Run run = null;
 
-                using (var lockResult = await _lockService.GetWorkspaceLock(request.WorkspaceId).LockAsync(0))
+                using (var lockResult = await lockService.GetWorkspaceLock(request.WorkspaceId).LockAsync(0))
                 {
                     if (!lockResult.AcquiredLock)
                         throw new WorkspaceConflictException();
 
-                    if ((await _db.AnyIncompleteRuns(request.WorkspaceId)))
+                    if (await dbContext.AnyIncompleteRuns(request.WorkspaceId))
                     {
                         throw new ConflictException("This Workspace's current Run must be rejected or applied before a new one can be created.");
                     }
 
-                    run = await this.DoWork(request);
+                    run = await this.DoWork(request, identityResolver.GetClaimsPrincipal().GetId(), cancellationToken);
                 }
 
-                await _mediator.Publish(new RunCreated { RunId = run.Id });
+                await mediator.Publish(new RunCreated { RunId = run.Id });
 
-                return await _db.Runs
-                    .ProjectTo<Run>(_mapper.ConfigurationProvider)
+                return await dbContext.Runs
+                    .ProjectTo<Run>(mapper.ConfigurationProvider)
                     .SingleOrDefaultAsync(x => x.Id == run.Id, cancellationToken);
             }
 
-            private async Task<Domain.Models.Run> DoWork(Command request)
+            private async Task<Domain.Models.Run> DoWork(Command request, Guid userId, CancellationToken cancellationToken)
             {
-                var run = _mapper.Map<Domain.Models.Run>(request);
-                run.CreatedById = _user.GetId();
-                run.Modify(_user.GetId());
-                await _db.Runs.AddAsync(run);
-                await _db.SaveChangesAsync();
+                var run = mapper.Map<Domain.Models.Run>(request);
+                run.CreatedById = userId;
+                run.Modify(userId);
+                dbContext.Runs.Add(run);
+                await dbContext.SaveChangesAsync(cancellationToken);
                 return run;
-            }
-
-            private async Task ValidateWorkspace(Guid workspaceId)
-            {
-                var workspace = await _db.Workspaces.FindAsync(workspaceId);
-
-                if (workspace == null)
-                    throw new EntityNotFoundException<Workspace>();
             }
         }
     }

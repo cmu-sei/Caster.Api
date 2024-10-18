@@ -7,10 +7,11 @@ using System.Threading.Tasks;
 using MediatR;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
 using System.Text.Json.Serialization;
+using Caster.Api.Domain.Models;
+using Caster.Api.Data;
 
 namespace Caster.Api.Features.Variables;
 
@@ -23,22 +24,20 @@ public class Delete
         public Guid Id { get; set; }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Command>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Domain.Models.Variable>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-        public async Task Handle(Command request, CancellationToken cancellationToken)
+        public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var variable = await _db.Variables.FindAsync(request.Id);
+            var variable = await dbContext.Variables.FindAsync([request.Id], cancellationToken);
 
             if (variable == null)
                 throw new EntityNotFoundException<Variable>();
 
-            _db.Variables.Remove(variable);
-            await _db.SaveChangesAsync(cancellationToken);
+            dbContext.Variables.Remove(variable);
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 }

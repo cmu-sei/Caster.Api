@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class Plan
+    public class Plan : IEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -23,13 +23,13 @@ namespace Caster.Api.Domain.Models
         public string Output { get; set; }
     }
 
-    public enum PlanStatus 
+    public enum PlanStatus
     {
         Queued = 0,
         Failed = 1,
         Rejected = 2,
         Planning = 3,
-        Planned = 4 
+        Planned = 4
     }
 }
 

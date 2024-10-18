@@ -8,7 +8,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Caster.Api.Domain.Models;
 
-public class Module
+public class Module : IEntity
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

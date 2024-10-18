@@ -9,15 +9,9 @@ using System.Runtime.Serialization;
 using Caster.Api.Data;
 using System;
 using Caster.Api.Domain.Models;
-using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Microsoft.EntityFrameworkCore;
-using System.Linq;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Domain.Services;
-using Microsoft.Extensions.Logging;
-using Caster.Api.Infrastructure.Identity;
 using System.Text.Json.Serialization;
 
 namespace Caster.Api.Features.Resources
@@ -34,27 +28,20 @@ namespace Caster.Api.Features.Resources
             public Guid WorkspaceId { get; set; }
         }
 
-        public class Handler : BaseOperationHandler, IRequestHandler<Command, ResourceCommandResult>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            IMapper mapper,
+            CasterContext dbContext,
+            ILockService lockService,
+            TerraformOptions terraformOptions,
+            ITerraformService terraformService) : BaseOperationHandler<Command, ResourceCommandResult>(mapper, dbContext, lockService, terraformOptions, terraformService)
         {
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                TerraformOptions terraformOptions,
-                ITerraformService terraformService,
-                ILockService lockService,
-                ILogger<BaseOperationHandler> logger) :
-            base(db, mapper, authorizationService, identityResolver, terraformOptions, terraformService, lockService, logger)
-            { }
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Workspace>(request.WorkspaceId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-            public async Task<ResourceCommandResult> Handle(Command request, CancellationToken cancellationToken)
+            public override async Task<ResourceCommandResult> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
                 var workspace = await base.GetWorkspace(request.WorkspaceId);
-
                 return await base.PerformOperation(workspace, ResourceOperation.refresh, null);
             }
         }

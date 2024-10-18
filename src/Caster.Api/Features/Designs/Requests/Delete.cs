@@ -14,6 +14,8 @@ using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
 using System.Text.Json.Serialization;
+using Caster.Api.Data;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Designs;
 
@@ -26,22 +28,20 @@ public class Delete
         public Guid Id { get; set; }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Command>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Domain.Models.Design>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-        public async Task Handle(Command request, CancellationToken cancellationToken)
+        public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var design = await _db.Designs.FindAsync(request.Id);
+            var design = await dbContext.Designs.FindAsync(request.Id);
 
             if (design == null)
                 throw new EntityNotFoundException<Design>();
 
-            _db.Designs.Remove(design);
-            await _db.SaveChangesAsync(cancellationToken);
+            dbContext.Designs.Remove(design);
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 }

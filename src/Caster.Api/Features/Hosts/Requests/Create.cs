@@ -8,18 +8,15 @@ using System.Runtime.Serialization;
 using AutoMapper;
 using Caster.Api.Data;
 using System;
-using Microsoft.AspNetCore.Authorization;
-using System.Security.Principal;
-using System.Security.Claims;
-using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Hosts
 {
     public class Create
     {
-        [DataContract(Name="CreateHostCommand")]
+        [DataContract(Name = "CreateHostCommand")]
         public class Command : IRequest<Host>
         {
             /// <summary>
@@ -59,30 +56,17 @@ namespace Caster.Api.Features.Hosts
             public Guid? ProjectId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Host>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Host>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ManageHosts], cancellationToken);
 
-            public Handler(CasterContext db, IMapper mapper, IAuthorizationService authorizationService, IIdentityResolver identityResolver)
+            public override async Task<Host> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                 _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Host> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var Host = _mapper.Map<Domain.Models.Host>(request);
-                await _db.Hosts.AddAsync(Host);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<Host>(Host);
+                var host = mapper.Map<Domain.Models.Host>(request);
+                dbContext.Hosts.Add(host);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<Host>(host);
             }
         }
     }

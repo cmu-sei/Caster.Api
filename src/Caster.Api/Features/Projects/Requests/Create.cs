@@ -13,12 +13,16 @@ using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Domain.Models;
+using Microsoft.Extensions.DependencyInjection;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Projects
 {
     public class Create
     {
-        [DataContract(Name="CreateProjectCommand")]
+        [DataContract(Name = "CreateProjectCommand")]
         public class Command : IRequest<Project>
         {
             /// <summary>
@@ -28,34 +32,25 @@ namespace Caster.Api.Features.Projects
             public string Name { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Project>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext, IIdentityResolver identityResolver) : BaseHandler<Command, Project>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.CreateProjects], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Project> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
+                var project = mapper.Map<Domain.Models.Project>(request);
+                dbContext.Projects.Add(project);
 
-            public async Task<Project> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
+                // Add the creator as a member with the appropriate role
+                var projectMembership = new Domain.Models.ProjectMembership();
+                projectMembership.UserId = identityResolver.GetClaimsPrincipal().GetId();
+                projectMembership.Project = project;
+                projectMembership.RoleId = ProjectRoleDefaults.ProjectCreatorRoleId;
+                dbContext.ProjectMemberships.Add(projectMembership);
 
-                var project = _mapper.Map<Domain.Models.Project>(request);
-                await _db.Projects.AddAsync(project);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<Project>(project);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<Project>(project);
             }
         }
     }

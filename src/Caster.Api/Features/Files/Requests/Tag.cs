@@ -12,18 +12,17 @@ using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
+using System.Collections.Generic;
 
 namespace Caster.Api.Features.Files
 {
     public class Tag
     {
-        [DataContract(Name="TagFileCommand")]
+        [DataContract(Name = "TagFileCommand")]
         public class Command : IRequest<FileVersion[]>
         {
             /// <summary>
@@ -40,34 +39,32 @@ namespace Caster.Api.Features.Files
 
         }
 
-        public class Handler : IRequestHandler<Command, FileVersion[]>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            IMapper mapper,
+            CasterContext dbContext,
+            IIdentityResolver identityResolver) : BaseHandler<Command, FileVersion[]>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal() as ClaimsPrincipal;
+                List<Task<bool>> authTasks = [];
+
+                foreach (var fileId in request.FileIds)
+                {
+                    authTasks.Add(authorizationService.Authorize<Domain.Models.File>(fileId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken));
+                }
+
+                await Task.WhenAll(authTasks);
+
+                return authTasks.Any(x => !x.Result);
             }
 
-            public async Task<FileVersion[]> Handle(Command request, CancellationToken cancellationToken)
+            public override async Task<FileVersion[]> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
                 var dateTagged = DateTime.UtcNow;
                 var tag = request.Tag;
 
-                var files = await _db.Files
+                var files = await dbContext.Files
                     .Where(f => request.FileIds.Contains(f.Id))
                     .ToArrayAsync();
 
@@ -77,14 +74,14 @@ namespace Caster.Api.Features.Files
                     if (file == null)
                         throw new EntityNotFoundException<File>($"File {fileId} could not be found.");
 
-                    file.Tag(tag, _user.GetId(), dateTagged);
+                    file.Tag(tag, identityResolver.GetId(), dateTagged);
                 }
 
-                await _db.SaveChangesAsync(cancellationToken);
-                return await _db.FileVersions
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return await dbContext.FileVersions
                     .Where(fileVersion => fileVersion.Tag == request.Tag)
-                    .ProjectTo<FileVersion>(_mapper.ConfigurationProvider)
-                    .ToArrayAsync();
+                    .ProjectTo<FileVersion>(mapper.ConfigurationProvider)
+                    .ToArrayAsync(cancellationToken);
             }
 
         }

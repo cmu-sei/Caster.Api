@@ -15,7 +15,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class Workspace
+    public class Workspace : IEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

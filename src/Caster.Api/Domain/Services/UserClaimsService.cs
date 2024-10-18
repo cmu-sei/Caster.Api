@@ -14,6 +14,9 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Options;
+using System.Text.Json;
+using Microsoft.IdentityModel.JsonWebTokens;
+using System.Text.RegularExpressions;
 
 namespace Caster.Api.Domain.Services
 {
@@ -43,17 +46,36 @@ namespace Caster.Api.Domain.Services
         public async Task<ClaimsPrincipal> AddUserClaims(ClaimsPrincipal principal, bool update)
         {
             List<Claim> claims;
-            var identity = ((ClaimsIdentity)principal.Identity);
+            var identity = (ClaimsIdentity)principal.Identity;
             var userId = principal.GetId();
 
-            if (!_cache.TryGetValue(userId, out claims))
+            // Don't use cached claims if given a new token and we are using roles or groups from the token
+            if (_cache.TryGetValue(userId, out claims) && (_options.UseGroupsFromIdP || _options.UseRolesFromIdP))
             {
-                claims = new List<Claim>();
+                var cachedTokenId = claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+                var newTokenId = identity.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+
+                if (newTokenId != cachedTokenId)
+                {
+                    claims = null;
+                }
+            }
+
+            if (claims == null)
+            {
+                claims = [];
                 var user = await ValidateUser(userId, principal.FindFirst("name")?.Value, update);
 
                 if (user != null)
                 {
-                    claims.AddRange(await GetUserClaims(userId));
+                    var jtiClaim = identity.Claims.Where(x => x.Type == JwtRegisteredClaimNames.Jti).FirstOrDefault();
+
+                    if (jtiClaim is not null)
+                    {
+                        claims.Add(new Claim(jtiClaim.Type, jtiClaim.Value));
+                    }
+
+                    claims.AddRange(await GetPermissionClaims(userId, principal));
 
                     if (_options.EnableCaching)
                     {
@@ -61,6 +83,7 @@ namespace Caster.Api.Domain.Services
                     }
                 }
             }
+
             addNewClaims(identity, claims);
             return principal;
         }
@@ -115,17 +138,6 @@ namespace Caster.Api.Domain.Services
                         Name = nameClaim ?? "Anonymous"
                     };
 
-                    // First user is default SystemAdmin
-                    if (!anyUsers)
-                    {
-                        var systemAdminPermission = await _context.Permissions.Where(p => p.Key == nameof(CasterClaimTypes.SystemAdmin)).FirstOrDefaultAsync();
-
-                        if (systemAdminPermission != null)
-                        {
-                            user.UserPermissions.Add(new UserPermission(user.Id, systemAdminPermission.Id));
-                        }
-                    }
-
                     _context.Users.Add(user);
                     await _context.SaveChangesAsync();
                 }
@@ -143,36 +155,158 @@ namespace Caster.Api.Domain.Services
             return user;
         }
 
-        private async Task<IEnumerable<Claim>> GetUserClaims(Guid userId)
+        private async Task<IEnumerable<Claim>> GetPermissionClaims(Guid userId, ClaimsPrincipal principal)
         {
-            List<Claim> claims = new List<Claim>();
+            List<Claim> claims = new();
 
-            var userPermissions = await _context.UserPermissions
-                .Where(u => u.UserId == userId)
-                .Include(x => x.Permission)
-                .ToArrayAsync();
+            var tokenRoleNames = _options.UseRolesFromIdP ?
+                this.GetClaimsFromToken(principal, _options.RolesClaimPath).Select(x => x.ToLower()) :
+                [];
 
-            if (userPermissions.Where(x => x.Permission.Key == nameof(CasterClaimTypes.SystemAdmin)).Any())
+            var roles = await _context.SystemRoles
+                .Where(x => tokenRoleNames.Contains(x.Name.ToLower()))
+                .ToListAsync();
+
+            var userRole = await _context.Users
+                .Where(x => x.Id == userId)
+                .Select(x => x.Role)
+                .FirstOrDefaultAsync();
+
+            if (userRole != null)
             {
-                claims.Add(new Claim(ClaimTypes.Role, nameof(CasterClaimTypes.SystemAdmin)));
+                roles.Add(userRole);
             }
 
-            if (userPermissions.Where(x => x.Permission.Key == nameof(CasterClaimTypes.ContentDeveloper)).Any())
+            roles = roles.Distinct().ToList();
+
+            foreach (var role in roles)
             {
-                claims.Add(new Claim(ClaimTypes.Role, nameof(CasterClaimTypes.ContentDeveloper)));
+                List<string> permissions;
+
+                if (role.AllPermissions)
+                {
+                    permissions = Enum.GetValues<SystemPermission>().Select(x => x.ToString()).ToList();
+                }
+                else
+                {
+                    permissions = role.Permissions.Select(x => x.ToString()).ToList();
+                }
+
+                foreach (var permission in permissions)
+                {
+                    if (!claims.Any(x => x.Type == AuthorizationConstants.PermissionsClaimType &&
+                        x.Value == permission))
+                    {
+                        claims.Add(new Claim(AuthorizationConstants.PermissionsClaimType, permission));
+                    };
+                }
             }
 
-            if (userPermissions.Where(x => x.Permission.Key == nameof(CasterClaimTypes.Operator)).Any())
-            {
-                claims.Add(new Claim(ClaimTypes.Role, nameof(CasterClaimTypes.Operator)));
-            }
+            var groupNames = _options.UseGroupsFromIdP ?
+                this.GetClaimsFromToken(principal, _options.GroupsClaimPath).Select(x => x.ToLower()) :
+                [];
 
-            if (userPermissions.Where(x => x.Permission.Key == nameof(CasterClaimTypes.BaseUser)).Any())
+            var groupIds = await _context.Groups
+                .Where(x => x.Memberships.Any(y => y.UserId == userId) || groupNames.Contains(x.Name.ToLower()))
+                .Select(x => x.Id)
+                .ToListAsync();
+
+            // Get Project Permissions
+            var projectMemberships = await _context.ProjectMemberships
+                .Where(x => x.UserId == userId || (x.GroupId.HasValue && groupIds.Contains(x.GroupId.Value)))
+                .Include(x => x.Role)
+                .GroupBy(x => x.ProjectId)
+                .ToListAsync();
+
+            foreach (var group in projectMemberships)
             {
-                claims.Add(new Claim(ClaimTypes.Role, nameof(CasterClaimTypes.BaseUser)));
+                var projectPermissions = new List<ProjectPermission>();
+
+                foreach (var membership in group)
+                {
+                    if (membership.Role.AllPermissions)
+                    {
+                        projectPermissions.AddRange(Enum.GetValues<ProjectPermission>());
+                    }
+                    else
+                    {
+                        projectPermissions.AddRange(membership.Role.Permissions);
+                    }
+                }
+
+                var permissionsClaim = new ProjectPermissionsClaim
+                {
+                    ProjectId = group.Key,
+                    Permissions = projectPermissions.Distinct().ToArray()
+                };
+
+                claims.Add(new Claim(AuthorizationConstants.ProjectPermissionsClaimType, permissionsClaim.ToString()));
             }
 
             return claims;
+        }
+
+        private string[] GetClaimsFromToken(ClaimsPrincipal principal, string claimPath)
+        {
+            if (string.IsNullOrEmpty(claimPath))
+            {
+                return [];
+            }
+
+            // Name of the claim to insert into the token. This can be a fully qualified name like 'address.street'.
+            // In this case, a nested json object will be created. To prevent nesting and use dot literally, escape the dot with backslash (\.).
+            var pathSegments = Regex.Split(claimPath, @"(?<!\\)\.").Select(s => s.Replace("\\.", ".")).ToArray();
+
+            var tokenClaim = principal.Claims.Where(x => x.Type == pathSegments.First()).FirstOrDefault();
+
+            if (tokenClaim == null)
+            {
+                return [];
+            }
+
+            return tokenClaim.ValueType switch
+            {
+                ClaimValueTypes.String => [tokenClaim.Value],
+                JsonClaimValueTypes.Json => ExtractJsonClaimValues(tokenClaim.Value, pathSegments.Skip(1)),
+                _ => []
+            };
+        }
+
+        private string[] ExtractJsonClaimValues(string json, IEnumerable<string> pathSegments)
+        {
+            List<string> values = new();
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(json);
+                JsonElement currentElement = doc.RootElement;
+
+                foreach (var segment in pathSegments)
+                {
+                    if (!currentElement.TryGetProperty(segment, out JsonElement propertyElement))
+                    {
+                        return [];
+                    }
+
+                    currentElement = propertyElement;
+                }
+
+                if (currentElement.ValueKind == JsonValueKind.Array)
+                {
+                    values.AddRange(currentElement.EnumerateArray()
+                        .Where(item => item.ValueKind == JsonValueKind.String)
+                        .Select(item => item.GetString()));
+                }
+                else if (currentElement.ValueKind == JsonValueKind.String)
+                {
+                    values.Add(currentElement.GetString());
+                }
+            }
+            catch (JsonException)
+            {
+                // Handle invalid JSON format
+            }
+
+            return values.ToArray();
         }
 
         private void addNewClaims(ClaimsIdentity identity, List<Claim> claims)

@@ -11,18 +11,15 @@ using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Modules
 {
     public class GetVersions
     {
-        [DataContract(Name="GetVersionsQuery")]
+        [DataContract(Name = "GetVersionsQuery")]
         public class Query : IRequest<ModuleVersion[]>
         {
             /// <summary>
@@ -32,34 +29,27 @@ namespace Caster.Api.Features.Modules
             public Guid ModuleId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, ModuleVersion[]>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, ModuleVersion[]>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
+                if (authorizationService.GetAuthorizedProjectIds().Any())
+                {
+                    return true;
+                }
+                else
+                {
+                    return await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+                }
             }
 
-            public async Task<ModuleVersion[]> Handle(Query request, CancellationToken cancellationToken)
+            public override async Task<ModuleVersion[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                return await _db.ModuleVersions.Where(v => v.ModuleId == request.ModuleId)
-                    .ProjectTo<ModuleVersion>(_mapper.ConfigurationProvider)
+                return await dbContext.ModuleVersions
+                    .Where(v => v.ModuleId == request.ModuleId)
+                    .ProjectTo<ModuleVersion>(mapper.ConfigurationProvider)
                     .OrderByDescending(v => v.DateCreated)
-                    .ToArrayAsync();
+                    .ToArrayAsync(cancellationToken);
             }
         }
     }

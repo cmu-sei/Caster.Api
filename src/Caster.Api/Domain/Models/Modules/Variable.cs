@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models;
 
-public class Variable
+public class Variable : IEntity
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]

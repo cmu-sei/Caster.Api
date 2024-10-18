@@ -20,6 +20,8 @@ using Microsoft.EntityFrameworkCore;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Vlan;
 
@@ -53,46 +55,30 @@ public class AddVlansToPartition
         }
     }
 
-    public class Handler : IRequestHandler<Command, Vlan[]>
+    public class Handler(
+        ICasterAuthorizationService authorizationService,
+        IMapper mapper,
+        CasterContext dbContext,
+        ILockService lockService) : BaseHandler<Command, Vlan[]>
     {
-        private readonly CasterContext _db;
-        private readonly IMapper _mapper;
-        private readonly IAuthorizationService _authorizationService;
-        private readonly ClaimsPrincipal _user;
-        private readonly ILockService _lockService;
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
 
-        public Handler(
-            CasterContext db,
-            IMapper mapper,
-            IAuthorizationService authorizationService,
-            IIdentityResolver identityResolver,
-            ILockService lockService)
+        public override async Task<Vlan[]> HandleRequest(Command command, CancellationToken cancellationToken)
         {
-            _db = db;
-            _mapper = mapper;
-            _authorizationService = authorizationService;
-            _user = identityResolver.GetClaimsPrincipal();
-            _lockService = lockService;
-        }
-
-        public async Task<Vlan[]> Handle(Command command, CancellationToken cancellationToken)
-        {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var partition = await _db.Partitions
+            var partition = await dbContext.Partitions
                 .Where(x => x.Id == command.PartitionId)
                 .FirstOrDefaultAsync(cancellationToken);
 
             Domain.Models.Vlan[] vlans;
 
             // Lock poolId as proxy for unassigned partition of that pool
-            using (var lockResult = await _lockService.GetPartitionLock(partition.PoolId).LockAsync(10000))
+            using (var lockResult = await lockService.GetPartitionLock(partition.PoolId).LockAsync(10000))
             {
                 if (!lockResult.AcquiredLock)
                     throw new ConflictException("Could not acquire Partition lock");
 
-                var query = _db.Vlans
+                var query = dbContext.Vlans
                         .Where(x =>
                             x.PoolId == partition.PoolId &&
                             !x.PartitionId.HasValue &&
@@ -121,10 +107,10 @@ public class AddVlansToPartition
                     vlan.PartitionId = command.PartitionId;
                 }
 
-                await _db.SaveChangesAsync(cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            return _mapper.Map<Vlan[]>(vlans);
+            return mapper.Map<Vlan[]>(vlans);
         }
     }
 }

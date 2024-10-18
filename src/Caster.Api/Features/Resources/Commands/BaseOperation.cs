@@ -5,22 +5,26 @@ using System.Threading.Tasks;
 using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.Extensions.Logging;
-using Caster.Api.Infrastructure.Identity;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Linq;
 using System.Text.Json;
+using Caster.Api.Features.Shared;
+using MediatR;
 
 namespace Caster.Api.Features.Resources
 {
-    public class BaseOperationHandler
+    public abstract class BaseOperationHandler<TRequest, TResponse>(
+        IMapper mapper,
+        CasterContext dbContext,
+        ILockService lockService,
+        TerraformOptions terraformOptions,
+        ITerraformService terraformService) : BaseHandler<TRequest, TResponse>
+        where TRequest : IRequest<TResponse>
     {
         protected enum ResourceOperation
         {
@@ -32,43 +36,14 @@ namespace Caster.Api.Features.Resources
             output
         }
 
-        protected readonly CasterContext _db;
-        protected readonly IMapper _mapper;
-        protected readonly IAuthorizationService _authorizationService;
-        protected readonly ClaimsPrincipal _user;
-        protected readonly TerraformOptions _terraformOptions;
-        protected readonly ITerraformService _terraformService;
-        protected readonly ILockService _lockService;
-        protected readonly ILogger<BaseOperationHandler> _logger;
-
-        public BaseOperationHandler(
-            CasterContext db,
-            IMapper mapper,
-            IAuthorizationService authorizationService,
-            IIdentityResolver identityResolver,
-            TerraformOptions terraformOptions,
-            ITerraformService terraformService,
-            ILockService lockService,
-            ILogger<BaseOperationHandler> logger)
-        {
-            _db = db;
-            _mapper = mapper;
-            _authorizationService = authorizationService;
-            _user = identityResolver.GetClaimsPrincipal();
-            _terraformOptions = terraformOptions;
-            _terraformService = terraformService;
-            _lockService = lockService;
-            _logger = logger;
-        }
-
         protected async Task<ResourceCommandResult> PerformOperation(Workspace workspace, ResourceOperation operation, string[] addresses, string args = null)
         {
-            using (var lockResult = await _lockService.GetWorkspaceLock(workspace.Id).LockAsync(0))
+            using (var lockResult = await lockService.GetWorkspaceLock(workspace.Id).LockAsync(0))
             {
                 if (!lockResult.AcquiredLock)
                     throw new WorkspaceConflictException();
 
-                if (!await _db.AnyIncompleteRuns(workspace.Id))
+                if (!await dbContext.AnyIncompleteRuns(workspace.Id))
                 {
                     return await this.OperationDoWork(workspace, operation, addresses, args);
                 }
@@ -83,11 +58,11 @@ namespace Caster.Api.Features.Resources
         {
             var errors = new List<string>();
             JsonElement? outputs = null;
-            var workingDir = workspace.GetPath(_terraformOptions.RootWorkingDirectory);
-            var files = await _db.GetWorkspaceFiles(workspace, workspace.Directory);
+            var workingDir = workspace.GetPath(terraformOptions.RootWorkingDirectory);
+            var files = await dbContext.GetWorkspaceFiles(workspace, workspace.Directory);
             await workspace.PrepareFileSystem(workingDir, files);
 
-            var initResult = _terraformService.InitializeWorkspace(workspace, null);
+            var initResult = terraformService.InitializeWorkspace(workspace, null);
 
             var statePath = string.Empty;
 
@@ -111,10 +86,10 @@ namespace Caster.Api.Features.Resources
                             switch (operation)
                             {
                                 case ResourceOperation.taint:
-                                    taintResult = _terraformService.Taint(workspace, address, statePath);
+                                    taintResult = terraformService.Taint(workspace, address, statePath);
                                     break;
                                 case ResourceOperation.untaint:
-                                    taintResult = _terraformService.Untaint(workspace, address, statePath);
+                                    taintResult = terraformService.Untaint(workspace, address, statePath);
                                     break;
                             }
 
@@ -125,16 +100,16 @@ namespace Caster.Api.Features.Resources
                         }
                         break;
                     case ResourceOperation.refresh:
-                        result = _terraformService.Refresh(workspace, statePath);
+                        result = terraformService.Refresh(workspace, statePath);
                         break;
                     case ResourceOperation.remove:
-                        result = _terraformService.RemoveResources(workspace, addresses, statePath);
+                        result = terraformService.RemoveResources(workspace, addresses, statePath);
                         break;
                     case ResourceOperation.import:
-                        result = _terraformService.Import(workspace, addresses[0], args, statePath);
+                        result = terraformService.Import(workspace, addresses[0], args, statePath);
                         break;
                     case ResourceOperation.output:
-                        result = _terraformService.GetOutputs(workspace, statePath);
+                        result = terraformService.GetOutputs(workspace, statePath);
                         outputs = JsonDocument.Parse(result.Output).RootElement;
                         break;
                 }
@@ -145,13 +120,13 @@ namespace Caster.Api.Features.Resources
                 }
 
                 await workspace.RetrieveState(workingDir);
-                await _db.SaveChangesAsync();
-                workspace.CleanupFileSystem(_terraformOptions.RootWorkingDirectory);
+                await dbContext.SaveChangesAsync();
+                workspace.CleanupFileSystem(terraformOptions.RootWorkingDirectory);
             }
 
             return new ResourceCommandResult
             {
-                Resources = _mapper.Map<Resource[]>(workspace.GetState().GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes))),
+                Resources = mapper.Map<Resource[]>(workspace.GetState().GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes))),
                 Errors = errors.ToArray(),
                 Outputs = outputs
             };
@@ -159,7 +134,7 @@ namespace Caster.Api.Features.Resources
 
         protected async Task<Workspace> GetWorkspace(Guid id)
         {
-            var workspace = await _db.Workspaces
+            var workspace = await dbContext.Workspaces
                 .Include(w => w.Directory)
                 .Where(w => w.Id == id)
                 .FirstOrDefaultAsync();

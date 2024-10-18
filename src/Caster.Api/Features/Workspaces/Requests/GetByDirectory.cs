@@ -11,19 +11,18 @@ using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using FluentValidation;
+using Caster.Api.Features.Shared.Services;
+using Caster.Api.Infrastructure.Extensions;
 
 namespace Caster.Api.Features.Workspaces
 {
     public class GetByDirectory
     {
-        [DataContract(Name="GetWorkspacesByDirectoryQuery")]
+        [DataContract(Name = "GetWorkspacesByDirectoryQuery")]
         public class Query : IRequest<Workspace[]>
         {
             /// <summary>
@@ -33,44 +32,25 @@ namespace Caster.Api.Features.Workspaces
             public Guid DirectoryId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Workspace[]>
+        public class Validator : AbstractValidator<Query>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public Validator(IValidationService validationService)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
+                RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
             }
+        }
 
-            public async Task<Workspace[]> Handle(Query request, CancellationToken cancellationToken)
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Workspace[]>
+        {
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
+
+            public override async Task<Workspace[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                await ValidateEntities(request.DirectoryId);
-
-                return await _db.Workspaces
+                return await dbContext.Workspaces
                     .Where(x => x.DirectoryId == request.DirectoryId)
-                    .ProjectTo<Workspace>(_mapper.ConfigurationProvider)
-                    .ToArrayAsync();
-            }
-
-            private async Task ValidateEntities(Guid directoryId)
-            {
-                var directory = await _db.Directories.FindAsync(directoryId);
-
-                if (directory == null)
-                    throw new EntityNotFoundException<Directory>();
+                    .ProjectTo<Workspace>(mapper.ConfigurationProvider)
+                    .ToArrayAsync(cancellationToken);
             }
         }
     }
