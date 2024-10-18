@@ -17,6 +17,9 @@ using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
 using AutoMapper.QueryableExtensions;
+using Caster.Api.Domain.Models;
+using AutoMapper;
+using Caster.Api.Data;
 
 namespace Caster.Api.Features.DesignModules;
 
@@ -37,18 +40,16 @@ public class GetByDesign
         }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Query, DesignModule[]>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, DesignModule[]>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Design>(request.DesignId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
-        public async Task<DesignModule[]> Handle(Query request, CancellationToken cancellationToken)
+        public override async Task<DesignModule[]> HandleRequest(Query request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var designModules = await _db.DesignModules
+            var designModules = await dbContext.DesignModules
                 .Where(x => x.DesignId == request.DesignId)
-                .ProjectTo<DesignModule>(_mapper.ConfigurationProvider)
+                .ProjectTo<DesignModule>(mapper.ConfigurationProvider)
                 .ToArrayAsync();
 
             return designModules;

@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using MediatR;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
 using FluentValidation;
@@ -15,6 +14,8 @@ using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 using Caster.Api.Domain.Models;
+using AutoMapper;
+using Caster.Api.Data;
 
 namespace Caster.Api.Features.Variables;
 
@@ -31,27 +32,24 @@ public class Edit
         public string DefaultValue { get; init; }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Command, Variable>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Variable>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Domain.Models.Variable>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-        public async Task<Variable> Handle(Command request, CancellationToken cancellationToken)
+        public override async Task<Variable> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var variable = await _db.Variables
+            var variable = await dbContext.Variables
                 .Where(x => x.Id == request.Id)
                 .SingleOrDefaultAsync(cancellationToken);
 
             if (variable == null)
                 throw new EntityNotFoundException<Variable>();
 
-            _mapper.Map(request, variable);
+            mapper.Map(request, variable);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-            await _db.SaveChangesAsync(cancellationToken);
-
-            return _mapper.Map<Variable>(variable);
+            return mapper.Map<Variable>(variable);
         }
     }
 }

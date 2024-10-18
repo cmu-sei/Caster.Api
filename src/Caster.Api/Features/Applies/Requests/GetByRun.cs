@@ -17,12 +17,13 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Applies
 {
     public class GetByRun
     {
-        [DataContract(Name="GetApplyByRunQuery")]
+        [DataContract(Name = "GetApplyByRunQuery")]
         public class Query : IRequest<Apply>
         {
             /// <summary>
@@ -32,30 +33,27 @@ namespace Caster.Api.Features.Applies
             public Guid RunId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Apply>
+        public class Handler : BaseHandler<Query, Apply>
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            private readonly ICasterAuthorizationService _authorizationService;
 
             public Handler(
                 CasterContext db,
                 IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+                ICasterAuthorizationService authorizationService)
             {
                 _db = db;
                 _mapper = mapper;
                 _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
             }
 
-            public async Task<Apply> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+               await _authorizationService.Authorize<Run>(request.RunId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
+            public override async Task<Apply> HandleRequest(Query request, CancellationToken cancellationToken)
+            {
                 var run = await _db.Runs.FirstOrDefaultAsync(x => x.Id == request.RunId);
 
                 if (run == null)

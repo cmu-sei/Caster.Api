@@ -17,12 +17,13 @@ using Caster.Api.Infrastructure.Identity;
 using System.Text.Json.Serialization;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Models;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Directories
 {
     public class Export
     {
-        [DataContract(Name="ExportDirectoryQuery")]
+        [DataContract(Name = "ExportDirectoryQuery")]
         public class Query : IRequest<ArchiveResult>
         {
             [JsonIgnore]
@@ -36,41 +37,21 @@ namespace Caster.Api.Features.Directories
             public bool IncludeIds { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, ArchiveResult>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IArchiveService archiveService) : BaseHandler<Query, ArchiveResult>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly IArchiveService _archiveService;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.Directory>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                IArchiveService archiveService)
+            public override async Task<ArchiveResult> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _archiveService = archiveService;
-            }
-
-            public async Task<ArchiveResult> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var directory =  await _db.Directories
+                var directory = await dbContext.Directories
                     .SingleOrDefaultAsync(e => e.Id == request.Id, cancellationToken);
 
                 if (directory == null)
                     throw new EntityNotFoundException<Directory>();
 
-                var directories =  await _db.GetDirectoryWithChildren(directory.Id, cancellationToken);
-                return await _archiveService.ArchiveDirectory(directory, request.ArchiveType, request.IncludeIds);
+                var directories = await dbContext.GetDirectoryWithChildren(directory.Id, cancellationToken);
+                return await archiveService.ArchiveDirectory(directory, request.ArchiveType, request.IncludeIds);
             }
         }
     }

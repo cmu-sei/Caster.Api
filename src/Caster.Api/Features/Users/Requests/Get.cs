@@ -16,12 +16,14 @@ using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Domain.Models;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Users
 {
     public class Get
     {
-        [DataContract(Name="GetUserQuery")]
+        [DataContract(Name = "GetUserQuery")]
         public class Query : IRequest<User>
         {
             /// <summary>
@@ -31,33 +33,16 @@ namespace Caster.Api.Features.Users
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, User>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, User>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ViewUsers], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<User> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<User> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var user =  await _db.Users
-                    .ProjectTo<User>(_mapper.ConfigurationProvider, dest => dest.Permissions)
-                    .SingleOrDefaultAsync(e => e.Id == request.Id);
+                var user = await dbContext.Users
+                    .ProjectTo<User>(mapper.ConfigurationProvider)
+                    .SingleOrDefaultAsync(e => e.Id == request.Id, cancellationToken);
 
                 if (user == null)
                     throw new EntityNotFoundException<User>();

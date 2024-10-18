@@ -18,6 +18,11 @@ public interface IValidationService
     Task<bool> PoolExists(Guid poolId);
     Task<bool> WorkspaceExists(Guid workspaceId);
     Task<bool> VlanExists(Guid vlanId);
+    Task<bool> UserExists(Guid userId);
+    Task<bool> GroupExists(Guid groupId);
+    Task<bool> ProjectRoleExists(Guid roleId);
+    Task<bool> SystemRoleExists(Guid roleId);
+    Task<bool> RunExists(Guid runId);
 }
 
 public class ValidationService : IValidationService
@@ -67,5 +72,30 @@ public class ValidationService : IValidationService
     public async Task<bool> VlanExists(Guid vlanId)
     {
         return await _dbContext.Vlans.AnyAsync(x => x.Id == vlanId);
+    }
+
+    public async Task<bool> UserExists(Guid userId)
+    {
+        return await _dbContext.Users.AnyAsync(x => x.Id == userId);
+    }
+
+    public async Task<bool> GroupExists(Guid groupId)
+    {
+        return await _dbContext.Groups.AnyAsync(x => x.Id == groupId);
+    }
+
+    public async Task<bool> ProjectRoleExists(Guid roleId)
+    {
+        return await _dbContext.ProjectRoles.AnyAsync(x => x.Id == roleId);
+    }
+
+    public async Task<bool> SystemRoleExists(Guid roleId)
+    {
+        return await _dbContext.SystemRoles.AnyAsync(x => x.Id == roleId);
+    }
+
+    public async Task<bool> RunExists(Guid runId)
+    {
+        return await _dbContext.Runs.AnyAsync(x => x.Id == runId);
     }
 }

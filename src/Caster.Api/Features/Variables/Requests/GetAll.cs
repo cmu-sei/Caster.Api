@@ -7,16 +7,16 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using System.Text.Json.Serialization;
 using System.Linq;
 using Caster.Api.Features.Shared;
 using FluentValidation;
 using AutoMapper.QueryableExtensions;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using AutoMapper;
+using Caster.Api.Data;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Variables;
 
@@ -36,16 +36,14 @@ public class GetAll
         }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Query, Variable[]>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Variable[]>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Design>(request.DesignId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
-        public async Task<Variable[]> Handle(Query request, CancellationToken cancellationToken)
+        public override async Task<Variable[]> HandleRequest(Query request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var variablesQuery = _db.Variables.AsQueryable();
+            var variablesQuery = dbContext.Variables.AsQueryable();
 
             if (request.DesignId.HasValue)
             {
@@ -53,7 +51,7 @@ public class GetAll
             }
 
             var variables = await variablesQuery
-                .ProjectTo<Variable>(_mapper.ConfigurationProvider)
+                .ProjectTo<Variable>(mapper.ConfigurationProvider)
                 .ToArrayAsync(cancellationToken);
 
             return variables;

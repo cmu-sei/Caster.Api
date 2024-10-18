@@ -10,14 +10,11 @@ using Caster.Api.Data;
 using System;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using System.Linq;
-using Caster.Api.Infrastructure.Identity;
-using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using System.Web;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Resources
 {
@@ -39,31 +36,14 @@ namespace Caster.Api.Features.Resources
             public string Address { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Resource>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Resource>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Workspace>(request.WorkspaceId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Resource> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Resource> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var workspace = await _db.Workspaces.FindAsync(new object[] { request.WorkspaceId }, cancellationToken);
+                var workspace = await dbContext.Workspaces.FindAsync([request.WorkspaceId], cancellationToken);
 
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
@@ -74,7 +54,7 @@ namespace Caster.Api.Features.Resources
                 var address = HttpUtility.UrlDecode(request.Address);
 
                 var resource = resources.Where(r => r.Address == address).FirstOrDefault();
-                return _mapper.Map<Resource>(resource, opts => opts.ExcludeMembers());
+                return mapper.Map<Resource>(resource, opts => opts.ExcludeMembers());
             }
         }
     }
