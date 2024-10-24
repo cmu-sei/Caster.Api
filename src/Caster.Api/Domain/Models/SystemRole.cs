@@ -20,16 +20,16 @@ public class SystemRole
 
     public string Description { get; set; }
 
-    public bool AllPermissions { get; set; }
-
     public List<SystemPermissions> Permissions { get; set; }
 }
 
 public enum SystemPermissions
 {
-    ViewAllProjects = 0,
-    CreateProjects = 1,
-    ManageProjects = 2,
-    ViewVLANs = 3,
-    EditVLANs = 4
+    All = 0,
+    ReadOnly = 1,
+    ManageSystem = 2,
+    CreateProjects = 3,
+    ManageProjects = 4,
+    ImportProjects = 5,
+    LockFiles = 6
 }

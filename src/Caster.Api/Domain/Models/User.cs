@@ -20,6 +20,7 @@ namespace Caster.Api.Domain.Models
         public virtual SystemRole Role { get; set; }
 
         public ICollection<UserPermission> UserPermissions { get; set; } = new List<UserPermission>();
+        public ICollection<ProjectMembership> ProjectMemberships { get; set; } = new List<ProjectMembership>();
     }
 }
 

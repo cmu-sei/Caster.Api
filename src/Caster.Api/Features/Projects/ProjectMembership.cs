@@ -5,21 +5,23 @@ using System;
 
 namespace Caster.Api.Features.Projects
 {
-    public class Project
+    public class ProjectMembership
     {
-        /// <summary>
-        /// ID of the project.
-        /// </summary>
         public Guid Id { get; set; }
 
         /// <summary>
-        /// Name of the project.
+        /// ID of the project.
         /// </summary>
-        public string Name { get; set; }
+        public Guid ProjectId { get; set; }
 
         /// <summary>
-        /// The vlan partition this project is a part of.
+        /// Id of the User.
         /// </summary>
-        public Guid? PartitionId { get; set; }
+        public Guid UserId { get; set; }
+
+        /// <summary>
+        /// Id of the Role this User has for this Project
+        /// </summary>
+        public Guid? RoleId { get; set; }
     }
 }

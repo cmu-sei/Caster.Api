@@ -3,6 +3,7 @@ using System;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Caster.Api.Data.Migrations
 {
     [DbContext(typeof(CasterContext))]
-    partial class CasterContextModelSnapshot : ModelSnapshot
+    [Migration("20241023141052_Added_SystemRole4")]
+    partial class Added_SystemRole4
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -602,22 +605,6 @@ namespace Caster.Api.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("project_roles");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("1a3f26cd-9d99-4b98-b914-12931e786198"),
-                            Description = "Can perform all actions on the Project",
-                            Name = "Administrator",
-                            Permissions = new[] { 0 }
-                        },
-                        new
-                        {
-                            Id = new Guid("39aa296e-05ba-4fb0-8d74-c92cf3354c6f"),
-                            Description = "Has read only access to the Project",
-                            Name = "Observer",
-                            Permissions = new[] { 1 }
-                        });
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.RemovedResource", b =>

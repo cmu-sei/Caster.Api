@@ -22,7 +22,10 @@ namespace Caster.Api.Infrastructure.Authorization
     {
         protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionsRequirement requirement)
         {
-            if (context.User != null && context.User.HasClaim("Permission", requirement.RequiredPermission.ToString()))
+            if (context.User != null &&
+                !context.User.HasClaim("Permission", SystemPermissions.ReadOnly.ToString()) &&
+                context.User.HasClaim("Permission", SystemPermissions.All.ToString()) ||
+                context.User.HasClaim("Permission", requirement.RequiredPermission.ToString()))
             {
                 context.Succeed(requirement);
             }

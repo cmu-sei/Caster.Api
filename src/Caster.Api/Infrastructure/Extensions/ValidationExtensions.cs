@@ -66,4 +66,11 @@ public static class ValidationExtensions
             .MustAsync(async (id, cancellationToken) => await validationService.WorkspaceExists(id))
             .WithMessage("Workspace does not exist");
     }
+
+    public static IRuleBuilderOptions<T, Guid> UserExists<T>(this IRuleBuilder<T, Guid> ruleBuilder, IValidationService validationService)
+    {
+        return ruleBuilder
+            .MustAsync(async (id, cancellationToken) => await validationService.UserExists(id))
+            .WithMessage("User does not exist");
+    }
 }

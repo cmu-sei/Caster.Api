@@ -40,6 +40,8 @@ public partial class CasterContext : DbContext
     public DbSet<Partition> Partitions { get; set; }
     public DbSet<Pool> Pools { get; set; }
     public DbSet<SystemRole> SystemRoles { get; set; }
+    public DbSet<ProjectRole> ProjectRoles { get; set; }
+    public DbSet<ProjectMembership> ProjectMemberships { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

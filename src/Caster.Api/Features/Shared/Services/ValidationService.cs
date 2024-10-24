@@ -18,6 +18,7 @@ public interface IValidationService
     Task<bool> PoolExists(Guid poolId);
     Task<bool> WorkspaceExists(Guid workspaceId);
     Task<bool> VlanExists(Guid vlanId);
+    Task<bool> UserExists(Guid userId);
 }
 
 public class ValidationService : IValidationService
@@ -67,5 +68,10 @@ public class ValidationService : IValidationService
     public async Task<bool> VlanExists(Guid vlanId)
     {
         return await _dbContext.Vlans.AnyAsync(x => x.Id == vlanId);
+    }
+
+    public async Task<bool> UserExists(Guid userId)
+    {
+        return await _dbContext.Users.AnyAsync(x => x.Id == userId);
     }
 }

@@ -21,6 +21,8 @@ namespace Caster.Api.Domain.Models
         public Guid? PartitionId { get; set; }
         public virtual Partition Partition { get; set; }
 
+        public virtual ICollection<ProjectMembership> Memberships { get; set; } = new List<ProjectMembership>();
+
         public Project() { }
 
         public Project(string name)

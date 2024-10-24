@@ -16,6 +16,8 @@ namespace Caster.Api.Features.Projects
             CreateMap<Edit.Command, Domain.Models.Project>();
             CreateMap<ImportResult, Import.ImportProjectResult>()
                 .ForMember(dest => dest.LockedFiles, opt => opt.MapFrom((src) => src.LockedFiles.Select(x => x.Path)));
+
+            CreateMap<Domain.Models.ProjectMembership, ProjectMembership>();
         }
     }
 }

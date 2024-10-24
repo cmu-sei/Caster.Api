@@ -13,12 +13,14 @@ using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Projects
 {
     public class Create
     {
-        [DataContract(Name="CreateProjectCommand")]
+        [DataContract(Name = "CreateProjectCommand")]
         public class Command : IRequest<Project>
         {
             /// <summary>
@@ -49,11 +51,19 @@ namespace Caster.Api.Features.Projects
 
             public async Task<Project> Handle(Command request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
+                if (!(await _authorizationService.AuthorizeAsync(_user, null, new PermissionsRequirement(Domain.Models.SystemPermissions.CreateProjects))).Succeeded)
                     throw new ForbiddenException();
 
                 var project = _mapper.Map<Domain.Models.Project>(request);
-                await _db.Projects.AddAsync(project);
+                _db.Projects.Add(project);
+
+                // Add the creator as a member with the appropriate role
+                var projectMembership = new Domain.Models.ProjectMembership();
+                projectMembership.UserId = _user.GetId();
+                projectMembership.Project = project;
+                projectMembership.RoleId = ProjectRoleDefaults.ProjectCreatorRoleId;
+                _db.ProjectMemberships.Add(projectMembership);
+
                 await _db.SaveChangesAsync();
                 return _mapper.Map<Project>(project);
             }
