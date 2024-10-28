@@ -22,7 +22,7 @@ namespace Caster.Api.Features.Directories
 {
     public class GetByProject
     {
-        [DataContract(Name="GetDirectoriesByProjectQuery")]
+        [DataContract(Name = "GetDirectoriesByProjectQuery")]
         public class Query : IRequest<Directory[]>
         {
             [JsonIgnore]
@@ -51,13 +51,13 @@ namespace Caster.Api.Features.Directories
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
+            private readonly ICasterAuthorizationService _authorizationService;
             private readonly ClaimsPrincipal _user;
 
             public Handler(
                 CasterContext db,
                 IMapper mapper,
-                IAuthorizationService authorizationService,
+                ICasterAuthorizationService authorizationService,
                 IIdentityResolver identityResolver)
             {
                 _db = db;
@@ -68,8 +68,7 @@ namespace Caster.Api.Features.Directories
 
             public async Task<Directory[]> Handle(Query request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
+                await _authorizationService.Authorize<Project>(request.ProjectId, AuthorizationType.Read, [SystemPermissions.ManageProjects], []);
 
                 await ValidateProject(request.ProjectId);
 

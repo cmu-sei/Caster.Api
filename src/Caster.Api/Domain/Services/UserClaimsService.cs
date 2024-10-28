@@ -207,11 +207,33 @@ namespace Caster.Api.Domain.Services
 
                 foreach (var permission in permissions)
                 {
-                    if (!claims.Any(x => x.Type == "Permission" && x.Value == permission))
+                    if (!claims.Any(x => x.Type == AuthorizationConstants.PermissionsClaimType &&
+                        x.Value == permission))
                     {
-                        claims.Add(new Claim("Permission", permission));
+                        claims.Add(new Claim(AuthorizationConstants.PermissionsClaimType, permission));
                     };
                 }
+            }
+
+            // Get Project Permissions
+            var projectMemberships = await _context.ProjectMemberships
+                .Where(x => x.UserId == userId)
+                .Include(x => x.Role)
+                .ToListAsync();
+
+            foreach (var membership in projectMemberships)
+            {
+                var permissionsClaim = new ProjectPermissionsClaim
+                {
+                    ProjectId = membership.ProjectId,
+                };
+
+                if (membership.RoleId != null)
+                {
+                    permissionsClaim.Permissions = membership.Role.Permissions.ToArray();
+                }
+
+                claims.Add(new Claim(AuthorizationConstants.ProjectPermissionsClaimType, permissionsClaim.ToString()));
             }
 
             return claims;

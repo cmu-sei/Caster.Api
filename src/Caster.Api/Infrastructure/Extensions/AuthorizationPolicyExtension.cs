@@ -32,7 +32,8 @@ namespace Caster.Api.Infrastructure.Extensions
             services.AddSingleton<IAuthorizationHandler, ContentDeveloperHandler>();
             services.AddSingleton<IAuthorizationHandler, OperatorHandler>();
             services.AddSingleton<IAuthorizationHandler, BaseUserHandler>();
-            services.AddSingleton<IAuthorizationHandler, PermissionsHandler>();
+            services.AddSingleton<IAuthorizationHandler, SystemPermissionsHandler>();
+            services.AddSingleton<IAuthorizationHandler, ProjectPermissionsHandler>();
         }
 
 

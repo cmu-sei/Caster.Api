@@ -14,6 +14,7 @@ using Caster.Api.Features.Shared;
 using Caster.Api.Features.Shared.Behaviors;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Hubs;
+using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.ClaimsTransformers;
 using Caster.Api.Infrastructure.DbInterceptors;
 using Caster.Api.Infrastructure.Exceptions.Middleware;
@@ -219,6 +220,7 @@ namespace Caster.Api
             services.AddScoped<IImportService, ImportService>();
             services.AddScoped<IValidationService, ValidationService>();
             services.AddScoped(typeof(IDependencyAggregate<>), typeof(DependencyAggregate<>));
+            services.AddScoped<ICasterAuthorizationService, AuthorizationService>();
 
             services.AddSingleton<Caster.Api.Domain.Services.IAuthenticationService, Caster.Api.Domain.Services.AuthenticationService>();
             services.AddSingleton<ILockService, LockService>();

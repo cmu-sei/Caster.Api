@@ -15,6 +15,7 @@ using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Caster.Api.Features.Projects
 {
@@ -34,13 +35,13 @@ namespace Caster.Api.Features.Projects
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
+            private readonly ICasterAuthorizationService _authorizationService;
             private readonly ClaimsPrincipal _user;
 
             public Handler(
                 CasterContext db,
                 IMapper mapper,
-                IAuthorizationService authorizationService,
+                ICasterAuthorizationService authorizationService,
                 IIdentityResolver identityResolver)
             {
                 _db = db;
@@ -51,8 +52,7 @@ namespace Caster.Api.Features.Projects
 
             public async Task<Project> Handle(Command request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new PermissionsRequirement(Domain.Models.SystemPermissions.CreateProjects))).Succeeded)
-                    throw new ForbiddenException();
+                await _authorizationService.Authorize(AuthorizationType.Write, [SystemPermissions.CreateProjects]);
 
                 var project = _mapper.Map<Domain.Models.Project>(request);
                 _db.Projects.Add(project);
