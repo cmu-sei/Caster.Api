@@ -7,12 +7,8 @@ using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
 using System.Runtime.Serialization;
-using Microsoft.EntityFrameworkCore;
-using FluentValidation;
-using Caster.Api.Features.Shared.Services;
-using Caster.Api.Infrastructure.Extensions;
-using System.Linq;
 using System.Text.Json.Serialization;
+using Caster.Api.Infrastructure.Exceptions;
 
 namespace Caster.Api.Features.Projects
 {
@@ -22,37 +18,23 @@ namespace Caster.Api.Features.Projects
         public record Command : IRequest
         {
             /// <summary>
-            /// The Id of the Project to delete from.
+            /// The Id of the ProjectMembership to delete.
             /// </summary>
             [JsonIgnore]
-            public Guid ProjectId { get; set; }
-
-            /// <summary>
-            /// The Id of the User to remove.
-            /// </summary>
-            [DataMember]
-            public Guid UserId { get; set; }
-        }
-
-        public class Validator : AbstractValidator<Command>
-        {
-            public Validator(IValidationService validationService)
-            {
-                RuleFor(x => x.ProjectId).ProjectExists(validationService);
-                RuleFor(x => x.UserId).UserExists(validationService);
-            }
+            public Guid Id { get; set; }
         }
 
         public class Handler(CasterContext _db) : IRequestHandler<Command>
         {
             public async Task Handle(Command request, CancellationToken cancellationToken)
             {
-                var projectMembership = await _db.ProjectMemberships
-                    .Where(x => x.ProjectId == request.ProjectId && x.UserId == request.UserId)
-                    .FirstOrDefaultAsync(cancellationToken);
+                var projectMembership = await _db.ProjectMemberships.FindAsync([request.Id], cancellationToken);
+
+                if (projectMembership == null)
+                    throw new EntityNotFoundException<ProjectMembership>();
 
                 _db.ProjectMemberships.Remove(projectMembership);
-                await _db.SaveChangesAsync();
+                await _db.SaveChangesAsync(cancellationToken);
             }
         }
     }

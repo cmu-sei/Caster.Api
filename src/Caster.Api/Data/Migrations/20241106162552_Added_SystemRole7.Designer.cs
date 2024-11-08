@@ -3,6 +3,7 @@ using System;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Caster.Api.Data.Migrations
 {
     [DbContext(typeof(CasterContext))]
-    partial class CasterContextModelSnapshot : ModelSnapshot
+    [Migration("20241106162552_Added_SystemRole7")]
+    partial class Added_SystemRole7
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -602,10 +605,6 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
-                    b.Property<Guid?>("GroupId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("group_id");
-
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
@@ -614,19 +613,17 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("role_id");
 
-                    b.Property<Guid?>("UserId")
+                    b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("GroupId");
-
                     b.HasIndex("RoleId");
 
                     b.HasIndex("UserId");
 
-                    b.HasIndex("ProjectId", "UserId", "GroupId")
+                    b.HasIndex("ProjectId", "UserId")
                         .IsUnique();
 
                     b.ToTable("project_memberships");
@@ -1149,10 +1146,6 @@ namespace Caster.Api.Data.Migrations
 
             modelBuilder.Entity("Caster.Api.Domain.Models.ProjectMembership", b =>
                 {
-                    b.HasOne("Caster.Api.Domain.Models.Group", "Group")
-                        .WithMany("ProjectMemberships")
-                        .HasForeignKey("GroupId");
-
                     b.HasOne("Caster.Api.Domain.Models.Project", "Project")
                         .WithMany("Memberships")
                         .HasForeignKey("ProjectId")
@@ -1165,9 +1158,9 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasOne("Caster.Api.Domain.Models.User", "User")
                         .WithMany("ProjectMemberships")
-                        .HasForeignKey("UserId");
-
-                    b.Navigation("Group");
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Project");
 
@@ -1294,8 +1287,6 @@ namespace Caster.Api.Data.Migrations
             modelBuilder.Entity("Caster.Api.Domain.Models.Group", b =>
                 {
                     b.Navigation("Memberships");
-
-                    b.Navigation("ProjectMemberships");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Host", b =>

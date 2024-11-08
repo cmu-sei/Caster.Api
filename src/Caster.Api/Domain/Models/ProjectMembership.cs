@@ -19,8 +19,11 @@ public class ProjectMembership
     public Guid ProjectId { get; set; }
     public virtual Project Project { get; set; }
 
-    public Guid UserId { get; set; }
+    public Guid? UserId { get; set; }
     public virtual User User { get; set; }
+
+    public Guid? GroupId { get; set; }
+    public virtual Group Group { get; set; }
 
     public Guid? RoleId { get; set; }
     public ProjectRole Role { get; set; }
@@ -28,28 +31,35 @@ public class ProjectMembership
 
     public ProjectMembership() { }
 
-    public ProjectMembership(Guid projectId, Guid userId)
+    public ProjectMembership(Guid projectId, Guid? userId, Guid? groupId)
     {
         ProjectId = projectId;
         UserId = userId;
+        GroupId = groupId;
     }
 
     public class ProjectMembershipConfiguration : IEntityTypeConfiguration<ProjectMembership>
     {
         public void Configure(EntityTypeBuilder<ProjectMembership> builder)
         {
-            builder.HasIndex(e => new { e.ProjectId, e.UserId }).IsUnique();
+            builder.HasIndex(e => new { e.ProjectId, e.UserId, e.GroupId }).IsUnique();
 
             builder
-                .HasOne(tu => tu.Project)
-                .WithMany(t => t.Memberships)
-                .HasForeignKey(tu => tu.ProjectId);
+                .HasOne(x => x.Project)
+                .WithMany(x => x.Memberships)
+                .HasForeignKey(x => x.ProjectId);
 
             builder
-                .HasOne(tu => tu.User)
-                .WithMany(u => u.ProjectMemberships)
-                .HasForeignKey(tu => tu.UserId)
-                .HasPrincipalKey(u => u.Id);
+                .HasOne(x => x.User)
+                .WithMany(x => x.ProjectMemberships)
+                .HasForeignKey(x => x.UserId)
+                .HasPrincipalKey(x => x.Id);
+
+            builder
+                .HasOne(x => x.Group)
+                .WithMany(x => x.ProjectMemberships)
+                .HasForeignKey(x => x.GroupId)
+                .HasPrincipalKey(x => x.Id);
         }
     }
 }

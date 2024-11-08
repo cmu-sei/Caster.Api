@@ -32,14 +32,8 @@ namespace Caster.Api.Features.Projects
             /// <summary>
             /// The Project Id of the Membership
             /// </summary>
-            [JsonIgnore]
-            public Guid ProjectId { get; set; }
-
-            /// <summary>
-            /// The User Id of the Membership
-            /// </summary>
             [DataMember]
-            public Guid UserId { get; set; }
+            public Guid Id { get; set; }
 
             [DataMember]
             public Guid? RoleId { get; set; }
@@ -49,8 +43,7 @@ namespace Caster.Api.Features.Projects
         {
             public Validator(IValidationService validationService)
             {
-                RuleFor(x => x.ProjectId).ProjectExists(validationService);
-                RuleFor(x => x.UserId).UserExists(validationService);
+                RuleFor(x => x.RoleId.Value).ProjectRoleExists(validationService).When(x => x.RoleId.HasValue);
             }
         }
 
@@ -58,16 +51,13 @@ namespace Caster.Api.Features.Projects
         {
             public async Task<ProjectMembership> Handle(Command request, CancellationToken cancellationToken)
             {
-                var projectMembership = await _db.ProjectMemberships
-                    .Include(x => x.Role)
-                    .Where(x => x.ProjectId == request.ProjectId && x.UserId == request.UserId)
-                    .FirstOrDefaultAsync(cancellationToken);
+                var projectMembership = await _db.ProjectMemberships.FindAsync([request.Id], cancellationToken);
 
                 if (projectMembership == null)
                     throw new EntityNotFoundException<ProjectMembership>();
 
                 projectMembership.RoleId = request.RoleId;
-                await _db.SaveChangesAsync();
+                await _db.SaveChangesAsync(cancellationToken);
                 return _mapper.Map<ProjectMembership>(projectMembership);
             }
         }

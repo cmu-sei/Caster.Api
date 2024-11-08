@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Net;
 using System.Threading.Tasks;
 using MediatR;
@@ -130,15 +131,13 @@ namespace Caster.Api.Features.Projects
         /// <summary>
         /// Get a single Project Membership.
         /// </summary>
-        /// <param name="projectId">Id of the Project</param>
-        /// <param name="userId">Id of the User</param>
         /// <returns></returns>
-        [HttpGet("{projectId}/memberships/{userId}")]
+        [HttpGet("memberships/{id}")]
         [ProducesResponseType(typeof(ProjectMembership), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "GetProjectMembership")]
-        public async Task<IActionResult> GetMembership([FromRoute] Guid projectId, Guid userId)
+        public async Task<IActionResult> GetMembership([FromRoute] Guid id)
         {
-            var result = await _mediator.Send(new GetMembership.Query { ProjectId = projectId, UserId = userId });
+            var result = await _mediator.Send(new GetMembership.Query { Id = id });
             return Ok(result);
         }
 
@@ -174,15 +173,12 @@ namespace Caster.Api.Features.Projects
         /// <summary>
         /// Edit a Project Membership.
         /// </summary>
-        /// <param name="projectId"></param>
-        /// <param name="command"></param>
         /// <returns></returns>
-        [HttpPut("{projectId}/memberships")]
+        [HttpPut("memberships")]
         [ProducesResponseType(typeof(ProjectMembership), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "EditProjectMembership")]
-        public async Task<IActionResult> EditMembership([FromRoute] Guid projectId, EditMembership.Command command)
+        public async Task<IActionResult> EditMembership(EditMembership.Command command)
         {
-            command.ProjectId = projectId;
             var result = await _mediator.Send(command);
             return Ok(result);
         }
@@ -190,16 +186,13 @@ namespace Caster.Api.Features.Projects
         /// <summary>
         /// Delete a Project Membership.
         /// </summary>
-        /// <param name="projectId">ID of Project.</param>
-        /// <param name="command"></param>
         /// <returns></returns>
-        [HttpDelete("{projectId}/memberships")]
+        [HttpDelete("memberships/{id}")]
         [ProducesResponseType((int)HttpStatusCode.NoContent)]
         [SwaggerOperation(OperationId = "DeleteProjectMembership")]
-        public async Task<IActionResult> DeleteMembership([FromRoute] Guid projectId, DeleteMembership.Command command)
+        public async Task<IActionResult> DeleteMembership([FromRoute] Guid id)
         {
-            command.ProjectId = projectId;
-            await _mediator.Send(command);
+            await _mediator.Send(new DeleteMembership.Command { Id = id });
             return NoContent();
         }
     }

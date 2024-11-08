@@ -73,4 +73,25 @@ public static class ValidationExtensions
             .MustAsync(async (id, cancellationToken) => await validationService.UserExists(id))
             .WithMessage("User does not exist");
     }
+
+    public static IRuleBuilderOptions<T, Guid> GroupExists<T>(this IRuleBuilder<T, Guid> ruleBuilder, IValidationService validationService)
+    {
+        return ruleBuilder
+            .MustAsync(async (id, cancellationToken) => await validationService.GroupExists(id))
+            .WithMessage("User does not exist");
+    }
+
+    public static IRuleBuilderOptions<T, Guid> ProjectRoleExists<T>(this IRuleBuilder<T, Guid> ruleBuilder, IValidationService validationService)
+    {
+        return ruleBuilder
+            .MustAsync(async (id, cancellationToken) => await validationService.ProjectRoleExists(id))
+            .WithMessage("Role does not exist");
+    }
+
+    public static IRuleBuilderOptions<T, Guid> SystemRoleExists<T>(this IRuleBuilder<T, Guid> ruleBuilder, IValidationService validationService)
+    {
+        return ruleBuilder
+            .MustAsync(async (id, cancellationToken) => await validationService.SystemRoleExists(id))
+            .WithMessage("Role does not exist");
+    }
 }

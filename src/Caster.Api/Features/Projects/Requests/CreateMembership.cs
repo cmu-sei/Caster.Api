@@ -35,7 +35,13 @@ namespace Caster.Api.Features.Projects
             /// The Id of the User to add.
             /// </summary>
             [DataMember]
-            public Guid UserId { get; set; }
+            public Guid? UserId { get; set; }
+
+            /// <summary>
+            /// The Id of the Group to add.
+            /// </summary>
+            [DataMember]
+            public Guid? GroupId { get; set; }
         }
 
         public class Validator : AbstractValidator<Command>
@@ -43,7 +49,8 @@ namespace Caster.Api.Features.Projects
             public Validator(IValidationService validationService)
             {
                 RuleFor(x => x.ProjectId).ProjectExists(validationService);
-                RuleFor(x => x.UserId).UserExists(validationService);
+                RuleFor(x => x.UserId.Value).UserExists(validationService).When(x => x.UserId.HasValue);
+                RuleFor(x => x.GroupId.Value).GroupExists(validationService).When(x => x.GroupId.HasValue);
             }
         }
 
@@ -52,14 +59,14 @@ namespace Caster.Api.Features.Projects
             public async Task<ProjectMembership> Handle(Command request, CancellationToken cancellationToken)
             {
                 var projectMembershipExists = await _db.ProjectMemberships
-                    .AnyAsync(x => x.ProjectId == request.ProjectId && x.UserId == request.UserId, cancellationToken);
+                    .AnyAsync(x => x.ProjectId == request.ProjectId && x.UserId == request.UserId && x.GroupId == request.GroupId, cancellationToken);
 
                 if (projectMembershipExists)
-                    throw new ConflictException("User is already a member of this Project");
+                    throw new ConflictException("ProjectMembership already exists");
 
-                var projectMembership = new Domain.Models.ProjectMembership(request.ProjectId, request.UserId);
+                var projectMembership = new Domain.Models.ProjectMembership(request.ProjectId, request.UserId, request.GroupId);
                 _db.ProjectMemberships.Add(projectMembership);
-                await _db.SaveChangesAsync();
+                await _db.SaveChangesAsync(cancellationToken);
 
                 return _mapper.Map<ProjectMembership>(projectMembership);
             }

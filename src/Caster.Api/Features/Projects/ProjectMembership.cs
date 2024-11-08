@@ -17,7 +17,12 @@ namespace Caster.Api.Features.Projects
         /// <summary>
         /// Id of the User.
         /// </summary>
-        public Guid UserId { get; set; }
+        public Guid? UserId { get; set; }
+
+        /// <summary>
+        /// Id of the Group.
+        /// </summary>
+        public Guid? GroupId { get; set; }
 
         /// <summary>
         /// Id of the Role this User has for this Project

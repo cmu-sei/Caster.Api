@@ -15,6 +15,8 @@ using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Options;
 using System.Text.Json;
+using Microsoft.IdentityModel.JsonWebTokens;
+using System.Text.RegularExpressions;
 
 namespace Caster.Api.Domain.Services
 {
@@ -181,7 +183,9 @@ namespace Caster.Api.Domain.Services
         {
             List<Claim> claims = new();
 
-            var tokenRoleNames = this.GetRolesFromToken(principal).Select(x => x.ToLower());
+            var tokenRoleNames = _options.UseRolesFromIdP ?
+                this.GetClaimsFromToken(principal, _options.RolesClaimPath).Select(x => x.ToLower()) :
+                [];
 
             var roles = await _context.SystemRoles
                 .Where(x => tokenRoleNames.Contains(x.Name.ToLower()))
@@ -215,23 +219,39 @@ namespace Caster.Api.Domain.Services
                 }
             }
 
-            // Get Project Permissions
-            var projectMemberships = await _context.ProjectMemberships
-                .Where(x => x.UserId == userId)
-                .Include(x => x.Role)
+            var groupNames = _options.UseGroupsFromIdP ?
+                this.GetClaimsFromToken(principal, _options.GroupsClaimPath).Select(x => x.ToLower()) :
+                [];
+
+            var groupIds = await _context.Groups
+                .Where(x => x.Memberships.Any(y => y.UserId == userId) || groupNames.Contains(x.Name.ToLower()))
+                .Select(x => x.Id)
                 .ToListAsync();
 
-            foreach (var membership in projectMemberships)
+            // Get Project Permissions
+            var projectMemberships = await _context.ProjectMemberships
+                .Where(x => x.UserId == userId || (x.GroupId.HasValue && groupIds.Contains(x.GroupId.Value)))
+                .Include(x => x.Role)
+                .GroupBy(x => x.ProjectId)
+                .ToListAsync();
+
+            foreach (var group in projectMemberships)
             {
+                var projectPermissions = new List<ProjectPermissions>();
+
+                foreach (var membership in group)
+                {
+                    if (membership.RoleId != null)
+                    {
+                        projectPermissions.AddRange(membership.Role.Permissions);
+                    }
+                }
+
                 var permissionsClaim = new ProjectPermissionsClaim
                 {
-                    ProjectId = membership.ProjectId,
+                    ProjectId = group.Key,
+                    Permissions = projectPermissions.Distinct().ToArray()
                 };
-
-                if (membership.RoleId != null)
-                {
-                    permissionsClaim.Permissions = membership.Role.Permissions.ToArray();
-                }
 
                 claims.Add(new Claim(AuthorizationConstants.ProjectPermissionsClaimType, permissionsClaim.ToString()));
             }
@@ -239,42 +259,67 @@ namespace Caster.Api.Domain.Services
             return claims;
         }
 
-        private List<string> GetRolesFromToken(ClaimsPrincipal principal)
+        private string[] GetClaimsFromToken(ClaimsPrincipal principal, string claimPath)
         {
-            List<string> roleNames = new();
-            var tokenClaim = principal.Claims.Where(x => x.Type == _options.RoleClaimType).FirstOrDefault();
-
-            if (tokenClaim.ValueType == "String")
+            if (string.IsNullOrEmpty(claimPath))
             {
-                roleNames.Add(tokenClaim.Value);
+                return [];
             }
-            else if (tokenClaim.ValueType == "JSON")
+
+            // Name of the claim to insert into the token. This can be a fully qualified name like 'address.street'.
+            // In this case, a nested json object will be created. To prevent nesting and use dot literally, escape the dot with backslash (\.).
+            var pathSegments = Regex.Split(claimPath, @"(?<!\\)\.").Select(s => s.Replace("\\.", ".")).ToArray();
+
+            var tokenClaim = principal.Claims.Where(x => x.Type == pathSegments.First()).FirstOrDefault();
+
+            if (tokenClaim == null)
             {
-                try
+                return [];
+            }
+
+            return tokenClaim.ValueType switch
+            {
+                ClaimValueTypes.String => [tokenClaim.Value],
+                JsonClaimValueTypes.Json => ExtractJsonClaimValues(tokenClaim.Value, pathSegments.Skip(1)),
+                _ => []
+            };
+        }
+
+        private string[] ExtractJsonClaimValues(string json, IEnumerable<string> pathSegments)
+        {
+            List<string> values = new();
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(json);
+                JsonElement currentElement = doc.RootElement;
+
+                foreach (var segment in pathSegments)
                 {
-                    using (JsonDocument doc = JsonDocument.Parse(tokenClaim.Value))
+                    if (!currentElement.TryGetProperty(segment, out JsonElement propertyElement))
                     {
-                        if (doc.RootElement.TryGetProperty(_options.RoleArrayPropertyName, out JsonElement propertyElement) &&
-                            propertyElement.ValueKind == JsonValueKind.Array)
-                        {
-                            List<string> result = new List<string>();
-                            foreach (var item in propertyElement.EnumerateArray())
-                            {
-                                if (item.ValueKind == JsonValueKind.String)
-                                {
-                                    roleNames.Add(item.GetString());
-                                }
-                            }
-                        }
+                        return [];
                     }
+
+                    currentElement = propertyElement;
                 }
-                catch (JsonException)
+
+                if (currentElement.ValueKind == JsonValueKind.Array)
                 {
-                    // Handle invalid JSON format
+                    values.AddRange(currentElement.EnumerateArray()
+                        .Where(item => item.ValueKind == JsonValueKind.String)
+                        .Select(item => item.GetString()));
+                }
+                else if (currentElement.ValueKind == JsonValueKind.String)
+                {
+                    values.Add(currentElement.GetString());
                 }
             }
+            catch (JsonException)
+            {
+                // Handle invalid JSON format
+            }
 
-            return roleNames;
+            return values.ToArray();
         }
 
         private void addNewClaims(ClaimsIdentity identity, List<Claim> claims)

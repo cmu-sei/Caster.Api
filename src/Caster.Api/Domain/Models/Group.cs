@@ -5,32 +5,18 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models;
 
-public class SystemRole
+public class Group
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public Guid Id { get; set; }
 
     public string Name { get; set; }
-
     public string Description { get; set; }
 
-    public List<SystemPermissions> Permissions { get; set; }
-}
-
-public enum SystemPermissions
-{
-    All = 0,
-    ReadOnly = 1,
-    ManageSystem = 2,
-    CreateProjects = 3,
-    ManageProjects = 4,
-    ImportProjects = 5,
-    LockFiles = 6,
-    CreateGroups = 7
+    public virtual ICollection<GroupMembership> Memberships { get; set; } = new List<GroupMembership>();
+    public virtual ICollection<ProjectMembership> ProjectMemberships { get; set; } = new List<ProjectMembership>();
 }

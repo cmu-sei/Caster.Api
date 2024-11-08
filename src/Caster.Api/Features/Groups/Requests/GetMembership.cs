@@ -22,33 +22,33 @@ using Caster.Api.Infrastructure.Extensions;
 using System.Linq;
 using System.Text.Json.Serialization;
 
-namespace Caster.Api.Features.Projects
+namespace Caster.Api.Features.Groups
 {
     public class GetMembership
     {
-        [DataContract(Name = "GetProjectMembershipQuery")]
-        public record Query : IRequest<ProjectMembership>
+        [DataContract(Name = "GetGroupMembershipQuery")]
+        public record Query : IRequest<GroupMembership>
         {
             /// <summary>
-            /// Id of the ProjectMembership
+            /// Id of the GroupMembership.
             /// </summary>
             [JsonIgnore]
             public Guid Id { get; set; }
         }
 
-        public class Handler(CasterContext _db, IMapper _mapper) : IRequestHandler<Query, ProjectMembership>
+        public class Handler(CasterContext _db, IMapper _mapper) : IRequestHandler<Query, GroupMembership>
         {
-            public async Task<ProjectMembership> Handle(Query request, CancellationToken cancellationToken)
+            public async Task<GroupMembership> Handle(Query request, CancellationToken cancellationToken)
             {
-                var projectMembership = await _db.ProjectMemberships
+                var groupMembership = await _db.GroupMemberships
                     .Where(x => x.Id == request.Id)
-                    .ProjectTo<ProjectMembership>(_mapper.ConfigurationProvider)
-                    .FirstOrDefaultAsync();
+                    .ProjectTo<GroupMembership>(_mapper.ConfigurationProvider)
+                    .FirstOrDefaultAsync(cancellationToken);
 
-                if (projectMembership == null)
-                    throw new EntityNotFoundException<ProjectMembership>();
+                if (groupMembership == null)
+                    throw new EntityNotFoundException<GroupMembership>();
 
-                return projectMembership;
+                return groupMembership;
             }
         }
     }
