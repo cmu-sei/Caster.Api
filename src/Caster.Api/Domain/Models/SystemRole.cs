@@ -26,7 +26,6 @@ public class SystemRole
 public enum SystemPermissions
 {
     All = 0,
-    ReadOnly = 1,
     ManageSystem = 2,
     CreateProjects = 3,
     ManageProjects = 4,

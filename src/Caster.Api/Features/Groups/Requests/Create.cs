@@ -57,12 +57,6 @@ namespace Caster.Api.Features.Groups
                 var group = _mapper.Map<Domain.Models.Group>(request);
                 _db.Groups.Add(group);
 
-                // Add the creator as a member with the appropriate role
-                var groupMembership = new Domain.Models.GroupMembership();
-                groupMembership.UserId = _user.GetId();
-                groupMembership.Group = group;
-                _db.GroupMemberships.Add(groupMembership);
-
                 await _db.SaveChangesAsync();
                 return _mapper.Map<Group>(group);
             }

@@ -138,16 +138,13 @@ namespace Caster.Api.Features.Groups
         /// <summary>
         /// Delete a Group Membership.
         /// </summary>
-        /// <param name="groupId">ID of Group.</param>
-        /// <param name="command"></param>
         /// <returns></returns>
-        [HttpDelete("{groupId}/memberships")]
+        [HttpDelete("memberships/{id}")]
         [ProducesResponseType((int)HttpStatusCode.NoContent)]
         [SwaggerOperation(OperationId = "DeleteGroupMembership")]
-        public async Task<IActionResult> DeleteMembership([FromRoute] Guid groupId, DeleteMembership.Command command)
+        public async Task<IActionResult> DeleteMembership([FromRoute] Guid id)
         {
-            command.GroupId = groupId;
-            await _mediator.Send(command);
+            await _mediator.Send(new DeleteMembership.Command { Id = id });
             return NoContent();
         }
     }

@@ -39,11 +39,11 @@ namespace Caster.Api.Infrastructure.Authorization
             {
                 context.Succeed(requirement);
             }
-            else if (requirement.AuthorizationType == AuthorizationType.Write &&
-                context.User.HasClaim(AuthorizationConstants.PermissionsClaimType, SystemPermissions.ReadOnly.ToString()))
-            {
-                context.Fail();
-            }
+            // else if (requirement.AuthorizationType == AuthorizationType.Write &&
+            //     context.User.HasClaim(AuthorizationConstants.PermissionsClaimType, SystemPermissions.ReadOnly.ToString()))
+            // {
+            //     context.Fail();
+            // }
             else if (requirement.RequiredPermissions.Any(p => context.User.HasClaim(AuthorizationConstants.PermissionsClaimType, p.ToString())))
             {
                 context.Succeed(requirement);
