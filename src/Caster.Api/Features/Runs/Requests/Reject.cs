@@ -12,16 +12,13 @@ using System.Runtime.Serialization;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Options;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using System.Linq;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Domain.Events;
 using AutoMapper.QueryableExtensions;
-using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Runs
 {
@@ -37,47 +34,31 @@ namespace Caster.Api.Features.Runs
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Run>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            IMapper mapper,
+            CasterContext dbContext,
+            TerraformOptions terraformOptions,
+            ILockService lockService,
+            IMediator mediator,
+            IIdentityResolver identityResolver) : BaseHandler<Command, Run>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly TerraformOptions _terraformOptions;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly ILockService _lockService;
-            private readonly IMediator _mediator;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Run>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                TerraformOptions terraformOptions,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                ILockService lockService,
-                IMediator mediator)
+            public override async Task<Run> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _terraformOptions = terraformOptions;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _lockService = lockService;
-                _mediator = mediator;
-            }
+                var workspaceId = await dbContext.Runs
+                    .Where(r => r.Id == request.Id)
+                    .Select(r => r.WorkspaceId)
+                    .FirstOrDefaultAsync(cancellationToken);
 
-            public async Task<Run> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var workspaceId = await _db.Runs.Where(r => r.Id == request.Id).Select(r => r.WorkspaceId).FirstOrDefaultAsync();
-
-                using (var lockResult = await _lockService.GetWorkspaceLock(workspaceId).LockAsync(0))
+                using (var lockResult = await lockService.GetWorkspaceLock(workspaceId).LockAsync(0))
                 {
                     if (!lockResult.AcquiredLock)
                         throw new WorkspaceConflictException();
 
-                    var run = await _db.Runs
+                    var run = await dbContext.Runs
                         .Include(r => r.Plan)
                         .Include(r => r.Apply)
                         .Include(r => r.Workspace)
@@ -85,7 +66,7 @@ namespace Caster.Api.Features.Runs
 
                     ValidateRun(run);
 
-                    run.Workspace.CleanupFileSystem(_terraformOptions.RootWorkingDirectory);
+                    run.Workspace.CleanupFileSystem(terraformOptions.RootWorkingDirectory);
 
                     run.Status = RunStatus.Rejected;
 
@@ -94,12 +75,12 @@ namespace Caster.Api.Features.Runs
                         run.Plan.Status = PlanStatus.Rejected;
                     }
 
-                    run.Modify(_user.GetId());
-                    await _db.SaveChangesAsync();
-                    await _mediator.Publish(new RunUpdated(run.Id));
+                    run.Modify(identityResolver.GetId());
+                    await dbContext.SaveChangesAsync();
+                    await mediator.Publish(new RunUpdated(run.Id));
 
-                    return await _db.Runs
-                        .ProjectTo<Run>(_mapper.ConfigurationProvider)
+                    return await dbContext.Runs
+                        .ProjectTo<Run>(mapper.ConfigurationProvider)
                         .SingleOrDefaultAsync(x => x.Id == run.Id, cancellationToken);
                 }
             }

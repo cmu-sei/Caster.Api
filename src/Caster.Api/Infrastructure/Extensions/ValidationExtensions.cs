@@ -94,4 +94,11 @@ public static class ValidationExtensions
             .MustAsync(async (id, cancellationToken) => await validationService.SystemRoleExists(id))
             .WithMessage("Role does not exist");
     }
+
+    public static IRuleBuilderOptions<T, Guid> RunExists<T>(this IRuleBuilder<T, Guid> ruleBuilder, IValidationService validationService)
+    {
+        return ruleBuilder
+            .MustAsync(async (id, cancellationToken) => await validationService.RunExists(id))
+            .WithMessage("Run does not exist");
+    }
 }

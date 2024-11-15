@@ -9,18 +9,14 @@ using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using FluentValidation;
-using Caster.Api.Features.Shared.Services;
-using Caster.Api.Infrastructure.Extensions;
 using System.Linq;
 using System.Text.Json.Serialization;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Groups
 {
@@ -36,13 +32,16 @@ namespace Caster.Api.Features.Groups
             public Guid Id { get; set; }
         }
 
-        public class Handler(CasterContext _db, IMapper _mapper) : IRequestHandler<Query, GroupMembership>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, GroupMembership>
         {
-            public async Task<GroupMembership> Handle(Query request, CancellationToken cancellationToken)
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.ViewGroups], cancellationToken);
+
+            public override async Task<GroupMembership> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                var groupMembership = await _db.GroupMemberships
+                var groupMembership = await dbContext.GroupMemberships
                     .Where(x => x.Id == request.Id)
-                    .ProjectTo<GroupMembership>(_mapper.ConfigurationProvider)
+                    .ProjectTo<GroupMembership>(mapper.ConfigurationProvider)
                     .FirstOrDefaultAsync(cancellationToken);
 
                 if (groupMembership == null)

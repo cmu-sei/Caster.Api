@@ -14,9 +14,9 @@ using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Models;
-using System.Linq;
-using AutoMapper.QueryableExtensions;
 using System.Text.Json.Serialization;
+using Caster.Api.Features.Shared;
+using Caster.Api.Infrastructure.Authorization;
 
 namespace Caster.Api.Features.Groups
 {
@@ -47,21 +47,24 @@ namespace Caster.Api.Features.Groups
             }
         }
 
-        public class Handler(CasterContext _db, IMapper _mapper) : IRequestHandler<Command, GroupMembership>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, GroupMembership>
         {
-            public async Task<GroupMembership> Handle(Command request, CancellationToken cancellationToken)
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditGroups], cancellationToken);
+
+            public override async Task<GroupMembership> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var groupMembershipExists = await _db.GroupMemberships
+                var groupMembershipExists = await dbContext.GroupMemberships
                     .AnyAsync(x => x.GroupId == request.GroupId && x.UserId == request.UserId, cancellationToken);
 
                 if (groupMembershipExists)
                     throw new ConflictException("User is already a member of this Group");
 
                 var groupMembership = new Domain.Models.GroupMembership(request.GroupId, request.UserId);
-                _db.GroupMemberships.Add(groupMembership);
-                await _db.SaveChangesAsync();
+                dbContext.GroupMemberships.Add(groupMembership);
+                await dbContext.SaveChangesAsync();
 
-                return _mapper.Map<GroupMembership>(groupMembership);
+                return mapper.Map<GroupMembership>(groupMembership);
             }
         }
     }

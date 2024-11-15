@@ -17,6 +17,8 @@ using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Projects
 {
@@ -28,37 +30,20 @@ namespace Caster.Api.Features.Projects
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Project>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
+                var project = await dbContext.Projects.FindAsync([request.Id], cancellationToken);
 
-            public async Task Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var entry = _db.Projects.FirstOrDefault(e => e.Id == request.Id);
-
-                if (entry == null)
+                if (project == null)
                     throw new EntityNotFoundException<Project>();
 
-                _db.Projects.Remove(entry);
-                await _db.SaveChangesAsync(cancellationToken);
+                dbContext.Projects.Remove(project);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
     }

@@ -5,24 +5,21 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using System.Text.Json.Serialization;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Models;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Projects
 {
     public class Export
     {
-        [DataContract(Name="ExportProjectQuery")]
+        [DataContract(Name = "ExportProjectQuery")]
         public class Query : IRequest<ArchiveResult>
         {
             [JsonIgnore]
@@ -35,34 +32,17 @@ namespace Caster.Api.Features.Projects
             public bool IncludeIds { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, ArchiveResult>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            CasterContext dbContext,
+            IArchiveService archiveService) : BaseHandler<Query, ArchiveResult>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly IArchiveService _archiveService;
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Project>(request.Id, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                IArchiveService archiveService)
+            public override async Task<ArchiveResult> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _archiveService = archiveService;
-            }
-
-            public async Task<ArchiveResult> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var project =  await _db.Projects
+                var project = await dbContext.Projects
                     .Include(e => e.Directories)
                         .ThenInclude(d => d.Files)
                     .Include(e => e.Directories)
@@ -72,7 +52,7 @@ namespace Caster.Api.Features.Projects
                 if (project == null)
                     throw new EntityNotFoundException<Project>();
 
-                return await _archiveService.ArchiveProject(project, request.ArchiveType, request.IncludeIds);
+                return await archiveService.ArchiveProject(project, request.ArchiveType, request.IncludeIds);
             }
         }
     }

@@ -9,18 +9,12 @@ using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
-using System.Linq;
-using System.Text.Json.Serialization;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Projects
 {
@@ -47,18 +41,21 @@ namespace Caster.Api.Features.Projects
             }
         }
 
-        public class Handler(CasterContext _db, IMapper _mapper) : IRequestHandler<Command, ProjectMembership>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, ProjectMembership>
         {
-            public async Task<ProjectMembership> Handle(Command request, CancellationToken cancellationToken)
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<ProjectMembership>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
+
+            public override async Task<ProjectMembership> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var projectMembership = await _db.ProjectMemberships.FindAsync([request.Id], cancellationToken);
+                var projectMembership = await dbContext.ProjectMemberships.FindAsync([request.Id], cancellationToken);
 
                 if (projectMembership == null)
                     throw new EntityNotFoundException<ProjectMembership>();
 
                 projectMembership.RoleId = request.RoleId;
-                await _db.SaveChangesAsync(cancellationToken);
-                return _mapper.Map<ProjectMembership>(projectMembership);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<ProjectMembership>(projectMembership);
             }
         }
     }

@@ -18,12 +18,16 @@ using System.Security.Principal;
 using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using FluentValidation;
+using Caster.Api.Features.Shared.Services;
+using Caster.Api.Infrastructure.Extensions;
 
 namespace Caster.Api.Features.Plans
 {
     public class GetByRun
     {
-        [DataContract(Name="GetPlanByRunQuery")]
+        [DataContract(Name = "GetPlanByRunQuery")]
         public class Query : IRequest<Plan>
         {
             /// <summary>
@@ -34,48 +38,29 @@ namespace Caster.Api.Features.Plans
             public Guid RunId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Plan>
+        public class RequestValidator : AbstractValidator<Query>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public RequestValidator(IValidationService validationService)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
+                RuleFor(x => x.RunId).RunExists(validationService);
             }
+        }
 
-            public async Task<Plan> Handle(Query request, CancellationToken cancellationToken)
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Plan>
+        {
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Run>(request.RunId, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+
+            public override async Task<Plan> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                await ValidateRun(request.RunId);
-
-                var plan = await _db.Plans
-                    .ProjectTo<Plan>(_mapper.ConfigurationProvider)
+                var plan = await dbContext.Plans
+                    .ProjectTo<Plan>(mapper.ConfigurationProvider)
                     .SingleOrDefaultAsync(x => x.RunId == request.RunId, cancellationToken);
 
                 if (plan == null)
                     throw new EntityNotFoundException<Plan>();
 
                 return plan;
-            }
-
-            private async Task ValidateRun(Guid runId)
-            {
-                var run = await _db.Runs.FindAsync(runId);
-
-                if (run == null)
-                    throw new EntityNotFoundException<Run>();
             }
         }
     }

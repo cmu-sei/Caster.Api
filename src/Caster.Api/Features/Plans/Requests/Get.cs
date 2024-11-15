@@ -11,17 +11,15 @@ using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Plans
 {
     public class Get
     {
-        [DataContract(Name="GetPlanQuery")]
+        [DataContract(Name = "GetPlanQuery")]
         public class Query : IRequest<Plan>
         {
             /// <summary>
@@ -31,32 +29,15 @@ namespace Caster.Api.Features.Plans
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Plan>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Plan>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Plan>(request.Id, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Plan> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Plan> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var plan = await _db.Plans
-                    .ProjectTo<Plan>(_mapper.ConfigurationProvider)
+                var plan = await dbContext.Plans
+                    .ProjectTo<Plan>(mapper.ConfigurationProvider)
                     .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken);
 
                 if (plan == null)

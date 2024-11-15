@@ -1,7 +1,6 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
@@ -15,14 +14,14 @@ namespace Caster.Api.Infrastructure.Authorization;
 public interface ICasterAuthorizationService
 {
     Task<bool> Authorize(
-        AuthorizationType authType,
-        SystemPermissions[] requiredSystemPermissions);
+        SystemPermissions[] requiredSystemPermissions,
+        CancellationToken cancellationToken);
 
     Task<bool> Authorize<T>(
         Guid? resourceId,
-        AuthorizationType authType,
         SystemPermissions[] requiredSystemPermissions,
-        ProjectPermissions[] requiredProjectPermissions);
+        ProjectPermissions[] requiredProjectPermissions,
+        CancellationToken cancellationToken);
 }
 
 public class AuthorizationService(
@@ -31,16 +30,20 @@ public class AuthorizationService(
     CasterContext _db) : ICasterAuthorizationService
 {
     public async Task<bool> Authorize(
-        AuthorizationType authType,
-        SystemPermissions[] requiredSystemPermissions)
+        SystemPermissions[] requiredSystemPermissions,
+        CancellationToken cancellationToken)
     {
-        return await Authorize<object>(null, authType, requiredSystemPermissions, []);
+        return await Authorize<object>(null, requiredSystemPermissions, [], cancellationToken);
     }
 
-    public async Task<bool> Authorize<T>(Guid? resourceId, AuthorizationType authType, SystemPermissions[] requiredSystemPermissions, ProjectPermissions[] requiredProjectPermissions)
+    public async Task<bool> Authorize<T>(
+        Guid? resourceId,
+        SystemPermissions[] requiredSystemPermissions,
+        ProjectPermissions[] requiredProjectPermissions,
+        CancellationToken cancellationToken)
     {
         var claimsPrincipal = _identityResolver.GetClaimsPrincipal();
-        var permissionRequirement = new SystemPermissionsRequirement(requiredSystemPermissions, authType);
+        var permissionRequirement = new SystemPermissionsRequirement(requiredSystemPermissions);
         var permissionResult = await _authService.AuthorizeAsync(claimsPrincipal, null, permissionRequirement);
 
         if (permissionResult.Succeeded)
@@ -48,12 +51,12 @@ public class AuthorizationService(
 
         if (resourceId.HasValue)
         {
-            var projectId = await this.GetProjectId<T>(resourceId.Value);
+            var projectId = await this.GetProjectId<T>(resourceId.Value, cancellationToken);
 
             if (projectId == null)
                 throw new ForbiddenException();
 
-            var projectPermissionRequirement = new ProjectPermissionsRequirement(requiredProjectPermissions, authType, projectId.Value);
+            var projectPermissionRequirement = new ProjectPermissionsRequirement(requiredProjectPermissions, projectId.Value);
             var projectPermissionResult = await _authService.AuthorizeAsync(claimsPrincipal, null, projectPermissionRequirement);
 
             if (!projectPermissionResult.Succeeded)
@@ -67,7 +70,7 @@ public class AuthorizationService(
         return true;
     }
 
-    private async Task<Guid?> GetProjectId<T>(Guid resourceId)
+    private async Task<Guid?> GetProjectId<T>(Guid resourceId, CancellationToken cancellationToken)
     {
         Guid? projectId = null;
 
@@ -77,7 +80,7 @@ public class AuthorizationService(
                 projectId = resourceId;
                 break;
             case Type t when t == typeof(Run):
-                projectId = await HandleRun(resourceId);
+                projectId = await HandleRun(resourceId, cancellationToken);
                 break;
             default:
                 break;
@@ -86,17 +89,11 @@ public class AuthorizationService(
         return projectId;
     }
 
-    private async Task<Guid> HandleRun(Guid runId)
+    private async Task<Guid> HandleRun(Guid runId, CancellationToken cancellationToken)
     {
         return await _db.Runs
             .Where(x => x.Id == runId)
             .Select(x => x.Workspace.Directory.ProjectId)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(cancellationToken);
     }
-}
-
-public enum AuthorizationType
-{
-    Read,
-    Write
 }

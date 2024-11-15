@@ -4,16 +4,13 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 using MediatR;
 using Caster.Api.Data;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Modules
 {
@@ -25,34 +22,20 @@ namespace Caster.Api.Features.Modules
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditModules], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
+                var module = await dbContext.Modules.FindAsync([request.Id], cancellationToken);
 
-            public async Task Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var entry = await _db.Modules.FirstOrDefaultAsync(m => m.Id == request.Id);
-
-                if (entry == null)
+                if (module == null)
                     throw new EntityNotFoundException<Module>();
 
-                _db.Modules.Remove(entry);
-                await _db.SaveChangesAsync(cancellationToken);
+                dbContext.Modules.Remove(module);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
     }

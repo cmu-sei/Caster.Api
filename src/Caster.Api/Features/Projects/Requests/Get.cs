@@ -11,17 +11,15 @@ using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Projects
 {
     public class Get
     {
-        [DataContract(Name="GetProjectQuery")]
+        [DataContract(Name = "GetProjectQuery")]
         public class Query : IRequest<Project>
         {
             /// <summary>
@@ -31,33 +29,16 @@ namespace Caster.Api.Features.Projects
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Project>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Project>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Project>(request.Id, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Project> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Project> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var project =  await _db.Projects
-                    .ProjectTo<Project>(_mapper.ConfigurationProvider)
-                    .SingleOrDefaultAsync(e => e.Id == request.Id);
+                var project = await dbContext.Projects
+                    .ProjectTo<Project>(mapper.ConfigurationProvider)
+                    .SingleOrDefaultAsync(e => e.Id == request.Id, cancellationToken);
 
                 if (project == null)
                     throw new EntityNotFoundException<Project>();

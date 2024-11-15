@@ -9,22 +9,20 @@ using AutoMapper;
 using Caster.Api.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using System.Text.Json.Serialization;
+using Caster.Api.Features.Shared;
+using FluentValidation;
+using Caster.Api.Features.Shared.Services;
+using Caster.Api.Infrastructure.Extensions;
 
 namespace Caster.Api.Features.Runs
 {
     public class GetByWorkspace
     {
-        [DataContract(Name="GetRunsByWorkspaceQuery")]
+        [DataContract(Name = "GetRunsByWorkspaceQuery")]
         public class Query : RunQuery, IRequest<Run[]>
         {
             /// <summary>
@@ -39,48 +37,29 @@ namespace Caster.Api.Features.Runs
             public int? Limit { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Run[]>
+        public class RequestValidator : AbstractValidator<Query>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public RequestValidator(IValidationService validationService)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
+                RuleFor(x => x.WorkspaceId).WorkspaceExists(validationService);
             }
+        }
 
-            public async Task<Run[]> Handle(Query request, CancellationToken cancellationToken)
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Run[]>
+        {
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Workspace>(request.WorkspaceId, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+
+            public override async Task<Run[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                await ValidateWorkspace(request.WorkspaceId);
-
-                return await _db.Runs
+                return await dbContext.Runs
                     .Where(x => x.WorkspaceId == request.WorkspaceId)
                     .OrderByDescending(r => r.CreatedAt)
                     .Limit(request.Limit)
-                    .Expand(_mapper.ConfigurationProvider,
+                    .Expand(mapper.ConfigurationProvider,
                             includePlan: request.IncludePlan,
                             includeApply: request.IncludeApply)
-                    .ToArrayAsync();
-            }
-
-            private async Task ValidateWorkspace(Guid workspaceId)
-            {
-                var workspace = await _db.Workspaces.FindAsync(workspaceId);
-
-                if (workspace == null)
-                    throw new EntityNotFoundException<Workspace>();
+                    .ToArrayAsync(cancellationToken);
             }
         }
     }

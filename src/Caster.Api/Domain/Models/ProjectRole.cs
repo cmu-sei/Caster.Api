@@ -20,13 +20,19 @@ public class ProjectRole
 
     public string Description { get; set; }
 
+    public bool AllPermissions { get; set; }
+
     public List<ProjectPermissions> Permissions { get; set; }
 }
 
 public enum ProjectPermissions
 {
-    All = 0,
-    ReadOnly = 1,
+    ViewProject,
+    EditProject,
+    ManageProject,
+    ImportProject,
+    LockFiles
+
 }
 
 public static class ProjectRoleDefaults
@@ -44,14 +50,16 @@ public class ProjectRoleConfiguration : IEntityTypeConfiguration<ProjectRole>
             {
                 Id = ProjectRoleDefaults.ProjectCreatorRoleId,
                 Name = "Administrator",
-                Permissions = [ProjectPermissions.All],
+                AllPermissions = true,
+                Permissions = [],
                 Description = "Can perform all actions on the Project"
             },
             new ProjectRole
             {
                 Id = ProjectRoleDefaults.ProjectReadOnlyRoleId,
                 Name = "Observer",
-                Permissions = [ProjectPermissions.ReadOnly],
+                AllPermissions = false,
+                Permissions = [ProjectPermissions.ViewProject],
                 Description = "Has read only access to the Project"
             }
         );

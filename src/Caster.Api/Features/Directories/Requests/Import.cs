@@ -10,24 +10,21 @@ using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using System.Text.Json.Serialization;
 using Caster.Api.Domain.Services;
 using Microsoft.AspNetCore.Http;
 using FluentValidation;
-using System.Linq;
 using Caster.Api.Domain.Models;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Caster.Api.Data.Extensions;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Directories
 {
     public class Import
     {
-        [DataContract(Name="ImportDirectoryCommand")]
+        [DataContract(Name = "ImportDirectoryCommand")]
         public class Command : IRequest<ImportDirectoryResult>
         {
             [JsonIgnore]
@@ -40,8 +37,10 @@ namespace Caster.Api.Features.Directories
             public bool PreserveIds { get; set; }
         }
 
-        public class ImportValidator : AbstractValidator<Command> {
-            public ImportValidator() {
+        public class ImportValidator : AbstractValidator<Command>
+        {
+            public ImportValidator()
+            {
                 RuleFor(x => x.Archive)
                     .NotNull().Must(BeAValidArchiveType)
                     .WithMessage($"File extension must be one of {string.Join(", ", ArchiveTypeHelpers.GetValidExtensions())}");
@@ -72,40 +71,20 @@ namespace Caster.Api.Features.Directories
             public string[] LockedFiles { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, ImportDirectoryResult>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            IMapper mapper,
+            CasterContext dbContext,
+            IArchiveService archiveService,
+            IImportService importService,
+            IMediator mediator) : BaseHandler<Command, ImportDirectoryResult>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly IArchiveService _archiveService;
-            private readonly IImportService _importService;
-            private readonly IMediator _mediator;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Directory>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                IArchiveService archiveService,
-                IImportService importService,
-                IMediator mediator)
+            public override async Task<ImportDirectoryResult> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _archiveService = archiveService;
-                _importService = importService;
-                _mediator = mediator;
-            }
-
-            public async Task<ImportDirectoryResult> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var directory =  await _db.Directories
+                var directory = await dbContext.Directories
                     .SingleOrDefaultAsync(e => e.Id == request.Id, cancellationToken);
 
                 if (directory == null)
@@ -117,17 +96,17 @@ namespace Caster.Api.Features.Directories
                 {
                     await request.Archive.CopyToAsync(memStream, cancellationToken);
                     memStream.Position = 0;
-                    extractedDirectory = _archiveService.ExtractDirectory(memStream, request.Archive.FileName);
+                    extractedDirectory = archiveService.ExtractDirectory(memStream, request.Archive.FileName);
                 }
 
-                var directories =  await _db.GetDirectoryWithChildren(directory.Id, cancellationToken);
-                var importResult = await _importService.ImportDirectory(directory, extractedDirectory, request.PreserveIds);
+                var directories = await dbContext.GetDirectoryWithChildren(directory.Id, cancellationToken);
+                var importResult = await importService.ImportDirectory(directory, extractedDirectory, request.PreserveIds);
 
-                var entries = _db.GetUpdatedEntries();
-                await _db.SaveChangesAsync(cancellationToken);
+                var entries = dbContext.GetUpdatedEntries();
+                await dbContext.SaveChangesAsync(cancellationToken);
                 await this.PublishEvents(entries);
 
-                return _mapper.Map<ImportDirectoryResult>(importResult);
+                return mapper.Map<ImportDirectoryResult>(importResult);
             }
 
             private async Task PublishEvents(EntityEntry[] entries)
@@ -138,7 +117,7 @@ namespace Caster.Api.Features.Directories
 
                     if (evt != null)
                     {
-                        await _mediator.Publish(evt);
+                        await mediator.Publish(evt);
                     }
                 }
             }

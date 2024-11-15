@@ -6,17 +6,12 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Exceptions;
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Groups
 {
@@ -28,37 +23,20 @@ namespace Caster.Api.Features.Groups
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditGroups], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var entry = _db.Groups.FirstOrDefault(e => e.Id == request.Id);
+                var entry = dbContext.Groups.FirstOrDefault(e => e.Id == request.Id);
 
                 if (entry == null)
                     throw new EntityNotFoundException<Group>();
 
-                _db.Groups.Remove(entry);
-                await _db.SaveChangesAsync(cancellationToken);
+                dbContext.Groups.Remove(entry);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
     }

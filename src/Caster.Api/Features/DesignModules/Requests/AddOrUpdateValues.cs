@@ -14,6 +14,9 @@ using System.Text.Json.Serialization;
 using FluentValidation;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using Caster.Api.Domain.Models;
+using AutoMapper;
+using Caster.Api.Data;
 
 namespace Caster.Api.Features.DesignModules;
 
@@ -28,16 +31,15 @@ public class AddOrUpdateValues
         public ModuleValue[] Values { get; init; }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Command, DesignModule>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext)
+        : BaseHandler<Command, DesignModule>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<DesignModule>(request.DesignModuleId, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
-        public async Task<DesignModule> Handle(Command request, CancellationToken cancellationToken)
+        public override async Task<DesignModule> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var designModule = await _db.DesignModules
+            var designModule = await dbContext.DesignModules
                 .Where(x => x.Id == request.DesignModuleId)
                 .SingleOrDefaultAsync(cancellationToken);
 
@@ -45,9 +47,9 @@ public class AddOrUpdateValues
                 throw new EntityNotFoundException<DesignModule>();
 
             designModule.AddOrUpdateValues(ModuleValue.ToDomain(request.Values));
-            await _db.SaveChangesAsync(cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-            return _mapper.Map<DesignModule>(designModule);
+            return mapper.Map<DesignModule>(designModule);
         }
     }
 }

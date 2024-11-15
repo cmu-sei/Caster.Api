@@ -15,6 +15,9 @@ using System.Linq;
 using Caster.Api.Features.Shared;
 using FluentValidation;
 using AutoMapper.QueryableExtensions;
+using Caster.Api.Domain.Models;
+using AutoMapper;
+using Caster.Api.Data;
 
 namespace Caster.Api.Features.DesignModules;
 
@@ -27,18 +30,16 @@ public class Get
         public Guid Id { get; set; }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Query, DesignModule>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, DesignModule>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<DesignModule>(request.Id, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
 
-        public async Task<DesignModule> Handle(Query request, CancellationToken cancellationToken)
+        public override async Task<DesignModule> HandleRequest(Query request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var designModule = await _db.DesignModules
+            var designModule = await dbContext.DesignModules
                 .Where(x => x.Id == request.Id)
-                .ProjectTo<DesignModule>(_mapper.ConfigurationProvider, null, membersToExpand: new[] { "ValuesJson" })
+                .ProjectTo<DesignModule>(mapper.ConfigurationProvider, null, membersToExpand: new[] { "ValuesJson" })
                 .SingleOrDefaultAsync(cancellationToken);
 
             if (designModule == null)

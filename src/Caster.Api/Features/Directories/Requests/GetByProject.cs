@@ -11,12 +11,12 @@ using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
 using Caster.Api.Domain.Models;
-using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using System.Text.Json.Serialization;
+using Caster.Api.Features.Shared;
+using FluentValidation;
+using Caster.Api.Features.Shared.Services;
+using Caster.Api.Infrastructure.Extensions;
 
 namespace Caster.Api.Features.Directories
 {
@@ -47,48 +47,30 @@ namespace Caster.Api.Features.Directories
             public bool IncludeFileContent { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Directory[]>
+        public class Validator : AbstractValidator<Query>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly ICasterAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                ICasterAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public Validator(IValidationService validationService)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
+                RuleFor(x => x.ProjectId).ProjectExists(validationService);
             }
+        }
 
-            public async Task<Directory[]> Handle(Query request, CancellationToken cancellationToken)
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Directory[]>
+        {
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Project>(request.ProjectId, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+
+            public override async Task<Directory[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                await _authorizationService.Authorize<Project>(request.ProjectId, AuthorizationType.Read, [SystemPermissions.ManageProjects], []);
-
-                await ValidateProject(request.ProjectId);
-
-                var query = _db.Directories.Where(d => d.ProjectId == request.ProjectId);
+                var query = dbContext.Directories.Where(d => d.ProjectId == request.ProjectId);
 
                 if (!request.IncludeDescendants)
                     query = query.Where(d => d.ParentId == null);
 
-                var modifiedQuery = query.Expand(_mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent);
+                var modifiedQuery = query.Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent);
                 var directories = await modifiedQuery.ToArrayAsync();
 
                 return directories;
-            }
-
-            private async Task ValidateProject(Guid projectId)
-            {
-                var project = await _db.Projects.FindAsync(projectId);
-
-                if (project == null)
-                    throw new EntityNotFoundException<Project>();
             }
         }
     }

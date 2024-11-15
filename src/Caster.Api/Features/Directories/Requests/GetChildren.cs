@@ -17,12 +17,14 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
 using System.Text.Json.Serialization;
 using Caster.Api.Data.Extensions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Directories
 {
     public class GetChildren
     {
-        [DataContract(Name="GetDirectoryChildrenQuery")]
+        [DataContract(Name = "GetDirectoryChildrenQuery")]
         public class Query : IRequest<Directory[]>
         {
             [JsonIgnore]
@@ -47,31 +49,14 @@ namespace Caster.Api.Features.Directories
             public bool IncludeFileContent { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Directory[]>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Directory[]>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Directory[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Directory[]> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var directory = await _db.Directories.FindAsync(request.DirectoryId);
+                var directory = await dbContext.Directories.FindAsync(request.DirectoryId);
 
                 if (directory == null)
                     throw new EntityNotFoundException<Directory>();
@@ -80,14 +65,14 @@ namespace Caster.Api.Features.Directories
 
                 if (request.IncludeDescendants)
                 {
-                    query = _db.Directories.GetChildren(directory, false);
+                    query = dbContext.Directories.GetChildren(directory, false);
                 }
                 else
                 {
-                    query = _db.Directories.Where(d => d.ParentId == directory.Id);
+                    query = dbContext.Directories.Where(d => d.ParentId == directory.Id);
                 }
 
-                var modifiedQuery = query.Expand(_mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent);
+                var modifiedQuery = query.Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent);
                 var directories = await modifiedQuery.ToArrayAsync();
 
                 return directories;

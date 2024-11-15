@@ -9,18 +9,14 @@ using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using FluentValidation;
-using Caster.Api.Features.Shared.Services;
-using Caster.Api.Infrastructure.Extensions;
 using System.Linq;
 using System.Text.Json.Serialization;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Projects
 {
@@ -36,14 +32,17 @@ namespace Caster.Api.Features.Projects
             public Guid Id { get; set; }
         }
 
-        public class Handler(CasterContext _db, IMapper _mapper) : IRequestHandler<Query, ProjectMembership>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, ProjectMembership>
         {
-            public async Task<ProjectMembership> Handle(Query request, CancellationToken cancellationToken)
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<ProjectMembership>(request.Id, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+
+            public override async Task<ProjectMembership> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                var projectMembership = await _db.ProjectMemberships
+                var projectMembership = await dbContext.ProjectMemberships
                     .Where(x => x.Id == request.Id)
-                    .ProjectTo<ProjectMembership>(_mapper.ConfigurationProvider)
-                    .FirstOrDefaultAsync();
+                    .ProjectTo<ProjectMembership>(mapper.ConfigurationProvider)
+                    .FirstOrDefaultAsync(cancellationToken);
 
                 if (projectMembership == null)
                     throw new EntityNotFoundException<ProjectMembership>();

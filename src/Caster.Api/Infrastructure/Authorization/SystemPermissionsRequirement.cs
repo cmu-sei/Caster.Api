@@ -12,14 +12,10 @@ namespace Caster.Api.Infrastructure.Authorization
     public class SystemPermissionsRequirement : IAuthorizationRequirement
     {
         public SystemPermissions[] RequiredPermissions;
-        public AuthorizationType AuthorizationType;
 
-        public SystemPermissionsRequirement(
-            SystemPermissions[] requiredPermissions,
-            AuthorizationType authorizationType)
+        public SystemPermissionsRequirement(SystemPermissions[] requiredPermissions)
         {
             RequiredPermissions = requiredPermissions;
-            AuthorizationType = authorizationType;
         }
     }
 
@@ -35,15 +31,6 @@ namespace Caster.Api.Infrastructure.Authorization
             {
                 context.Succeed(requirement);
             }
-            else if (context.User.HasClaim(AuthorizationConstants.PermissionsClaimType, SystemPermissions.All.ToString()))
-            {
-                context.Succeed(requirement);
-            }
-            // else if (requirement.AuthorizationType == AuthorizationType.Write &&
-            //     context.User.HasClaim(AuthorizationConstants.PermissionsClaimType, SystemPermissions.ReadOnly.ToString()))
-            // {
-            //     context.Fail();
-            // }
             else if (requirement.RequiredPermissions.Any(p => context.User.HasClaim(AuthorizationConstants.PermissionsClaimType, p.ToString())))
             {
                 context.Succeed(requirement);

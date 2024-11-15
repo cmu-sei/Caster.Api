@@ -11,11 +11,9 @@ using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Groups
 {
@@ -31,32 +29,15 @@ namespace Caster.Api.Features.Groups
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Group>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Group>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.ViewGroups], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Group> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Group> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var group = await _db.Groups
-                    .ProjectTo<Group>(_mapper.ConfigurationProvider)
+                var group = await dbContext.Groups
+                    .ProjectTo<Group>(mapper.ConfigurationProvider)
                     .SingleOrDefaultAsync(e => e.Id == request.Id);
 
                 if (group == null)

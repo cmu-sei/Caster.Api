@@ -2,19 +2,15 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.Authorization;
-using System.Security.Claims;
-using System.Security.Principal;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Hosts
 {
@@ -26,31 +22,20 @@ namespace Caster.Api.Features.Hosts
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditHosts], cancellationToken);
 
-            public Handler(CasterContext db, IAuthorizationService authorizationService, IIdentityResolver identityResolver)
+            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var entry = _db.Hosts.FirstOrDefault(e => e.Id == request.Id);
+                var entry = await dbContext.Hosts.FindAsync([request.Id], cancellationToken);
 
                 if (entry == null)
                     throw new EntityNotFoundException<Host>();
 
-                _db.Hosts.Remove(entry);
-                await _db.SaveChangesAsync(cancellationToken);
+                dbContext.Hosts.Remove(entry);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
     }

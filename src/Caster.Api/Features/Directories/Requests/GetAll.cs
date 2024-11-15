@@ -10,16 +10,17 @@ using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using System.Security.Claims;
-using System.Security.Principal;
 using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Directories
 {
     public class GetAll
     {
-        [DataContract(Name="GetDirectoriesQuery")]
+        [DataContract(Name = "GetDirectoriesQuery")]
         public class Query : IRequest<Directory[]>
         {
             /// <summary>
@@ -35,32 +36,15 @@ namespace Caster.Api.Features.Directories
             public bool IncludeFileContent { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Directory[]>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Directory[]>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.ViewProjects], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Directory[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Directory[]> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                return await _db.Directories
-                    .Expand(_mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent)
+                return await dbContext.Directories
+                    .Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent)
                     .ToArrayAsync();
             }
         }

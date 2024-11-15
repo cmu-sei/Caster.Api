@@ -13,16 +13,13 @@ namespace Caster.Api.Infrastructure.Authorization
     public class ProjectPermissionsRequirement : IAuthorizationRequirement
     {
         public ProjectPermissions[] RequiredPermissions;
-        public AuthorizationType AuthorizationType;
         public Guid ProjectId;
 
         public ProjectPermissionsRequirement(
             ProjectPermissions[] requiredPermissions,
-            AuthorizationType authorizationType,
             Guid projectId)
         {
             RequiredPermissions = requiredPermissions;
-            AuthorizationType = authorizationType;
             ProjectId = projectId;
         }
     }
@@ -60,15 +57,6 @@ namespace Caster.Api.Infrastructure.Authorization
                 else if (requirement.RequiredPermissions == null || requirement.RequiredPermissions.Length == 0)
                 {
                     context.Succeed(requirement);
-                }
-                else if (projectPermissionsClaim.Permissions.Contains(ProjectPermissions.All))
-                {
-                    context.Succeed(requirement);
-                }
-                else if (requirement.AuthorizationType == AuthorizationType.Write &&
-                        projectPermissionsClaim.Permissions.Contains(ProjectPermissions.ReadOnly))
-                {
-                    context.Fail();
                 }
                 else if (requirement.RequiredPermissions.Any(x => projectPermissionsClaim.Permissions.Contains(x)))
                 {

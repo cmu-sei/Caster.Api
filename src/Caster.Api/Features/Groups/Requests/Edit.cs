@@ -10,12 +10,11 @@ using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using System.Security.Claims;
-using System.Security.Principal;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Groups
 {
@@ -34,38 +33,21 @@ namespace Caster.Api.Features.Groups
             public string Name { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Group>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Group>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditGroups], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Group> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Group> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var group = await _db.Groups.FindAsync(request.Id);
+                var group = await dbContext.Groups.FindAsync([request.Id], cancellationToken);
 
                 if (group == null)
                     throw new EntityNotFoundException<Group>();
 
-                _mapper.Map(request, group);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<Group>(group);
+                mapper.Map(request, group);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<Group>(group);
             }
         }
     }

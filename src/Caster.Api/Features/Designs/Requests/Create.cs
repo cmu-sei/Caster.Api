@@ -6,13 +6,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using AutoMapper;
+using Caster.Api.Data;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Designs;
 
@@ -42,21 +43,19 @@ public class Create
         }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Command, Design>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Design>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
-        public async Task<Design> Handle(Command request, CancellationToken cancellationToken)
+        public override async Task<Design> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
+            var design = mapper.Map<Domain.Models.Design>(request);
 
-            var design = _mapper.Map<Domain.Models.Design>(request);
+            dbContext.Designs.Add(design);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-            _db.Designs.Add(design);
-            await _db.SaveChangesAsync(cancellationToken);
-
-            return _mapper.Map<Design>(design);
+            return mapper.Map<Design>(design);
         }
     }
 }

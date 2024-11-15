@@ -13,13 +13,12 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Events;
 using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using System.Linq;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Applies
 {
@@ -35,12 +34,12 @@ namespace Caster.Api.Features.Applies
             public Guid RunId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Apply>
+        public class Handler : BaseHandler<Command, Apply>
         {
             private readonly CasterContext _db;
             private readonly IMapper _mapper;
             private readonly IMediator _mediator;
-            private readonly IAuthorizationService _authorizationService;
+            private readonly ICasterAuthorizationService _authorizationService;
             private readonly ClaimsPrincipal _user;
             private readonly ILockService _lockService;
 
@@ -48,7 +47,7 @@ namespace Caster.Api.Features.Applies
                 CasterContext db,
                 IMapper mapper,
                 IMediator mediator,
-                IAuthorizationService authorizationService,
+                ICasterAuthorizationService authorizationService,
                 IIdentityResolver identityResolver,
                 ILockService lockService)
             {
@@ -60,11 +59,11 @@ namespace Caster.Api.Features.Applies
                 _lockService = lockService;
             }
 
-            public async Task<Apply> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await _authorizationService.Authorize<Run>(request.RunId, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
+            public override async Task<Apply> HandleRequest(Command request, CancellationToken cancellationToken)
+            {
                 var workspaceId = await _db.Runs.Where(r => r.Id == request.RunId).Select(r => r.WorkspaceId).FirstOrDefaultAsync();
 
                 Domain.Models.Apply apply = null;

@@ -2,24 +2,21 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
 using System;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
 using System.Linq;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Projects
 {
@@ -39,14 +36,17 @@ namespace Caster.Api.Features.Projects
             }
         }
 
-        public class Handler(CasterContext _db, IMapper _mapper) : IRequestHandler<Query, ProjectMembership[]>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, ProjectMembership[]>
         {
-            public async Task<ProjectMembership[]> Handle(Query request, CancellationToken cancellationToken)
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Project>(request.ProjectId, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+
+            public override async Task<ProjectMembership[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                return await _db.ProjectMemberships
+                return await dbContext.ProjectMemberships
                     .Where(x => x.ProjectId == request.ProjectId)
-                    .ProjectTo<ProjectMembership>(_mapper.ConfigurationProvider)
-                    .ToArrayAsync();
+                    .ProjectTo<ProjectMembership>(mapper.ConfigurationProvider)
+                    .ToArrayAsync(cancellationToken);
             }
         }
     }

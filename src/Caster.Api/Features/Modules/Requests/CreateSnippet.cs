@@ -8,16 +8,12 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
 using System.Linq;
 using Caster.Api.Domain.Models;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Modules
 {
@@ -46,31 +42,14 @@ namespace Caster.Api.Features.Modules
 
         }
 
-        public class Handler : IRequestHandler<Command, string>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, string>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.ViewModules], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<string> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<string> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var version = await _db.ModuleVersions.FirstOrDefaultAsync(v => v.Id == request.VersionId);
+                var version = await dbContext.ModuleVersions.FirstOrDefaultAsync(v => v.Id == request.VersionId);
 
                 if (version == null)
                     throw new EntityNotFoundException<ModuleVersion>();

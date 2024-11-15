@@ -2,20 +2,14 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Models;
-using Microsoft.Extensions.DependencyInjection;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Groups
 {
@@ -31,34 +25,18 @@ namespace Caster.Api.Features.Groups
             public string Name { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Group>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Group>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly ICasterAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditGroups], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                ICasterAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Group> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
+                var group = mapper.Map<Domain.Models.Group>(request);
+                dbContext.Groups.Add(group);
 
-            public async Task<Group> Handle(Command request, CancellationToken cancellationToken)
-            {
-                await _authorizationService.Authorize(AuthorizationType.Write, [SystemPermissions.CreateGroups]);
-
-                var group = _mapper.Map<Domain.Models.Group>(request);
-                _db.Groups.Add(group);
-
-                await _db.SaveChangesAsync();
-                return _mapper.Map<Group>(group);
+                await dbContext.SaveChangesAsync();
+                return mapper.Map<Group>(group);
             }
         }
     }

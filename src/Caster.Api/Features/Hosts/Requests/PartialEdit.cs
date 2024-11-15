@@ -16,12 +16,13 @@ using System.Security.Claims;
 using Caster.Api.Infrastructure.Authorization;
 using System.Security.Principal;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Hosts
 {
     public class PartialEdit
     {
-        [DataContract(Name="PartialEditHostCommand")]
+        [DataContract(Name = "PartialEditHostCommand")]
         public class Command : IRequest<Host>
         {
             public Guid Id { get; set; }
@@ -63,34 +64,21 @@ namespace Caster.Api.Features.Hosts
             public Optional<Guid?> ProjectId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, Host>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Host>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditHosts], cancellationToken);
 
-            public Handler(CasterContext db, IMapper mapper, IAuthorizationService authorizationService, IIdentityResolver identityResolver)
+            public override async Task<Host> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Host> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var host = await _db.Hosts.FindAsync(request.Id);
+                var host = await dbContext.Hosts.FindAsync([request.Id], cancellationToken);
 
                 if (host == null)
                     throw new EntityNotFoundException<Host>();
 
-                _mapper.Map(request, host);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<Host>(host);
+                mapper.Map(request, host);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<Host>(host);
             }
         }
     }

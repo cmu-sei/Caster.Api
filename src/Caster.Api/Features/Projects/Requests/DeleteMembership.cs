@@ -9,6 +9,9 @@ using Caster.Api.Data;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Infrastructure.Authorization;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Projects
 {
@@ -24,17 +27,20 @@ namespace Caster.Api.Features.Projects
             public Guid Id { get; set; }
         }
 
-        public class Handler(CasterContext _db) : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
         {
-            public async Task Handle(Command request, CancellationToken cancellationToken)
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<ProjectMembership>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
+
+            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var projectMembership = await _db.ProjectMemberships.FindAsync([request.Id], cancellationToken);
+                var projectMembership = await dbContext.ProjectMemberships.FindAsync([request.Id], cancellationToken);
 
                 if (projectMembership == null)
                     throw new EntityNotFoundException<ProjectMembership>();
 
-                _db.ProjectMemberships.Remove(projectMembership);
-                await _db.SaveChangesAsync(cancellationToken);
+                dbContext.ProjectMemberships.Remove(projectMembership);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
     }
