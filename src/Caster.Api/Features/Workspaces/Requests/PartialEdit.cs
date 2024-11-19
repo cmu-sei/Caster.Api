@@ -10,11 +10,8 @@ using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.CodeAnalysis;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Workspaces.Interfaces;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
@@ -22,6 +19,7 @@ using Caster.Api.Infrastructure.Extensions;
 using System.Text.Json.Serialization;
 using Caster.Api.Features.Shared.Validators;
 using Caster.Api.Infrastructure.Options;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -59,14 +57,14 @@ namespace Caster.Api.Features.Workspaces
             public string TerraformVersion { get; set; }
 
             /// <summary>
-            /// Limit the number of concurrent operations as Terraform walks the graph. 
+            /// Limit the number of concurrent operations as Terraform walks the graph.
             /// If null, the Terraform default will be used.
             /// </summary>
             [DataMember]
             public Optional<int?> Parallelism { get; set; }
 
             /// <summary>
-            /// If set, the number of consecutive failed destroys in an Azure Workspace before 
+            /// If set, the number of consecutive failed destroys in an Azure Workspace before
             /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
             /// </summary>
             [DataMember]
@@ -87,39 +85,22 @@ namespace Caster.Api.Features.Workspaces
             }
         }
 
-        public class Handler : IRequestHandler<Command, Workspace>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Workspace>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Workspace> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Workspace> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var workspace = await _db.Workspaces.FindAsync(request.Id);
+                var workspace = await dbContext.Workspaces.FindAsync([request.Id], cancellationToken);
 
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
 
-                _mapper.Map(request, workspace);
+                mapper.Map(request, workspace);
 
-                await _db.SaveChangesAsync(cancellationToken);
-                return _mapper.Map<Workspace>(workspace);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<Workspace>(workspace);
             }
         }
     }

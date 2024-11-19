@@ -219,10 +219,9 @@ namespace Caster.Api
             services.AddScoped<IArchiveService, ArchiveService>();
             services.AddScoped<IImportService, ImportService>();
             services.AddScoped<IValidationService, ValidationService>();
-            services.AddScoped(typeof(IDependencyAggregate<>), typeof(DependencyAggregate<>));
             services.AddScoped<ICasterAuthorizationService, AuthorizationService>();
 
-            services.AddSingleton<Caster.Api.Domain.Services.IAuthenticationService, Caster.Api.Domain.Services.AuthenticationService>();
+            services.AddSingleton<Domain.Services.IAuthenticationService, Domain.Services.AuthenticationService>();
             services.AddSingleton<ILockService, LockService>();
             services.AddSingleton<IUserIdProvider, SubUserIdProvider>();
             services.AddSingleton<IOutputService, OutputService>();

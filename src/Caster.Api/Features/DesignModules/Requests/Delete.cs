@@ -25,10 +25,10 @@ public class Delete
         public Guid Id { get; set; }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>, IRequestHandler<Command>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
     {
         public async override Task Authorize(Command request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize<DesignModule>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
+            await authorizationService.Authorize<Domain.Models.DesignModule>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
         public async override Task HandleRequest(Command request, CancellationToken cancellationToken)
         {

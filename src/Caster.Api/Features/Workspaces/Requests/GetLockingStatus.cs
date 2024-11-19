@@ -5,42 +5,26 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Domain.Services;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Workspaces
 {
     public class GetLockingStatus
     {
-        [DataContract(Name="GetWorkspaceLockingStatusQuery")]
-        public class Query : IRequest<bool> {}
+        [DataContract(Name = "GetWorkspaceLockingStatusQuery")]
+        public class Query : IRequest<bool> { }
 
-        public class Handler : IRequestHandler<Query, bool>
+        public class Handler(ICasterAuthorizationService authorizationService, ILockService lockService) : BaseHandler<Query, bool>
         {
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly ILockService _lockService;
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.ViewWorkspaces], cancellationToken);
 
-            public Handler(
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                ILockService lockService)
+            public override Task<bool> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _lockService = lockService;
-            }
-
-            public async Task<bool> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                return _lockService.IsWorkspaceLockingEnabled();
+                return Task.FromResult(lockService.IsWorkspaceLockingEnabled());
             }
         }
     }

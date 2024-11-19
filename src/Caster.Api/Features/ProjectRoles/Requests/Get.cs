@@ -16,6 +16,8 @@ using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.ProjectRoles
 {
@@ -31,33 +33,16 @@ namespace Caster.Api.Features.ProjectRoles
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, ProjectRole>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, ProjectRole>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.ViewRoles], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<ProjectRole> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<ProjectRole> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var projectRole = await _db.ProjectRoles
-                    .ProjectTo<ProjectRole>(_mapper.ConfigurationProvider, dest => dest.Permissions)
-                    .SingleOrDefaultAsync(e => e.Id == request.Id);
+                var projectRole = await dbContext.ProjectRoles
+                    .ProjectTo<ProjectRole>(mapper.ConfigurationProvider, dest => dest.Permissions)
+                    .SingleOrDefaultAsync(e => e.Id == request.Id, cancellationToken);
 
                 if (projectRole == null)
                     throw new EntityNotFoundException<ProjectRole>();

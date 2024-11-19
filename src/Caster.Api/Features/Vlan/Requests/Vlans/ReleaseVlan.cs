@@ -4,22 +4,21 @@
 using System;
 using System.Linq;
 using System.Runtime.Serialization;
-using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Domain.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Vlan;
 
@@ -43,50 +42,30 @@ public class ReleaseVlan
         }
     }
 
-    public class Handler : IRequestHandler<Command, Vlan>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext, ILockService lockService) : BaseHandler<Command, Vlan>
     {
-        private readonly CasterContext _db;
-        private readonly IMapper _mapper;
-        private readonly IAuthorizationService _authorizationService;
-        private readonly ClaimsPrincipal _user;
-        private readonly ILockService _lockService;
+        public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize([SystemPermissions.EditVLANs], cancellationToken);
 
-        public Handler(
-            CasterContext db,
-            IMapper mapper,
-            IAuthorizationService authorizationService,
-            IIdentityResolver identityResolver,
-            ILockService lockService)
+        public override async Task<Vlan> HandleRequest(Command command, CancellationToken cancellationToken)
         {
-            _db = db;
-            _mapper = mapper;
-            _authorizationService = authorizationService;
-            _user = identityResolver.GetClaimsPrincipal();
-            _lockService = lockService;
-        }
-
-        public async Task<Vlan> Handle(Command command, CancellationToken cancellationToken)
-        {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
-
-            var vlan = await _db.Vlans
+            var vlan = await dbContext.Vlans
                 .Where(x => x.Id == command.Id)
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (!vlan.PartitionId.HasValue)
                 throw new ConflictException("Only VLANs assigned to a Partition can be acquired or released.");
 
-            using (var lockResult = await _lockService.GetPartitionLock(vlan.PartitionId.Value).LockAsync(10000))
+            using (var lockResult = await lockService.GetPartitionLock(vlan.PartitionId.Value).LockAsync(10000))
             {
                 if (!lockResult.AcquiredLock)
                     throw new ConflictException("Could not acquire Partition lock");
 
                 vlan.InUse = false;
-                await _db.SaveChangesAsync(cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            return _mapper.Map<Vlan>(vlan);
+            return mapper.Map<Vlan>(vlan);
         }
     }
 }

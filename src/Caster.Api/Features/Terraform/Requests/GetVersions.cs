@@ -18,6 +18,7 @@ using System.Text.Json.Serialization;
 using System.Collections.Generic;
 using Caster.Api.Infrastructure.Options;
 using System.Linq;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Terraform
 {
@@ -34,37 +35,23 @@ namespace Caster.Api.Features.Terraform
             public string DefaultVersion { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, TerraformVersionsResult>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            ITerraformService terraformService,
+            TerraformOptions terraformOptions) : BaseHandler<Query, TerraformVersionsResult>
         {
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly ITerraformService _terraformService;
-            private readonly TerraformOptions _terraformOptions;
+            // TODO: Auth
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) => await Task.CompletedTask;
 
-            public Handler(
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                ITerraformService terraformService,
-                TerraformOptions terraformOptions)
+            public override Task<TerraformVersionsResult> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _terraformService = terraformService;
-                _terraformOptions = terraformOptions;
-            }
+                var versions = terraformService.GetVersions();
 
-            public async Task<TerraformVersionsResult> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var versions = _terraformService.GetVersions();
-
-                return new TerraformVersionsResult
+                return Task.FromResult(new TerraformVersionsResult
                 {
                     Versions = versions.ToArray(),
-                    DefaultVersion = _terraformOptions.DefaultVersion
-                };
+                    DefaultVersion = terraformOptions.DefaultVersion
+                });
             }
         }
     }

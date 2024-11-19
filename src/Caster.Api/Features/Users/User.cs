@@ -2,7 +2,6 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using Caster.Api.Features.Permissions;
 
 namespace Caster.Api.Features.Users
 {
@@ -13,7 +12,6 @@ namespace Caster.Api.Features.Users
 
         public string Name { get; set; }
         public string RoleId { get; set; }
-        public Permission[] Permissions { get; set; }
     }
 }
 

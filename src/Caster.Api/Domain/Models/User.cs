@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class User
+    public class User : IEntity
     {
         [Key]
         public Guid Id { get; set; }

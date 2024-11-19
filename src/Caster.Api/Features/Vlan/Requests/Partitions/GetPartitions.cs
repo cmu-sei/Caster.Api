@@ -2,16 +2,12 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System.Runtime.Serialization;
-using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
 using AutoMapper.QueryableExtensions;
 using System;
@@ -19,6 +15,8 @@ using System.Linq;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Vlan
 {
@@ -39,31 +37,14 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler : IRequestHandler<Query, Partition[]>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Partition[]>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.ViewVLANs], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Partition[]> HandleRequest(Query query, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Partition[]> Handle(Query query, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var partitionQuery = _db.Partitions.AsQueryable();
+                var partitionQuery = dbContext.Partitions.AsQueryable();
 
                 if (query.PoolId.HasValue)
                 {
@@ -71,7 +52,7 @@ namespace Caster.Api.Features.Vlan
                 }
 
                 var partitions = await partitionQuery
-                    .ProjectTo<Partition>(_mapper.ConfigurationProvider)
+                    .ProjectTo<Partition>(mapper.ConfigurationProvider)
                     .ToArrayAsync(cancellationToken);
 
                 return partitions;

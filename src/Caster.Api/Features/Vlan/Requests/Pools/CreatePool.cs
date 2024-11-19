@@ -3,21 +3,18 @@
 
 using System;
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
 using System.Linq;
 using System.ComponentModel;
 using EFCore.BulkExtensions;
 using System.Collections.Generic;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Vlan
 {
@@ -37,36 +34,19 @@ namespace Caster.Api.Features.Vlan
             /// </summary>
             [DataMember]
             [DefaultValue(new int[] { 0, 1, 4095 })]
-            public int[] ReservedVlanIds { get; set; } = new int[] { 0, 1, 4095 };
+            public int[] ReservedVlanIds { get; set; } = [0, 1, 4095];
         }
 
-        public class Handler : IRequestHandler<Command, Pool>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Pool>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditVLANs], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Pool> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Pool> Handle(Command request, CancellationToken cancellationToken)
-            {
-                // if (!(await _authorizationService.AuthorizeAsync(_user, null, new PermissionsRequirement(Domain.Models.SystemPermissions.EditVLANs))).Succeeded)
-                //     throw new ForbiddenException();
-
-                var pool = _mapper.Map<Domain.Models.Pool>(request);
-                _db.Pools.Add(pool);
-                await _db.SaveChangesAsync(cancellationToken);
+                var pool = mapper.Map<Domain.Models.Pool>(request);
+                dbContext.Pools.Add(pool);
+                await dbContext.SaveChangesAsync(cancellationToken);
 
                 var vlans = new List<Domain.Models.Vlan>();
 
@@ -80,10 +60,10 @@ namespace Caster.Api.Features.Vlan
                     });
                 }
 
-                await _db.BulkInsertAsync(vlans,
+                await dbContext.BulkInsertAsync(vlans,
                     new BulkConfig { PropertiesToExclude = new List<string> { nameof(Pool.Id) } }); // workaround until id properties in pgsql are fixed
 
-                return _mapper.Map<Pool>(pool);
+                return mapper.Map<Pool>(pool);
             }
         }
     }

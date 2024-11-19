@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class UserPermission
+    public class UserPermission : IEntity
     {
         public UserPermission() { }
 

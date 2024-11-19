@@ -8,12 +8,9 @@ using MediatR;
 using System.Runtime.Serialization;
 using AutoMapper;
 using Caster.Api.Data;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.SystemRoles
 {
@@ -33,37 +30,20 @@ namespace Caster.Api.Features.SystemRoles
             public bool AllPermissions { get; set; }
 
             [DataMember]
-            public Domain.Models.SystemPermissions[] Permissions { get; set; }
+            public SystemPermissions[] Permissions { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, SystemRole>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, SystemRole>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditRoles], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<SystemRole> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<SystemRole> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var SystemRole = _mapper.Map<Domain.Models.SystemRole>(request);
-                await _db.SystemRoles.AddAsync(SystemRole);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<SystemRole>(SystemRole);
+                var systemRole = mapper.Map<Domain.Models.SystemRole>(request);
+                dbContext.SystemRoles.Add(systemRole);
+                await dbContext.SaveChangesAsync();
+                return mapper.Map<SystemRole>(systemRole);
             }
         }
     }

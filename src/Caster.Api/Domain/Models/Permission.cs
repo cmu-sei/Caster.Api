@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class Permission
+    public class Permission : IEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -19,7 +19,7 @@ namespace Caster.Api.Domain.Models
         public string Key { get; set; }
 
         public string Value { get; set; }
-        
+
         public string Description { get; set; }
 
         public bool ReadOnly { get; set; }

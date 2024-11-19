@@ -15,6 +15,8 @@ using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.SystemRoles
 {
@@ -26,37 +28,20 @@ namespace Caster.Api.Features.SystemRoles
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditRoles], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
+                var systemRole = await dbContext.SystemRoles.FindAsync([request.Id], cancellationToken);
 
-            public async Task Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var entry = _db.SystemRoles.FirstOrDefault(e => e.Id == request.Id);
-
-                if (entry == null)
+                if (systemRole == null)
                     throw new EntityNotFoundException<SystemRole>();
 
-                _db.SystemRoles.Remove(entry);
-                await _db.SaveChangesAsync(cancellationToken);
+                dbContext.SystemRoles.Remove(systemRole);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
     }

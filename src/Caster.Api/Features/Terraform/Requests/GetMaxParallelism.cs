@@ -18,6 +18,7 @@ using System.Text.Json.Serialization;
 using System.Collections.Generic;
 using Caster.Api.Infrastructure.Options;
 using System.Linq;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Terraform
 {
@@ -28,28 +29,15 @@ namespace Caster.Api.Features.Terraform
         {
         }
 
-        public class Handler : IRequestHandler<Query, int>
+        public class Handler(
+            ICasterAuthorizationService authorizationService, TerraformOptions terraformOptions) : BaseHandler<Query, int>
         {
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly TerraformOptions _terraformOptions;
+            //TODO: Auth
+            public override async Task Authorize(Query request, CancellationToken cancellationToken) => await Task.CompletedTask;
 
-            public Handler(
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                TerraformOptions terraformOptions)
+            public override Task<int> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _terraformOptions = terraformOptions;
-            }
-
-            public async Task<int> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                return _terraformOptions.MaxParallelism;
+                return Task.FromResult(terraformOptions.MaxParallelism);
             }
         }
     }

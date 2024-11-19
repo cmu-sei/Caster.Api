@@ -6,14 +6,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Models;
+using AutoMapper;
+using Caster.Api.Data;
 
 namespace Caster.Api.Features.Variables;
 
@@ -36,21 +36,19 @@ public class Create
         }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Command, Variable>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Variable>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Design>(request.DesignId, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
-        public async Task<Variable> Handle(Command request, CancellationToken cancellationToken)
+        public override async Task<Variable> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
+            var variable = mapper.Map<Domain.Models.Variable>(request);
 
-            var variable = _mapper.Map<Domain.Models.Variable>(request);
+            dbContext.Variables.Add(variable);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-            _db.Variables.Add(variable);
-            await _db.SaveChangesAsync(cancellationToken);
-
-            return _mapper.Map<Variable>(variable);
+            return mapper.Map<Variable>(variable);
         }
     }
 }

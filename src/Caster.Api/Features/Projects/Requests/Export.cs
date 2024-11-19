@@ -38,7 +38,7 @@ namespace Caster.Api.Features.Projects
             IArchiveService archiveService) : BaseHandler<Query, ArchiveResult>
         {
             public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize<Project>(request.Id, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+                await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
 
             public override async Task<ArchiveResult> HandleRequest(Query request, CancellationToken cancellationToken)
             {

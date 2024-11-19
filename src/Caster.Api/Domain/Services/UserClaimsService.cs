@@ -207,7 +207,14 @@ namespace Caster.Api.Domain.Services
             {
                 List<string> permissions;
 
-                permissions = role.Permissions.Select(x => x.ToString()).ToList();
+                if (role.AllPermissions)
+                {
+                    permissions = Enum.GetValues<SystemPermissions>().Select(x => x.ToString()).ToList();
+                }
+                else
+                {
+                    permissions = role.Permissions.Select(x => x.ToString()).ToList();
+                }
 
                 foreach (var permission in permissions)
                 {

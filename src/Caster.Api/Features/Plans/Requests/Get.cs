@@ -32,7 +32,7 @@ namespace Caster.Api.Features.Plans
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Plan>
         {
             public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize<Plan>(request.Id, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+                await authorizationService.Authorize<Domain.Models.Plan>(request.Id, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
 
             public override async Task<Plan> HandleRequest(Query request, CancellationToken cancellationToken)
             {

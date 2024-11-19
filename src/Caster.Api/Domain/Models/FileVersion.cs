@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class FileVersion
+    public class FileVersion : IEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -23,7 +23,7 @@ namespace Caster.Api.Domain.Models
         public Guid? ModifiedById { get; set; }
         public virtual User ModifiedBy { get; set; }
 
-        public string Content { get; set;}
+        public string Content { get; set; }
         public DateTime? DateSaved { get; set; }
 
         public string Tag { get; set; }
@@ -32,7 +32,7 @@ namespace Caster.Api.Domain.Models
 
         public DateTime? DateTagged { get; set; }
 
-        public FileVersion() {}
+        public FileVersion() { }
 
         public FileVersion(File file)
         {

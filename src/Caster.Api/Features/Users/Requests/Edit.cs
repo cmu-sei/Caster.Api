@@ -8,12 +8,10 @@ using MediatR;
 using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Domain.Models;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Users
 {
@@ -32,38 +30,21 @@ namespace Caster.Api.Features.Users
             public string RoleId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, User>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, User>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermissions.EditUsers], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<User> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<User> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var user = await _db.Users.FindAsync(request.Id);
+                var user = await dbContext.Users.FindAsync([request.Id], cancellationToken);
 
                 if (user == null)
                     throw new EntityNotFoundException<User>();
 
-                _mapper.Map(request, user);
-                await _db.SaveChangesAsync();
-                return _mapper.Map<User>(user);
+                mapper.Map(request, user);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<User>(user);
             }
         }
     }

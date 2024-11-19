@@ -36,7 +36,11 @@ public class SetEnabled
     public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, DesignModule>
     {
         public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize<DesignModule>(request.DesignModuleId, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
+            await authorizationService.Authorize<Domain.Models.DesignModule>(
+                request.DesignModuleId,
+                [SystemPermissions.EditProjects],
+                [ProjectPermissions.EditProject],
+                cancellationToken);
 
         public override async Task<DesignModule> HandleRequest(Command request, CancellationToken cancellationToken)
         {

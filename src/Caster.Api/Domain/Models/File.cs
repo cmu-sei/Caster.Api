@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class File
+    public class File : IEntity
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -19,7 +19,7 @@ namespace Caster.Api.Domain.Models
 
         public string Name { get; set; }
 
-        public Guid DirectoryId { get; private set;}
+        public Guid DirectoryId { get; private set; }
         public virtual Directory Directory { get; set; }
 
         public Guid? WorkspaceId { get; private set; }
@@ -31,7 +31,7 @@ namespace Caster.Api.Domain.Models
         public Guid? LockedById { get; private set; }
         public virtual User LockedBy { get; private set; }
 
-        public string Content { get; set;}
+        public string Content { get; set; }
 
         public DateTime? DateSaved { get; private set; }
 

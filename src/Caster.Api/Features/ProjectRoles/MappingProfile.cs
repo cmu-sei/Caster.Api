@@ -11,8 +11,6 @@ namespace Caster.Api.Features.ProjectRoles
         public MappingProfile()
         {
             CreateMap<Domain.Models.ProjectRole, ProjectRole>();
-            CreateMap<Create.Command, Domain.Models.ProjectRole>();
-            CreateMap<Edit.Command, Domain.Models.ProjectRole>();
         }
     }
 }

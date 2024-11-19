@@ -78,9 +78,9 @@ namespace Caster.Api.Features.Projects
         [HttpGet()]
         [ProducesResponseType(typeof(IEnumerable<Project>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "GetAllProjects")]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] GetAll.Query query)
         {
-            var result = await _mediator.Send(new GetAll.Query());
+            var result = await _mediator.Send(query);
             return Ok(result);
         }
 

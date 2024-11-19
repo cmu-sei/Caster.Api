@@ -8,7 +8,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Caster.Api.Domain.Models
 {
-    public class RemovedResource
+    public class RemovedResource : IEntity
     {
         [Key]
         public string Id { get; set; }

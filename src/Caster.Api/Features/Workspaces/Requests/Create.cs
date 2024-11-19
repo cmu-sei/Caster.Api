@@ -8,11 +8,7 @@ using MediatR;
 using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Workspaces.Interfaces;
 using FluentValidation;
 using Caster.Api.Infrastructure.Options;
@@ -20,6 +16,7 @@ using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Features.Shared;
 using Caster.Api.Features.Shared.Validators;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -54,14 +51,14 @@ namespace Caster.Api.Features.Workspaces
             public string TerraformVersion { get; set; }
 
             /// <summary>
-            /// Limit the number of concurrent operations as Terraform walks the graph. 
+            /// Limit the number of concurrent operations as Terraform walks the graph.
             /// If null, the Terraform default will be used.
             /// </summary>
             [DataMember]
             public int? Parallelism { get; set; }
 
             /// <summary>
-            /// If set, the number of consecutive failed destroys in an Azure Workspace before 
+            /// If set, the number of consecutive failed destroys in an Azure Workspace before
             /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
             /// </summary>
             [DataMember]
@@ -82,39 +79,23 @@ namespace Caster.Api.Features.Workspaces
             }
         }
 
-        public class Handler : IRequestHandler<Command, Workspace>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            IMapper mapper,
+            CasterContext dbContext,
+            TerraformOptions terraformOptions) : BaseHandler<Command, Workspace>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly TerraformOptions _terraformOptions;
+            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                TerraformOptions terraformOptions)
+            public override async Task<Workspace> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _terraformOptions = terraformOptions;
-            }
-
-            public async Task<Workspace> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var workspace = _mapper.Map<Domain.Models.Workspace>(request);
+                var workspace = mapper.Map<Domain.Models.Workspace>(request);
                 workspace = await SetCascadedProperties(workspace, request, cancellationToken);
 
-                _db.Workspaces.Add(workspace);
-                await _db.SaveChangesAsync(cancellationToken);
-                return _mapper.Map<Workspace>(workspace);
+                dbContext.Workspaces.Add(workspace);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<Workspace>(workspace);
             }
 
             private async Task<Domain.Models.Workspace> SetCascadedProperties(Domain.Models.Workspace workspace, Command request, CancellationToken ct)
@@ -122,7 +103,7 @@ namespace Caster.Api.Features.Workspaces
                 if (!request.Parallelism.HasValue && string.IsNullOrEmpty(request.TerraformVersion))
                 {
                     // Load parent directories from database
-                    var directory = await _db.GetDirectoryWithAncestors(workspace.DirectoryId, ct);
+                    var directory = await dbContext.GetDirectoryWithAncestors(workspace.DirectoryId, ct);
 
                     workspace.TerraformVersion = !string.IsNullOrEmpty(request.TerraformVersion) ?
                         request.TerraformVersion :
@@ -152,7 +133,7 @@ namespace Caster.Api.Features.Workspaces
                 }
                 else
                 {
-                    return _terraformOptions.DefaultVersion;
+                    return terraformOptions.DefaultVersion;
                 }
             }
 
@@ -188,7 +169,7 @@ namespace Caster.Api.Features.Workspaces
                 }
                 else
                 {
-                    return _terraformOptions.AzureDestroyFailureThreshhold;
+                    return terraformOptions.AzureDestroyFailureThreshhold;
                 }
             }
         }
