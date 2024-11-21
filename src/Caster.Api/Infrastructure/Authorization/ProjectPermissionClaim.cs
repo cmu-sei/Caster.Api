@@ -7,7 +7,7 @@ namespace Caster.Api.Infrastructure.Authorization;
 public class ProjectPermissionsClaim
 {
     public Guid ProjectId { get; set; }
-    public ProjectPermissions[] Permissions { get; set; } = [];
+    public ProjectPermission[] Permissions { get; set; } = [];
 
     public ProjectPermissionsClaim() { }
 

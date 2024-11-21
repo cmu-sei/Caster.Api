@@ -31,7 +31,7 @@ namespace Caster.Api.Features.Projects
             public override async Task Authorize(Query request, CancellationToken cancellationToken)
             {
                 if (!request.OnlyMine)
-                    await authorizationService.Authorize([SystemPermissions.ViewProjects], cancellationToken);
+                    await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken);
             }
 
             public override async Task<Project[]> HandleRequest(Query request, CancellationToken cancellationToken)

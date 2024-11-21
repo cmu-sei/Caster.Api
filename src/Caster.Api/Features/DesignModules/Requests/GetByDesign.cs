@@ -43,7 +43,7 @@ public class GetByDesign
     public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, DesignModule[]>
     {
         public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize<Domain.Models.DesignModule>(request.DesignId, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+            await authorizationService.Authorize<Domain.Models.DesignModule>(request.DesignId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
         public override async Task<DesignModule[]> HandleRequest(Query request, CancellationToken cancellationToken)
         {

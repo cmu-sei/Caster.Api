@@ -39,7 +39,7 @@ public class GetAll
     public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Variable[]>
     {
         public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize<Design>(request.DesignId, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+            await authorizationService.Authorize<Design>(request.DesignId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
         public override async Task<Variable[]> HandleRequest(Query request, CancellationToken cancellationToken)
         {

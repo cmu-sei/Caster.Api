@@ -44,7 +44,7 @@ namespace Caster.Api.Features.Runs
             IIdentityResolver identityResolver) : BaseHandler<Command, Run>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize<Domain.Models.Run>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
+                await authorizationService.Authorize<Domain.Models.Run>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task<Run> HandleRequest(Command request, CancellationToken cancellationToken)
             {

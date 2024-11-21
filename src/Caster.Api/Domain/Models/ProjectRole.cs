@@ -22,10 +22,10 @@ public class ProjectRole : IEntity
 
     public bool AllPermissions { get; set; }
 
-    public List<ProjectPermissions> Permissions { get; set; }
+    public List<ProjectPermission> Permissions { get; set; }
 }
 
-public enum ProjectPermissions
+public enum ProjectPermission
 {
     ViewProject,
     EditProject,
@@ -60,7 +60,7 @@ public class ProjectRoleConfiguration : IEntityTypeConfiguration<ProjectRole>
                 Id = ProjectRoleDefaults.ProjectReadOnlyRoleId,
                 Name = "Observer",
                 AllPermissions = false,
-                Permissions = [ProjectPermissions.ViewProject],
+                Permissions = [ProjectPermission.ViewProject],
                 Description = "Has read only access to the Project"
             },
             new ProjectRole
@@ -69,9 +69,9 @@ public class ProjectRoleConfiguration : IEntityTypeConfiguration<ProjectRole>
                 Name = "Member",
                 AllPermissions = false,
                 Permissions = [
-                    ProjectPermissions.ViewProject,
-                    ProjectPermissions.EditProject,
-                    ProjectPermissions.ImportProject
+                    ProjectPermission.ViewProject,
+                    ProjectPermission.EditProject,
+                    ProjectPermission.ImportProject
                 ],
                 Description = "Has read only access to the Project"
             }

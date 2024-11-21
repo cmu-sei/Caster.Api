@@ -30,7 +30,7 @@ namespace Caster.Api.Features.Users
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, User[]>
         {
             public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.ViewUsers], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ViewUsers], cancellationToken);
 
             public override async Task<User[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {

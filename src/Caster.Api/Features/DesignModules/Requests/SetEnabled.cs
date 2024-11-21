@@ -38,8 +38,8 @@ public class SetEnabled
         public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Domain.Models.DesignModule>(
                 request.DesignModuleId,
-                [SystemPermissions.EditProjects],
-                [ProjectPermissions.EditProject],
+                [SystemPermission.EditProjects],
+                [ProjectPermission.EditProject],
                 cancellationToken);
 
         public override async Task<DesignModule> HandleRequest(Command request, CancellationToken cancellationToken)

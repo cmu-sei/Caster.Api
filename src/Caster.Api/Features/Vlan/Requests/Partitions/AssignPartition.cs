@@ -52,7 +52,7 @@ namespace Caster.Api.Features.Vlan
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Project>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.ManageVLANs], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
 
             public override async Task<Project> HandleRequest(Command command, CancellationToken cancellationToken)
             {

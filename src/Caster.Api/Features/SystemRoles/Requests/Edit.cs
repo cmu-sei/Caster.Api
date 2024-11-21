@@ -32,13 +32,13 @@ namespace Caster.Api.Features.SystemRoles
             public bool AllPermissions { get; set; }
 
             [DataMember]
-            public SystemPermissions[] Permissions { get; set; }
+            public SystemPermission[] Permissions { get; set; }
         }
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, SystemRole>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.ManageRoles], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ManageRoles], cancellationToken);
 
             public override async Task<SystemRole> HandleRequest(Command request, CancellationToken cancellationToken)
             {

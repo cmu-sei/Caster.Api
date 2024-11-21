@@ -46,7 +46,7 @@ public class Create
     public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Design>
     {
         public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
+            await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
         public override async Task<Design> HandleRequest(Command request, CancellationToken cancellationToken)
         {

@@ -9,19 +9,19 @@ using System.Threading.Tasks;
 
 namespace Caster.Api.Infrastructure.Authorization
 {
-    public class SystemPermissionsRequirement : IAuthorizationRequirement
+    public class SystemPermissionRequirement : IAuthorizationRequirement
     {
-        public SystemPermissions[] RequiredPermissions;
+        public SystemPermission[] RequiredPermissions;
 
-        public SystemPermissionsRequirement(SystemPermissions[] requiredPermissions)
+        public SystemPermissionRequirement(SystemPermission[] requiredPermissions)
         {
             RequiredPermissions = requiredPermissions;
         }
     }
 
-    public class SystemPermissionsHandler : AuthorizationHandler<SystemPermissionsRequirement>, IAuthorizationHandler
+    public class SystemPermissionsHandler : AuthorizationHandler<SystemPermissionRequirement>, IAuthorizationHandler
     {
-        protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, SystemPermissionsRequirement requirement)
+        protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, SystemPermissionRequirement requirement)
         {
             if (context.User == null)
             {

@@ -50,7 +50,7 @@ namespace Caster.Api.Features.Applies
             }
 
             public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-               await _authorizationService.Authorize<Run>(request.RunId, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+               await _authorizationService.Authorize<Run>(request.RunId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
             public override async Task<Apply> HandleRequest(Query request, CancellationToken cancellationToken)
             {

@@ -20,7 +20,7 @@ namespace Caster.Api.Features.Workspaces
         public class Handler(ICasterAuthorizationService authorizationService, ILockService lockService) : BaseHandler<Query, bool>
         {
             public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.ViewWorkspaces], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ViewWorkspaces], cancellationToken);
 
             public override Task<bool> HandleRequest(Query request, CancellationToken cancellationToken)
             {

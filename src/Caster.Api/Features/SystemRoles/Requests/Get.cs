@@ -13,7 +13,6 @@ using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Features.Shared;
-using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.SystemRoles
 {
@@ -32,7 +31,7 @@ namespace Caster.Api.Features.SystemRoles
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, SystemRole>
         {
             public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.ViewRoles], cancellationToken);
+                await authorizationService.Authorize([Domain.Models.SystemPermission.ViewRoles], cancellationToken);
 
             public override async Task<SystemRole> HandleRequest(Query request, CancellationToken cancellationToken)
             {

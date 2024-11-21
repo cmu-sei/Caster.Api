@@ -10,13 +10,13 @@ using System.Threading.Tasks;
 
 namespace Caster.Api.Infrastructure.Authorization
 {
-    public class ProjectPermissionsRequirement : IAuthorizationRequirement
+    public class ProjectPermissionRequirement : IAuthorizationRequirement
     {
-        public ProjectPermissions[] RequiredPermissions;
+        public ProjectPermission[] RequiredPermissions;
         public Guid ProjectId;
 
-        public ProjectPermissionsRequirement(
-            ProjectPermissions[] requiredPermissions,
+        public ProjectPermissionRequirement(
+            ProjectPermission[] requiredPermissions,
             Guid projectId)
         {
             RequiredPermissions = requiredPermissions;
@@ -24,9 +24,9 @@ namespace Caster.Api.Infrastructure.Authorization
         }
     }
 
-    public class ProjectPermissionsHandler : AuthorizationHandler<ProjectPermissionsRequirement>, IAuthorizationHandler
+    public class ProjectPermissionsHandler : AuthorizationHandler<ProjectPermissionRequirement>, IAuthorizationHandler
     {
-        protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, ProjectPermissionsRequirement requirement)
+        protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, ProjectPermissionRequirement requirement)
         {
             if (context.User == null)
             {

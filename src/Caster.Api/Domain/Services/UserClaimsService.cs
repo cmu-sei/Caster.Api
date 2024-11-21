@@ -209,7 +209,7 @@ namespace Caster.Api.Domain.Services
 
                 if (role.AllPermissions)
                 {
-                    permissions = Enum.GetValues<SystemPermissions>().Select(x => x.ToString()).ToList();
+                    permissions = Enum.GetValues<SystemPermission>().Select(x => x.ToString()).ToList();
                 }
                 else
                 {
@@ -244,11 +244,15 @@ namespace Caster.Api.Domain.Services
 
             foreach (var group in projectMemberships)
             {
-                var projectPermissions = new List<ProjectPermissions>();
+                var projectPermissions = new List<ProjectPermission>();
 
                 foreach (var membership in group)
                 {
-                    if (membership.RoleId != null)
+                    if (membership.Role.AllPermissions)
+                    {
+                        projectPermissions.AddRange(Enum.GetValues<ProjectPermission>());
+                    }
+                    else
                     {
                         projectPermissions.AddRange(membership.Role.Permissions);
                     }

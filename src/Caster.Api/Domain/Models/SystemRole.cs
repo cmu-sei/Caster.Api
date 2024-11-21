@@ -22,10 +22,10 @@ public class SystemRole : IEntity
     public bool AllPermissions { get; set; }
     public bool Immutable { get; set; }
 
-    public List<SystemPermissions> Permissions { get; set; }
+    public List<SystemPermission> Permissions { get; set; }
 }
 
-public enum SystemPermissions
+public enum SystemPermission
 {
     CreateProjects,
     ViewProjects,

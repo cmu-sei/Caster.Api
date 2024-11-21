@@ -57,7 +57,7 @@ namespace Caster.Api.Features.Modules
             public override async Task Authorize(Query request, CancellationToken cancellationToken)
             {
                 if (!authorizationService.GetAuthorizedProjectIds().Any())
-                    await authorizationService.Authorize([SystemPermissions.ViewModules], cancellationToken);
+                    await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
             }
 
             public override async Task<Module[]> HandleRequest(Query request, CancellationToken cancellationToken)

@@ -27,7 +27,7 @@ namespace Caster.Api.Features.Workspaces
         public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, ILockService lockService) : BaseHandler<Command>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
+                await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {

@@ -12,7 +12,7 @@ namespace Caster.Api.Features.ProjectRoles
 
         public string Name { get; set; }
 
-        public Domain.Models.ProjectPermissions[] Permissions { get; set; }
+        public Domain.Models.ProjectPermission[] Permissions { get; set; }
     }
 }
 

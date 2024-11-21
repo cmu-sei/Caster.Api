@@ -39,7 +39,7 @@ namespace Caster.Api.Features.Projects
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, ProjectMembership[]>
         {
             public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize<Domain.Models.Project>(request.ProjectId, [SystemPermissions.ViewProjects], [ProjectPermissions.ViewProject], cancellationToken);
+                await authorizationService.Authorize<Domain.Models.Project>(request.ProjectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
             public override async Task<ProjectMembership[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {

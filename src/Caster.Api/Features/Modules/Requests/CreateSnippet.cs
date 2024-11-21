@@ -45,7 +45,7 @@ namespace Caster.Api.Features.Modules
         public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, string>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.ViewModules], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
 
             public override async Task<string> HandleRequest(Command request, CancellationToken cancellationToken)
             {

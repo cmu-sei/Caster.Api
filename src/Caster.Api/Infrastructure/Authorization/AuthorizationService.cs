@@ -15,16 +15,18 @@ namespace Caster.Api.Infrastructure.Authorization;
 public interface ICasterAuthorizationService
 {
     Task<bool> Authorize(
-        SystemPermissions[] requiredSystemPermissions,
+        SystemPermission[] requiredSystemPermissions,
         CancellationToken cancellationToken);
 
     Task<bool> Authorize<T>(
         Guid? resourceId,
-        SystemPermissions[] requiredSystemPermissions,
-        ProjectPermissions[] requiredProjectPermissions,
+        SystemPermission[] requiredSystemPermissions,
+        ProjectPermission[] requiredProjectPermissions,
         CancellationToken cancellationToken) where T : IEntity;
 
     IEnumerable<Guid> GetAuthorizedProjectIds();
+    IEnumerable<SystemPermission> GetSystemPermissions();
+    IEnumerable<ProjectPermissionsClaim> GetProjectPermissions(Guid? projectId);
 }
 
 public class AuthorizationService(
@@ -33,7 +35,7 @@ public class AuthorizationService(
     CasterContext dbContext) : ICasterAuthorizationService
 {
     public async Task<bool> Authorize(
-        SystemPermissions[] requiredSystemPermissions,
+        SystemPermission[] requiredSystemPermissions,
         CancellationToken cancellationToken)
     {
         return await Authorize<IEntity>(null, requiredSystemPermissions, [], cancellationToken);
@@ -41,12 +43,12 @@ public class AuthorizationService(
 
     public async Task<bool> Authorize<T>(
         Guid? resourceId,
-        SystemPermissions[] requiredSystemPermissions,
-        ProjectPermissions[] requiredProjectPermissions,
+        SystemPermission[] requiredSystemPermissions,
+        ProjectPermission[] requiredProjectPermissions,
         CancellationToken cancellationToken) where T : IEntity
     {
         var claimsPrincipal = identityResolver.GetClaimsPrincipal();
-        var permissionRequirement = new SystemPermissionsRequirement(requiredSystemPermissions);
+        var permissionRequirement = new SystemPermissionRequirement(requiredSystemPermissions);
         var permissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, permissionRequirement);
 
         if (permissionResult.Succeeded)
@@ -59,7 +61,7 @@ public class AuthorizationService(
             if (projectId == null)
                 throw new ForbiddenException();
 
-            var projectPermissionRequirement = new ProjectPermissionsRequirement(requiredProjectPermissions, projectId.Value);
+            var projectPermissionRequirement = new ProjectPermissionRequirement(requiredProjectPermissions, projectId.Value);
             var projectPermissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, projectPermissionRequirement);
 
             if (!projectPermissionResult.Succeeded)
@@ -79,6 +81,36 @@ public class AuthorizationService(
             .Where(x => x.Type == AuthorizationConstants.ProjectPermissionsClaimType)
             .Select(x => ProjectPermissionsClaim.FromString(x.Value).ProjectId)
             .ToList();
+    }
+
+    public IEnumerable<SystemPermission> GetSystemPermissions()
+    {
+        return identityResolver.GetClaimsPrincipal().Claims
+           .Where(x => x.Type == AuthorizationConstants.PermissionsClaimType)
+           .Select(x =>
+           {
+               if (Enum.TryParse<SystemPermission>(x.Value, out var permission))
+                   return permission;
+
+               return (SystemPermission?)null;
+           })
+           .Where(x => x.HasValue)
+           .Select(x => x.Value)
+           .ToList();
+    }
+
+    public IEnumerable<ProjectPermissionsClaim> GetProjectPermissions(Guid? projectId)
+    {
+        var permissions = identityResolver.GetClaimsPrincipal().Claims
+           .Where(x => x.Type == AuthorizationConstants.ProjectPermissionsClaimType)
+           .Select(x => ProjectPermissionsClaim.FromString(x.Value));
+
+        if (projectId.HasValue)
+        {
+            permissions = permissions.Where(x => x.ProjectId == projectId.Value);
+        }
+
+        return permissions;
     }
 
     private async Task<Guid?> GetProjectId<T>(Guid resourceId, CancellationToken cancellationToken)

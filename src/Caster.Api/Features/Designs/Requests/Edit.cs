@@ -40,7 +40,7 @@ public class Edit
     public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Design>
     {
         public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize<Domain.Models.Design>(request.Id, [SystemPermissions.EditProjects], [ProjectPermissions.EditProject], cancellationToken);
+            await authorizationService.Authorize<Domain.Models.Design>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
         public override async Task<Design> HandleRequest(Command request, CancellationToken cancellationToken)
         {

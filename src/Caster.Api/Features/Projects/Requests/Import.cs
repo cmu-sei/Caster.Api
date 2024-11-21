@@ -80,7 +80,7 @@ namespace Caster.Api.Features.Projects
             IMediator mediator) : BaseHandler<Command, ImportProjectResult>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermissions.ImportProjects], [ProjectPermissions.EditProject], cancellationToken);
+                await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermission.ImportProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task<ImportProjectResult> HandleRequest(Command request, CancellationToken cancellationToken)
             {
