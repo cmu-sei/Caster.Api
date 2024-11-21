@@ -36,7 +36,7 @@ namespace Caster.Api.Features.SystemRoles
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, SystemRole>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.EditRoles], cancellationToken);
+                await authorizationService.Authorize([SystemPermissions.ManageRoles], cancellationToken);
 
             public override async Task<SystemRole> HandleRequest(Command request, CancellationToken cancellationToken)
             {

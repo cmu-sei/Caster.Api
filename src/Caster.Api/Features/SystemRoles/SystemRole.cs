@@ -13,6 +13,7 @@ namespace Caster.Api.Features.SystemRoles
         public string Name { get; set; }
 
         public bool AllPermissions { get; set; }
+        public bool Immutable { get; set; }
         public Domain.Models.SystemPermissions[] Permissions { get; set; }
     }
 }

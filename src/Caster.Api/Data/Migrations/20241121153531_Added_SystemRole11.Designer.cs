@@ -3,6 +3,7 @@ using System;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Caster.Api.Data.Migrations
 {
     [DbContext(typeof(CasterContext))]
-    partial class CasterContextModelSnapshot : ModelSnapshot
+    [Migration("20241121153531_Added_SystemRole11")]
+    partial class Added_SystemRole11
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -610,10 +613,8 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
-                    b.Property<Guid>("RoleId")
-                        .ValueGeneratedOnAdd()
+                    b.Property<Guid?>("RoleId")
                         .HasColumnType("uuid")
-                        .HasDefaultValue(new Guid("f870d8ee-7332-4f7f-8ee0-63bd07cfd7e4"))
                         .HasColumnName("role_id");
 
                     b.Property<Guid?>("UserId")
@@ -668,7 +669,7 @@ namespace Caster.Api.Data.Migrations
                             Id = new Guid("1a3f26cd-9d99-4b98-b914-12931e786198"),
                             AllPermissions = true,
                             Description = "Can perform all actions on the Project",
-                            Name = "Manager",
+                            Name = "Administrator",
                             Permissions = new int[0]
                         },
                         new
@@ -678,14 +679,6 @@ namespace Caster.Api.Data.Migrations
                             Description = "Has read only access to the Project",
                             Name = "Observer",
                             Permissions = new[] { 0 }
-                        },
-                        new
-                        {
-                            Id = new Guid("f870d8ee-7332-4f7f-8ee0-63bd07cfd7e4"),
-                            AllPermissions = false,
-                            Description = "Has read only access to the Project",
-                            Name = "Member",
-                            Permissions = new[] { 0, 1, 3 }
                         });
                 });
 
@@ -1199,9 +1192,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasOne("Caster.Api.Domain.Models.ProjectRole", "Role")
                         .WithMany()
-                        .HasForeignKey("RoleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("RoleId");
 
                     b.HasOne("Caster.Api.Domain.Models.User", "User")
                         .WithMany("ProjectMemberships")

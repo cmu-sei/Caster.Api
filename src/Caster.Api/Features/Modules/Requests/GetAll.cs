@@ -54,8 +54,11 @@ namespace Caster.Api.Features.Modules
             CasterContext dbContext,
             IGitlabRepositoryService gitlabRepositoryService) : BaseHandler<Query, Module[]>
         {
-            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.ViewModules], cancellationToken);
+            public override async Task Authorize(Query request, CancellationToken cancellationToken)
+            {
+                if (!authorizationService.GetAuthorizedProjectIds().Any())
+                    await authorizationService.Authorize([SystemPermissions.ViewModules], cancellationToken);
+            }
 
             public override async Task<Module[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {

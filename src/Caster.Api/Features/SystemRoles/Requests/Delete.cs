@@ -31,7 +31,7 @@ namespace Caster.Api.Features.SystemRoles
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.EditRoles], cancellationToken);
+                await authorizationService.Authorize([SystemPermissions.ManageRoles], cancellationToken);
 
             public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
@@ -39,6 +39,9 @@ namespace Caster.Api.Features.SystemRoles
 
                 if (systemRole == null)
                     throw new EntityNotFoundException<SystemRole>();
+
+                if (systemRole.Immutable)
+                    throw new ConflictException("Immutable Role cannot be deleted.");
 
                 dbContext.SystemRoles.Remove(systemRole);
                 await dbContext.SaveChangesAsync(cancellationToken);

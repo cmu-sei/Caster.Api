@@ -24,7 +24,7 @@ namespace Caster.Api.Features.Workspaces
         public class Handler(ICasterAuthorizationService authorizationService, ILockService lockService, IMediator mediator) : BaseHandler<Command, bool>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.EditWorkspaces], cancellationToken);
+                await authorizationService.Authorize([SystemPermissions.ManageWorkspaces], cancellationToken);
 
             public override async Task<bool> HandleRequest(Command request, CancellationToken cancellationToken)
             {

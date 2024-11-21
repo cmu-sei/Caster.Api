@@ -32,8 +32,13 @@ namespace Caster.Api.Features.Terraform
         public class Handler(
             ICasterAuthorizationService authorizationService, TerraformOptions terraformOptions) : BaseHandler<Query, int>
         {
-            //TODO: Auth
-            public override async Task Authorize(Query request, CancellationToken cancellationToken) => await Task.CompletedTask;
+            public override Task Authorize(Query request, CancellationToken cancellationToken)
+            {
+                if (!authorizationService.GetAuthorizedProjectIds().Any())
+                    throw new ForbiddenException();
+
+                return Task.CompletedTask;
+            }
 
             public override Task<int> HandleRequest(Query request, CancellationToken cancellationToken)
             {

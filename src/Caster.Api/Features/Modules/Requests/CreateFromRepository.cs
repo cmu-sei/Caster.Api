@@ -29,7 +29,7 @@ namespace Caster.Api.Features.Modules
             IGitlabRepositoryService gitlabRepositoryService) : BaseHandler<Command, bool>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.EditModules], cancellationToken);
+                await authorizationService.Authorize([SystemPermissions.ManageModules], cancellationToken);
 
             public override async Task<bool> HandleRequest(Command request, CancellationToken cancellationToken)
             {

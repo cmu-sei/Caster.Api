@@ -5,7 +5,7 @@ using MediatR;
 
 namespace Caster.Api.Domain.Events;
 
-public class EntityCreated<TEntity> : INotification
+public class EntityCreated<TEntity> : IEntityNotification<TEntity>
 {
     public TEntity Entity { get; set; }
 
@@ -15,7 +15,7 @@ public class EntityCreated<TEntity> : INotification
     }
 }
 
-public class EntityUpdated<TEntity> : INotification
+public class EntityUpdated<TEntity> : IEntityNotification<TEntity>
 {
     public TEntity Entity { get; set; }
     public string[] ModifiedProperties { get; set; }
@@ -27,7 +27,7 @@ public class EntityUpdated<TEntity> : INotification
     }
 }
 
-public class EntityDeleted<TEntity> : INotification
+public class EntityDeleted<TEntity> : IEntityNotification<TEntity>
 {
     public TEntity Entity { get; set; }
 
@@ -35,4 +35,9 @@ public class EntityDeleted<TEntity> : INotification
     {
         Entity = entity;
     }
+}
+
+public interface IEntityNotification<TEntity> : INotification
+{
+    TEntity Entity { get; set; }
 }

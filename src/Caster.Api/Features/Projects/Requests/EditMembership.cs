@@ -30,14 +30,14 @@ namespace Caster.Api.Features.Projects
             public Guid Id { get; set; }
 
             [DataMember]
-            public Guid? RoleId { get; set; }
+            public Guid RoleId { get; set; }
         }
 
         public class Validator : AbstractValidator<Command>
         {
             public Validator(IValidationService validationService)
             {
-                RuleFor(x => x.RoleId.Value).ProjectRoleExists(validationService).When(x => x.RoleId.HasValue);
+                RuleFor(x => x.RoleId).ProjectRoleExists(validationService);
             }
         }
 

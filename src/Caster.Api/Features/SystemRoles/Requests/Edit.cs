@@ -12,6 +12,7 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
+using Microsoft.AspNetCore.Identity;
 
 namespace Caster.Api.Features.SystemRoles
 {
@@ -37,7 +38,7 @@ namespace Caster.Api.Features.SystemRoles
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, SystemRole>
         {
             public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermissions.EditRoles], cancellationToken);
+                await authorizationService.Authorize([SystemPermissions.ManageRoles], cancellationToken);
 
             public override async Task<SystemRole> HandleRequest(Command request, CancellationToken cancellationToken)
             {
@@ -46,8 +47,11 @@ namespace Caster.Api.Features.SystemRoles
                 if (systemRole == null)
                     throw new EntityNotFoundException<SystemRole>();
 
+                if (systemRole.Immutable)
+                    throw new ConflictException("Immutable Role cannot be changed.");
+
                 mapper.Map(request, systemRole);
-                await dbContext.SaveChangesAsync();
+                await dbContext.SaveChangesAsync(cancellationToken);
                 return mapper.Map<SystemRole>(systemRole);
             }
         }

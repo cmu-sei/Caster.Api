@@ -39,6 +39,7 @@ public static class ProjectRoleDefaults
 {
     public static Guid ProjectCreatorRoleId = new("1a3f26cd-9d99-4b98-b914-12931e786198");
     public static Guid ProjectReadOnlyRoleId = new("39aa296e-05ba-4fb0-8d74-c92cf3354c6f");
+    public static Guid ProjectMemberRoleId = new("f870d8ee-7332-4f7f-8ee0-63bd07cfd7e4");
 }
 
 public class ProjectRoleConfiguration : IEntityTypeConfiguration<ProjectRole>
@@ -49,7 +50,7 @@ public class ProjectRoleConfiguration : IEntityTypeConfiguration<ProjectRole>
             new ProjectRole
             {
                 Id = ProjectRoleDefaults.ProjectCreatorRoleId,
-                Name = "Administrator",
+                Name = "Manager",
                 AllPermissions = true,
                 Permissions = [],
                 Description = "Can perform all actions on the Project"
@@ -60,6 +61,18 @@ public class ProjectRoleConfiguration : IEntityTypeConfiguration<ProjectRole>
                 Name = "Observer",
                 AllPermissions = false,
                 Permissions = [ProjectPermissions.ViewProject],
+                Description = "Has read only access to the Project"
+            },
+            new ProjectRole
+            {
+                Id = ProjectRoleDefaults.ProjectMemberRoleId,
+                Name = "Member",
+                AllPermissions = false,
+                Permissions = [
+                    ProjectPermissions.ViewProject,
+                    ProjectPermissions.EditProject,
+                    ProjectPermissions.ImportProject
+                ],
                 Description = "Has read only access to the Project"
             }
         );

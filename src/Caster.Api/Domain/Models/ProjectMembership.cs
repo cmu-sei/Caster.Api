@@ -25,7 +25,7 @@ public class ProjectMembership : IEntity
     public Guid? GroupId { get; set; }
     public virtual Group Group { get; set; }
 
-    public Guid? RoleId { get; set; }
+    public Guid RoleId { get; set; } = ProjectRoleDefaults.ProjectMemberRoleId;
     public ProjectRole Role { get; set; }
 
 
@@ -43,6 +43,8 @@ public class ProjectMembership : IEntity
         public void Configure(EntityTypeBuilder<ProjectMembership> builder)
         {
             builder.HasIndex(e => new { e.ProjectId, e.UserId, e.GroupId }).IsUnique();
+
+            builder.Property(x => x.RoleId).HasDefaultValue(ProjectRoleDefaults.ProjectMemberRoleId);
 
             builder
                 .HasOne(x => x.Project)
