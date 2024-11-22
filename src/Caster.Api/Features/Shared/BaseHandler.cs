@@ -4,6 +4,7 @@
 using MediatR;
 using System.Threading.Tasks;
 using System.Threading;
+using Caster.Api.Infrastructure.Exceptions;
 
 namespace Caster.Api.Features.Shared;
 
@@ -12,11 +13,13 @@ public abstract class BaseHandler<TRequest, TResponse> : IRequestHandler<TReques
 {
     public async Task<TResponse> Handle(TRequest request, CancellationToken cancellationToken)
     {
-        await this.Authorize(request, cancellationToken);
+        if (!await this.Authorize(request, cancellationToken))
+            throw new ForbiddenException();
+
         return await this.HandleRequest(request, cancellationToken);
     }
 
-    public abstract Task Authorize(TRequest request, CancellationToken cancellationToken);
+    public abstract Task<bool> Authorize(TRequest request, CancellationToken cancellationToken);
     public abstract Task<TResponse> HandleRequest(TRequest request, CancellationToken cancellationToken);
 }
 
@@ -25,10 +28,12 @@ public abstract class BaseHandler<TRequest> : IRequestHandler<TRequest>
 {
     public async Task Handle(TRequest request, CancellationToken cancellationToken)
     {
-        await this.Authorize(request, cancellationToken);
+        if (!await this.Authorize(request, cancellationToken))
+            throw new ForbiddenException();
+
         await this.HandleRequest(request, cancellationToken);
     }
 
-    public abstract Task Authorize(TRequest request, CancellationToken cancellationToken);
+    public abstract Task<bool> Authorize(TRequest request, CancellationToken cancellationToken);
     public abstract Task HandleRequest(TRequest request, CancellationToken cancellationToken);
 }

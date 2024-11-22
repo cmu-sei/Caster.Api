@@ -63,7 +63,7 @@ namespace Caster.Api.Features.Runs
             ILockService lockService,
             IIdentityResolver identityResolver) : BaseHandler<Command, Run>
         {
-            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Workspace>(request.WorkspaceId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task<Run> HandleRequest(Command request, CancellationToken cancellationToken)

@@ -31,10 +31,16 @@ namespace Caster.Api.Features.Modules
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, ModuleVersion[]>
         {
-            public override async Task Authorize(Query request, CancellationToken cancellationToken)
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                if (!authorizationService.GetAuthorizedProjectIds().Any())
-                    await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+                if (authorizationService.GetAuthorizedProjectIds().Any())
+                {
+                    return true;
+                }
+                else
+                {
+                    return await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+                }
             }
 
             public override async Task<ModuleVersion[]> HandleRequest(Query request, CancellationToken cancellationToken)

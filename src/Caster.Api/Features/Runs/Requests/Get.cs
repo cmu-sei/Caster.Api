@@ -31,7 +31,7 @@ namespace Caster.Api.Features.Runs
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Run>
         {
-            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Run>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
             public override async Task<Run> HandleRequest(Query request, CancellationToken cancellationToken)

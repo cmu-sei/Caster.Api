@@ -85,7 +85,7 @@ namespace Caster.Api.Features.Workspaces
             CasterContext dbContext,
             TerraformOptions terraformOptions) : BaseHandler<Command, Workspace>
         {
-            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task<Workspace> HandleRequest(Command request, CancellationToken cancellationToken)

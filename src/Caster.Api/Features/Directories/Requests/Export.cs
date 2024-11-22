@@ -39,7 +39,7 @@ namespace Caster.Api.Features.Directories
 
         public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IArchiveService archiveService) : BaseHandler<Query, ArchiveResult>
         {
-            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Directory>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
             public override async Task<ArchiveResult> HandleRequest(Query request, CancellationToken cancellationToken)

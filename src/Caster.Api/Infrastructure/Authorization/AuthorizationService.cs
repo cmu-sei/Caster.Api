@@ -8,6 +8,7 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Infrastructure.Authorization;
@@ -47,32 +48,33 @@ public class AuthorizationService(
         ProjectPermission[] requiredProjectPermissions,
         CancellationToken cancellationToken) where T : IEntity
     {
+        bool succeeded = false;
         var claimsPrincipal = identityResolver.GetClaimsPrincipal();
         var permissionRequirement = new SystemPermissionRequirement(requiredSystemPermissions);
         var permissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, permissionRequirement);
 
         if (permissionResult.Succeeded)
-            return true;
+            succeeded = true;
 
-        if (resourceId.HasValue)
+        if (!succeeded && resourceId.HasValue)
         {
             var projectId = await GetProjectId<T>(resourceId.Value, cancellationToken);
 
             if (projectId == null)
-                throw new ForbiddenException();
+            {
+                succeeded = false;
+            }
+            else
+            {
+                var projectPermissionRequirement = new ProjectPermissionRequirement(requiredProjectPermissions, projectId.Value);
+                var projectPermissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, projectPermissionRequirement);
 
-            var projectPermissionRequirement = new ProjectPermissionRequirement(requiredProjectPermissions, projectId.Value);
-            var projectPermissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, projectPermissionRequirement);
+                succeeded = projectPermissionResult.Succeeded;
+            }
 
-            if (!projectPermissionResult.Succeeded)
-                throw new ForbiddenException();
         }
-        else
-        {
-            throw new ForbiddenException();
-        }
 
-        return true;
+        return succeeded;
     }
 
     public IEnumerable<Guid> GetAuthorizedProjectIds()

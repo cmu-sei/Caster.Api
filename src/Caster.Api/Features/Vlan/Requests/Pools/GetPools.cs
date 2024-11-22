@@ -24,7 +24,7 @@ namespace Caster.Api.Features.Vlan
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Pool[]>
         {
-            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewVLANs], cancellationToken);
 
             public override async Task<Pool[]> HandleRequest(Query poolRequest, CancellationToken cancellationToken)

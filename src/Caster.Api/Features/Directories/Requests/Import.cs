@@ -79,7 +79,7 @@ namespace Caster.Api.Features.Directories
             IImportService importService,
             IMediator mediator) : BaseHandler<Command, ImportDirectoryResult>
         {
-            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Directory>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task<ImportDirectoryResult> HandleRequest(Command request, CancellationToken cancellationToken)

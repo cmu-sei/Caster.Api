@@ -20,7 +20,7 @@ namespace Caster.Api.Features.SystemPermissions
 
         public class Handler(ICasterAuthorizationService authorizationService) : BaseHandler<Query, Domain.Models.SystemPermission[]>
         {
-            public override Task Authorize(Query request, CancellationToken cancellationToken) => Task.CompletedTask;
+            public override Task<bool> Authorize(Query request, CancellationToken cancellationToken) => Task.FromResult(true);
 
             public override Task<Domain.Models.SystemPermission[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {

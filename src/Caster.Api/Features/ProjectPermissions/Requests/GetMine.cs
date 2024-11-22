@@ -23,7 +23,7 @@ namespace Caster.Api.Features.ProjectPermissions
 
         public class Handler(ICasterAuthorizationService authorizationService) : BaseHandler<Query, ProjectPermissionsClaim[]>
         {
-            public override Task Authorize(Query request, CancellationToken cancellationToken) => Task.CompletedTask;
+            public override Task<bool> Authorize(Query request, CancellationToken cancellationToken) => Task.FromResult(true);
 
             public override Task<ProjectPermissionsClaim[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {

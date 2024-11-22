@@ -27,7 +27,7 @@ public class Delete
 
     public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
     {
-        public async override Task Authorize(Command request, CancellationToken cancellationToken) =>
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Domain.Models.DesignModule>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
         public async override Task HandleRequest(Command request, CancellationToken cancellationToken)

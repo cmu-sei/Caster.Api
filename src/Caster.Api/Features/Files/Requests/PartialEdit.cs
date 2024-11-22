@@ -8,21 +8,22 @@ using MediatR;
 using Caster.Api.Data;
 using AutoMapper;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Files.Interfaces;
 using CodeAnalysis = Microsoft.CodeAnalysis;
 using System.Text.Json.Serialization;
+using Caster.Api.Infrastructure.Authorization;
+using FluentValidation;
+using Caster.Api.Features.Shared.Services;
 
 namespace Caster.Api.Features.Files
 {
     public class PartialEdit
     {
-        [DataContract(Name="PartialEditFileCommand")]
+        [DataContract(Name = "PartialEditFileCommand")]
         public class Command : FileUpdateRequest, IRequest<File>, IFileCommand
         {
             [JsonIgnore]
@@ -54,51 +55,38 @@ namespace Caster.Api.Features.Files
             public override string Content { get; set; }
         }
 
-        public class Handler : FileCommandHandler, IRequestHandler<Command, File>
+        public class CommandValidator : AbstractValidator<Command>
+        {
+            public CommandValidator(IValidationService validationService)
+            {
+                RuleFor(x => x.DirectoryId.Value).DirectoryExists(validationService).When(x => x.DirectoryId.HasValue);
+                RuleFor(x => x.WorkspaceId.Value.Value).WorkspaceExists(validationService).When(x => x.WorkspaceId.HasValue && x.WorkspaceId.Value.HasValue);
+            }
+        }
+
+        public class Handler(
+            CasterContext dbContext,
+            ILockService lockService,
+            IGetFileQuery fileQuery,
+            ICasterAuthorizationService authorizationService,
+            IIdentityResolver identityResolver,
+            IMapper mapper) : FileCommandHandler<Command, File>(dbContext, lockService, fileQuery, authorizationService)
         {
             private Command _request { get; set; }
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                ILockService lockService,
-                IGetFileQuery fileQuery)
-                : base(db, mapper, authorizationService, identityResolver, lockService, fileQuery) {}
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await AuthorizationService.Authorize<Domain.Models.File>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-
-            public async Task<File> Handle(Command request, CancellationToken cancellationToken)
+            public override async Task<File> HandleRequest(Command request, CancellationToken cancellationToken)
             {
                 _request = request;
-                return await base.Handle(request, cancellationToken);
+                return await base.HandleRequest(request, cancellationToken);
             }
 
-            protected override async Task PerformOperation(Domain.Models.File file)
+            protected override async Task PerformOperation(Domain.Models.File file, CancellationToken cancellationToken)
             {
-                    await ValidateEntities(file, _request.DirectoryId, _request.WorkspaceId);
-
-                    file = _mapper.Map(_request, file);
-                    file.Save(_user.GetId(), isAdmin: (await _identityResolver.IsAdminAsync()));
-            }
-
-            private async Task ValidateEntities(Domain.Models.File file, Guid? directoryId, CodeAnalysis.Optional<Guid?> workspaceId)
-            {
-                if (directoryId.HasValue)
-                {
-                    var directory = await _db.Directories.FindAsync(directoryId);
-
-                    if (directory == null)
-                        throw new EntityNotFoundException<Directory>();
-                }
-
-                if (workspaceId.HasValue && workspaceId.Value.HasValue)
-                {
-                    var workspace = await _db.Workspaces.FindAsync(workspaceId.Value.Value);
-
-                    if (workspace == null)
-                        throw new EntityNotFoundException<Workspace>();
-                }
+                file = mapper.Map(_request, file);
+                file.Save(identityResolver.GetId(), canLock: await CanLock(file.Id, cancellationToken));
             }
         }
     }

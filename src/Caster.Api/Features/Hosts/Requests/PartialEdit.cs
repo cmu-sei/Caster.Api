@@ -66,7 +66,7 @@ namespace Caster.Api.Features.Hosts
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Host>
         {
-            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageHosts], cancellationToken);
 
             public override async Task<Host> HandleRequest(Command request, CancellationToken cancellationToken)

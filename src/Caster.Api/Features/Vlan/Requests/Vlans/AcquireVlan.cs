@@ -58,7 +58,7 @@ public class AcquireVlan
         CasterContext dbContext,
         ILockService lockService) : BaseHandler<Command, Vlan>
     {
-        public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
 
         public override async Task<Vlan> HandleRequest(Command command, CancellationToken cancellationToken)

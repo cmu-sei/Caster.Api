@@ -34,7 +34,7 @@ public class AddOrUpdateValues
     public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext)
         : BaseHandler<Command, DesignModule>
     {
-        public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Domain.Models.DesignModule>(
                 request.DesignModuleId,
                 [SystemPermission.EditProjects],

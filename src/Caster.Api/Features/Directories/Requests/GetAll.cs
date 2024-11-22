@@ -38,7 +38,7 @@ namespace Caster.Api.Features.Directories
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Directory[]>
         {
-            public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken);
 
             public override async Task<Directory[]> HandleRequest(Query request, CancellationToken cancellationToken)

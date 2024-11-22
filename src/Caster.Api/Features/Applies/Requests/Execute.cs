@@ -59,7 +59,7 @@ namespace Caster.Api.Features.Applies
                 _lockService = lockService;
             }
 
-            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await _authorizationService.Authorize<Run>(request.RunId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task<Apply> HandleRequest(Command request, CancellationToken cancellationToken)

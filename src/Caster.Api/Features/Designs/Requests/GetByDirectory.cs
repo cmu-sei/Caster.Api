@@ -39,7 +39,7 @@ public class GetByDirectory
 
     public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Design[]>
     {
-        public override async Task Authorize(Query request, CancellationToken cancellationToken) =>
+        public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
         public override async Task<Design[]> HandleRequest(Query request, CancellationToken cancellationToken)

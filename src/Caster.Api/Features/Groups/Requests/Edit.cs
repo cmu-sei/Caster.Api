@@ -35,7 +35,7 @@ namespace Caster.Api.Features.Groups
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Group>
         {
-            public override async Task Authorize(Command request, CancellationToken cancellationToken) =>
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageGroups], cancellationToken);
 
             public override async Task<Group> HandleRequest(Command request, CancellationToken cancellationToken)
