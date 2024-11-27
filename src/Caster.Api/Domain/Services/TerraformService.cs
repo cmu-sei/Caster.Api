@@ -203,6 +203,13 @@ namespace Caster.Api.Domain.Services
             {
                 args.Add("-destroy");
             }
+            else if (workspace.ResourcesToReplace != null && workspace.ResourcesToReplace.Length > 0)
+            {
+                foreach (var resourceAddress in workspace.ResourcesToReplace)
+                {
+                    args.Add($"-replace={resourceAddress}");
+                }
+            }
 
             foreach (string target in targets)
             {

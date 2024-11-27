@@ -15,7 +15,6 @@ using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using System.Linq;
 using Caster.Api.Infrastructure.Identity;
-using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using System.Web;
 
@@ -70,10 +69,14 @@ namespace Caster.Api.Features.Resources
 
                 var state = workspace.GetState();
                 var resources = state.GetResources();
-
                 var address = HttpUtility.UrlDecode(request.Address);
 
                 var resource = resources.Where(r => r.Address == address).FirstOrDefault();
+                if (resource == null)
+                    throw new EntityNotFoundException<Resource>();
+
+                workspace.SetResourceTaint(resource);
+
                 return _mapper.Map<Resource>(resource, opts => opts.ExcludeMembers());
             }
         }

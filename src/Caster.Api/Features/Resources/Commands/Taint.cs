@@ -80,10 +80,27 @@ namespace Caster.Api.Features.Resources
                     addresses = workspace.GetState().GetResources().Select(r => r.Address).ToArray();
                 }
 
-                return await base.PerformOperation(
-                    workspace,
-                    request.Untaint ? ResourceOperation.untaint : ResourceOperation.taint,
-                    addresses);
+                // Taint/Untaint are deprecated and Replace should be used for Terraform version 0.15.2 and newer
+                if (workspace.UseReplaceOption())
+                {
+                    workspace = request.Untaint ? await base.RemoveResourcesToReplace(workspace, addresses) : await base.AppendResourcesToReplace(workspace, addresses);
+                    var resources = workspace.GetState().GetResources();
+                    workspace.SetResourceTaint(resources);
+
+                    return new ResourceCommandResult
+                    {
+                        Resources = _mapper.Map<Resource[]>(resources, opts => opts.ExcludeMembers(nameof(Resource.Attributes))),
+                        Errors = [],
+                        Outputs = null
+                    };
+                }
+                else
+                {
+                    return await base.PerformOperation(
+                        workspace,
+                        request.Untaint ? ResourceOperation.untaint : ResourceOperation.taint,
+                        addresses);
+                }
             }
         }
     }

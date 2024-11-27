@@ -12,6 +12,8 @@ using System.Threading.Tasks;
 using Caster.Api.Infrastructure.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using Microsoft.Extensions.Configuration;
 
 namespace Caster.Api.Domain.Models
 {
@@ -44,6 +46,7 @@ namespace Caster.Api.Domain.Models
         public int? Parallelism { get; set; }
 
         public int? AzureDestroyFailureThreshold { get; set; }
+        public string[] ResourcesToReplace { get; set; }
 
         public virtual ICollection<Run> Runs { get; set; } = new List<Run>();
         public virtual ICollection<File> Files { get; set; } = new List<File>();
@@ -263,6 +266,50 @@ namespace Caster.Api.Domain.Models
 
             return success;
         }
+
+        public void SetResourceTaint(Resource resource)
+        {
+            if (UseReplaceOption())
+            {
+                resource.Tainted = ResourcesToReplace != null && ResourcesToReplace.Contains(resource.Address);
+            }
+        }
+
+        public void SetResourceTaint(Resource[] resources)
+        {
+            foreach (var resource in resources)
+            {
+                SetResourceTaint(resource);
+            }
+        }
+
+        /// <summary>
+        /// Determines if the replace option can be used instead of the depricated taint/untaint.
+        /// This is determined by comparing the terraform version of this workspace to version 0.15.2.
+        /// </summary>
+        /// <returns> true if the replace option can be used </returns>
+        public bool UseReplaceOption()
+        {
+            IConfigurationBuilder builder = new ConfigurationBuilder().AddJsonFile("appsettings.json", false, true);
+            IConfigurationRoot config = builder.Build();
+            var tfVersion = TerraformVersion == null || TerraformVersion.Length == 0 ? config["Terraform:DefaultVersion"] : TerraformVersion;
+            var comparisonParts = new int[] { 0, 15, 2 };
+            var tfVersionParts = tfVersion.Split(".");
+            var returnValue = 0;
+            var part = 0;
+            do
+            {
+                var compValue = comparisonParts[part];
+                var workspaceValue = int.Parse(tfVersionParts[part]);
+                if (workspaceValue != compValue)
+                {
+                    returnValue = workspaceValue > compValue ? 1 : -1;
+                }
+                part++;
+            } while (returnValue == 0 && part < 2);
+
+            return returnValue > -1;
+        }
     }
 
     public class WorkspaceConfiguration : IEntityTypeConfiguration<Workspace>
@@ -271,6 +318,13 @@ namespace Caster.Api.Domain.Models
         {
             builder
                 .Property<string[]>(w => w.SyncErrors)
+                .HasConversion(
+                    list => String.Join('\n', list),
+                    str => str.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                );
+
+            builder
+                .Property<string[]>(w => w.ResourcesToReplace)
                 .HasConversion(
                     list => String.Join('\n', list),
                     str => str.Split('\n', StringSplitOptions.RemoveEmptyEntries)

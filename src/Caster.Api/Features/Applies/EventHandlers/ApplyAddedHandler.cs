@@ -98,8 +98,17 @@ namespace Caster.Api.Features.Applies.EventHandlers
                 }
 
                 _apply.Output = _output.Content;
-                _apply.Status = !isError ? ApplyStatus.Applied : ApplyStatus.Failed;
-                _apply.Run.Status = !isError ? RunStatus.Applied : RunStatus.Failed;
+                if (isError)
+                {
+                    _apply.Status = ApplyStatus.Failed;
+                    _apply.Run.Status = RunStatus.Failed;
+                }
+                else
+                {
+                    _apply.Status = ApplyStatus.Applied;
+                    _apply.Run.Status = RunStatus.Applied;
+                    _apply.Run.Workspace.ResourcesToReplace = [];
+                }
 
                 stateRetrieved = await this.RetrieveState(workingDir);
             }

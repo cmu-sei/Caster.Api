@@ -168,5 +168,34 @@ namespace Caster.Api.Features.Resources
 
             return workspace;
         }
+
+        protected async Task<Workspace> AppendResourcesToReplace(Workspace workspace, string[] addresses)
+        {
+            if (workspace.ResourcesToReplace == null || workspace.ResourcesToReplace.Length == 0)
+            {
+                workspace.ResourcesToReplace = addresses;
+            }
+            else
+            {
+                workspace.ResourcesToReplace = workspace.ResourcesToReplace.Concat(addresses).ToArray();
+            }
+            await _db.SaveChangesAsync();
+
+            return workspace;
+        }
+
+        protected async Task<Workspace> RemoveResourcesToReplace(Workspace workspace, string[] addresses)
+        {
+            if (workspace.ResourcesToReplace != null)
+            {
+                var addressList = addresses.ToList();
+                var removeList = workspace.ResourcesToReplace.ToList();
+                removeList.RemoveAll(address => addressList.Contains(address));
+                workspace.ResourcesToReplace = removeList.ToArray();
+                await _db.SaveChangesAsync();
+            }
+
+            return workspace;
+        }
     }
 }
