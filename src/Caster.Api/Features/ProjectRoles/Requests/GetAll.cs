@@ -12,6 +12,7 @@ using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
+using System.Linq;
 
 namespace Caster.Api.Features.ProjectRoles
 {
@@ -24,8 +25,17 @@ namespace Caster.Api.Features.ProjectRoles
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, ProjectRole[]>
         {
-            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
-                 await authorizationService.Authorize([SystemPermission.ViewRoles], cancellationToken);
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
+            {
+                if (await authorizationService.Authorize([SystemPermission.ViewRoles], cancellationToken))
+                {
+                    return true;
+                }
+
+                return authorizationService.
+                    GetProjectPermissions()
+                    .Any(x => x.Permissions.Contains(ProjectPermission.ManageProject));
+            }
 
             public override async Task<ProjectRole[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {

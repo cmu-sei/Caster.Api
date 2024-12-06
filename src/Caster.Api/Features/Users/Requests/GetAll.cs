@@ -17,6 +17,7 @@ using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
+using System.Linq;
 
 namespace Caster.Api.Features.Users
 {
@@ -29,8 +30,17 @@ namespace Caster.Api.Features.Users
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, User[]>
         {
-            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermission.ViewUsers], cancellationToken);
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
+            {
+                if (await authorizationService.Authorize([SystemPermission.ViewUsers], cancellationToken))
+                {
+                    return true;
+                }
+
+                return authorizationService.
+                    GetProjectPermissions()
+                    .Any(x => x.Permissions.Contains(ProjectPermission.ManageProject));
+            }
 
             public override async Task<User[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {

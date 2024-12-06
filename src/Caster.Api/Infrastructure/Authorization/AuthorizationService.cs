@@ -27,7 +27,7 @@ public interface ICasterAuthorizationService
 
     IEnumerable<Guid> GetAuthorizedProjectIds();
     IEnumerable<SystemPermission> GetSystemPermissions();
-    IEnumerable<ProjectPermissionsClaim> GetProjectPermissions(Guid? projectId);
+    IEnumerable<ProjectPermissionsClaim> GetProjectPermissions(Guid? projectId = null);
 }
 
 public class AuthorizationService(
@@ -101,7 +101,7 @@ public class AuthorizationService(
            .ToList();
     }
 
-    public IEnumerable<ProjectPermissionsClaim> GetProjectPermissions(Guid? projectId)
+    public IEnumerable<ProjectPermissionsClaim> GetProjectPermissions(Guid? projectId = null)
     {
         var permissions = identityResolver.GetClaimsPrincipal().Claims
            .Where(x => x.Type == AuthorizationConstants.ProjectPermissionsClaimType)

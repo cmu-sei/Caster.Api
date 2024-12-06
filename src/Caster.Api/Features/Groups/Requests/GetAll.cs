@@ -12,6 +12,7 @@ using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
+using System.Linq;
 
 namespace Caster.Api.Features.Groups
 {
@@ -24,14 +25,23 @@ namespace Caster.Api.Features.Groups
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Group[]>
         {
-            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermission.ViewGroups], cancellationToken);
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
+            {
+                if (await authorizationService.Authorize([SystemPermission.ViewGroups], cancellationToken))
+                {
+                    return true;
+                }
+
+                return authorizationService.
+                    GetProjectPermissions()
+                    .Any(x => x.Permissions.Contains(ProjectPermission.ManageProject));
+            }
 
             public override async Task<Group[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 return await dbContext.Groups
                     .ProjectTo<Group>(mapper.ConfigurationProvider)
-                    .ToArrayAsync();
+                    .ToArrayAsync(cancellationToken);
             }
         }
     }
