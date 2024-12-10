@@ -154,7 +154,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
                 }
 
                 // Plan
-                var planResult = _terraformService.Plan(workspace, run.IsDestroy, run.Targets, OutputHandler);
+                var planResult = _terraformService.Plan(workspace, run.IsDestroy, run.Targets, run.ReplaceAddresses, OutputHandler);
                 isError = planResult.IsError;
             }
 
@@ -280,7 +280,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
 
         /// <summary>
         /// Attempts to mitigate common issues with destroying Azure workspaces.
-        /// If previous destroys failed, remove from the state any resources that exist within an 
+        /// If previous destroys failed, remove from the state any resources that exist within an
         /// azurerm_resource_group managed by this workspace. They will be destroyed implicitly when destroying the workspace and
         /// can avoid errors with destroying those resources directly.
         /// </summary>
