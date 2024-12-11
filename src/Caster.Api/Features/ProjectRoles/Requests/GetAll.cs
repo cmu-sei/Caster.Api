@@ -27,7 +27,7 @@ namespace Caster.Api.Features.ProjectRoles
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                if (await authorizationService.Authorize([SystemPermission.ViewRoles], cancellationToken))
+                if (await authorizationService.Authorize([SystemPermission.ViewRoles, SystemPermission.ViewProjects], cancellationToken))
                 {
                     return true;
                 }

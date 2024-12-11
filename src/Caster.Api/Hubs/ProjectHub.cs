@@ -16,7 +16,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Hubs;
 
-[Authorize(Policy = nameof(CasterClaimTypes.ContentDeveloper))]
+[Authorize]
 public class ProjectHub : Hub
 {
     private readonly IOutputService _outputService;
@@ -58,25 +58,21 @@ public class ProjectHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, designId.ToString());
     }
 
-    [Authorize(Policy = nameof(CasterClaimTypes.SystemAdmin))]
     public async Task JoinWorkspacesAdmin()
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, nameof(HubGroups.WorkspacesAdmin));
     }
 
-    [Authorize(Policy = nameof(CasterClaimTypes.SystemAdmin))]
     public async Task LeaveWorkspacesAdmin()
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.WorkspacesAdmin));
     }
 
-    [Authorize(Policy = nameof(CasterClaimTypes.SystemAdmin))]
     public async Task JoinVlansAdmin()
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, nameof(HubGroups.VlansAdmin));
     }
 
-    [Authorize(Policy = nameof(CasterClaimTypes.SystemAdmin))]
     public async Task LeaveVlansAdmin()
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.VlansAdmin));

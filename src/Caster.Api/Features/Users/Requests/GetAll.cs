@@ -32,7 +32,7 @@ namespace Caster.Api.Features.Users
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                if (await authorizationService.Authorize([SystemPermission.ViewUsers], cancellationToken))
+                if (await authorizationService.Authorize([SystemPermission.ViewUsers, SystemPermission.ViewProjects], cancellationToken))
                 {
                     return true;
                 }

@@ -27,7 +27,7 @@ namespace Caster.Api.Features.Groups
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                if (await authorizationService.Authorize([SystemPermission.ViewGroups], cancellationToken))
+                if (await authorizationService.Authorize([SystemPermission.ViewGroups, SystemPermission.ViewProjects], cancellationToken))
                 {
                     return true;
                 }
