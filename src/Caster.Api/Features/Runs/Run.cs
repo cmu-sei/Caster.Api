@@ -35,6 +35,11 @@ namespace Caster.Api.Features.Runs
         public string[] Targets { get; set; }
 
         /// <summary>
+        /// Optional list of resources to replace on this Run
+        /// </summary>
+        public string[] ReplaceAddresses { get; set; }
+
+        /// <summary>
         /// The Plan for this Run, if one exists. Null if not requested
         /// </summary>
         public Plan Plan { get; set; }

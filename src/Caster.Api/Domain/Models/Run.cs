@@ -30,6 +30,8 @@ namespace Caster.Api.Domain.Models
 
         public string[] Targets { get; set; }
 
+        public string[] ReplaceAddresses { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public Guid? CreatedById { get; set; }
         public User CreatedBy { get; set; }
@@ -81,6 +83,13 @@ namespace Caster.Api.Domain.Models
         {
             builder
                 .Property<string[]>(r => r.Targets)
+                .HasConversion(
+                    list => String.Join('\n', list),
+                    str => str.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                );
+
+            builder
+                .Property<string[]>(r => r.ReplaceAddresses)
                 .HasConversion(
                     list => String.Join('\n', list),
                     str => str.Split('\n', StringSplitOptions.RemoveEmptyEntries)
