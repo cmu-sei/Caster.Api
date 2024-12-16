@@ -8,8 +8,10 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
+using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Authorization;
+using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -21,15 +23,20 @@ public class ProjectHub : Hub
 {
     private readonly IOutputService _outputService;
     private readonly CasterContext _db;
+    private readonly ICasterAuthorizationService _authorizationService;
 
-    public ProjectHub(IOutputService outputService, CasterContext db)
+    public ProjectHub(IOutputService outputService, CasterContext db, ICasterAuthorizationService authorizationService)
     {
         _outputService = outputService;
         _db = db;
+        _authorizationService = authorizationService;
     }
 
     public async Task JoinProject(Guid projectId)
     {
+        if (!await _authorizationService.Authorize<Project>(projectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
         await Groups.AddToGroupAsync(Context.ConnectionId, projectId.ToString());
     }
 
@@ -40,6 +47,9 @@ public class ProjectHub : Hub
 
     public async Task JoinWorkspace(Guid workspaceId)
     {
+        if (!await _authorizationService.Authorize<Workspace>(workspaceId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
         await Groups.AddToGroupAsync(Context.ConnectionId, workspaceId.ToString());
     }
 
@@ -50,6 +60,9 @@ public class ProjectHub : Hub
 
     public async Task JoinDesign(Guid designId)
     {
+        if (!await _authorizationService.Authorize<Design>(designId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
         await Groups.AddToGroupAsync(Context.ConnectionId, designId.ToString());
     }
 
@@ -60,6 +73,9 @@ public class ProjectHub : Hub
 
     public async Task JoinWorkspacesAdmin()
     {
+        if (!await _authorizationService.Authorize([SystemPermission.ViewWorkspaces], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
         await Groups.AddToGroupAsync(Context.ConnectionId, nameof(HubGroups.WorkspacesAdmin));
     }
 
@@ -70,6 +86,9 @@ public class ProjectHub : Hub
 
     public async Task JoinVlansAdmin()
     {
+        if (!await _authorizationService.Authorize([SystemPermission.ViewVLANs], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
         await Groups.AddToGroupAsync(Context.ConnectionId, nameof(HubGroups.VlansAdmin));
     }
 
@@ -155,6 +174,9 @@ public class ProjectHub : Hub
 
     public async IAsyncEnumerable<string> GetPlanOutput(Guid id, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (!await _authorizationService.Authorize<Plan>(id, [SystemPermission.ViewProjects, SystemPermission.ViewWorkspaces], [ProjectPermission.ViewProject], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
         await foreach (var output in this.GetOutput(id, OutputType.Plan, cancellationToken))
         {
             yield return output;
@@ -163,6 +185,9 @@ public class ProjectHub : Hub
 
     public async IAsyncEnumerable<string> GetApplyOutput(Guid id, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (!await _authorizationService.Authorize<Apply>(id, [SystemPermission.ViewProjects, SystemPermission.ViewWorkspaces], [ProjectPermission.ViewProject], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
         await foreach (var output in this.GetOutput(id, OutputType.Apply, cancellationToken))
         {
             yield return output;
