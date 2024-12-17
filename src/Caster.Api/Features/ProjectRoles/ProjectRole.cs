@@ -11,6 +11,7 @@ namespace Caster.Api.Features.ProjectRoles
         public Guid Id { get; set; }
 
         public string Name { get; set; }
+        public bool AllPermissions { get; set; }
 
         public Domain.Models.ProjectPermission[] Permissions { get; set; }
     }
