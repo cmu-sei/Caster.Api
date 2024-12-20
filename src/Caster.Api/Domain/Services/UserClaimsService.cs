@@ -56,6 +56,13 @@ namespace Caster.Api.Domain.Services
 
                 if (user != null)
                 {
+                    var jtiClaim = identity.Claims.Where(x => x.Type == JwtRegisteredClaimNames.Jti).FirstOrDefault();
+
+                    if (jtiClaim is not null)
+                    {
+                        claims.Add(new Claim(jtiClaim.Type, jtiClaim.Value));
+                    }
+
                     claims.AddRange(await GetUserClaims(userId));
                     claims.AddRange(await GetPermissionClaims(userId, principal));
 
@@ -118,17 +125,6 @@ namespace Caster.Api.Domain.Services
                         Id = subClaim,
                         Name = nameClaim ?? "Anonymous"
                     };
-
-                    // First user is default SystemAdmin
-                    if (!anyUsers)
-                    {
-                        var systemAdminPermission = await _context.Permissions.Where(p => p.Key == nameof(CasterClaimTypes.SystemAdmin)).FirstOrDefaultAsync();
-
-                        if (systemAdminPermission != null)
-                        {
-                            user.UserPermissions.Add(new UserPermission(user.Id, systemAdminPermission.Id));
-                        }
-                    }
 
                     _context.Users.Add(user);
                     await _context.SaveChangesAsync();
