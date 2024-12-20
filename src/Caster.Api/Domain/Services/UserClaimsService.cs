@@ -46,12 +46,24 @@ namespace Caster.Api.Domain.Services
         public async Task<ClaimsPrincipal> AddUserClaims(ClaimsPrincipal principal, bool update)
         {
             List<Claim> claims;
-            var identity = ((ClaimsIdentity)principal.Identity);
+            var identity = (ClaimsIdentity)principal.Identity;
             var userId = principal.GetId();
 
-            if (!_cache.TryGetValue(userId, out claims))
+            // Don't use cached claims if given a new token and we are using roles or groups from the token
+            if (_cache.TryGetValue(userId, out claims) && (_options.UseGroupsFromIdP || _options.UseRolesFromIdP))
             {
-                claims = new List<Claim>();
+                var cachedTokenId = claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+                var newTokenId = identity.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+
+                if (newTokenId != cachedTokenId)
+                {
+                    claims = null;
+                }
+            }
+
+            if (claims == null)
+            {
+                claims = [];
                 var user = await ValidateUser(userId, principal.FindFirst("name")?.Value, update);
 
                 if (user != null)
@@ -63,7 +75,6 @@ namespace Caster.Api.Domain.Services
                         claims.Add(new Claim(jtiClaim.Type, jtiClaim.Value));
                     }
 
-                    claims.AddRange(await GetUserClaims(userId));
                     claims.AddRange(await GetPermissionClaims(userId, principal));
 
                     if (_options.EnableCaching)
@@ -72,6 +83,7 @@ namespace Caster.Api.Domain.Services
                     }
                 }
             }
+
             addNewClaims(identity, claims);
             return principal;
         }
@@ -141,38 +153,6 @@ namespace Caster.Api.Domain.Services
             }
 
             return user;
-        }
-
-        private async Task<IEnumerable<Claim>> GetUserClaims(Guid userId)
-        {
-            List<Claim> claims = new List<Claim>();
-
-            var userPermissions = await _context.UserPermissions
-                .Where(u => u.UserId == userId)
-                .Include(x => x.Permission)
-                .ToArrayAsync();
-
-            if (userPermissions.Where(x => x.Permission.Key == nameof(CasterClaimTypes.SystemAdmin)).Any())
-            {
-                claims.Add(new Claim(ClaimTypes.Role, nameof(CasterClaimTypes.SystemAdmin)));
-            }
-
-            if (userPermissions.Where(x => x.Permission.Key == nameof(CasterClaimTypes.ContentDeveloper)).Any())
-            {
-                claims.Add(new Claim(ClaimTypes.Role, nameof(CasterClaimTypes.ContentDeveloper)));
-            }
-
-            if (userPermissions.Where(x => x.Permission.Key == nameof(CasterClaimTypes.Operator)).Any())
-            {
-                claims.Add(new Claim(ClaimTypes.Role, nameof(CasterClaimTypes.Operator)));
-            }
-
-            if (userPermissions.Where(x => x.Permission.Key == nameof(CasterClaimTypes.BaseUser)).Any())
-            {
-                claims.Add(new Claim(ClaimTypes.Role, nameof(CasterClaimTypes.BaseUser)));
-            }
-
-            return claims;
         }
 
         private async Task<IEnumerable<Claim>> GetPermissionClaims(Guid userId, ClaimsPrincipal principal)
