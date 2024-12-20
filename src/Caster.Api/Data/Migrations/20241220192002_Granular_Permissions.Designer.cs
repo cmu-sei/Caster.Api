@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Caster.Api.Data.Migrations
 {
     [DbContext(typeof(CasterContext))]
-    [Migration("20241121152727_Added_SystemRole10")]
-    partial class Added_SystemRole10
+    [Migration("20241220192002_Granular_Permissions")]
+    partial class Granular_Permissions
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -613,8 +613,10 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
-                    b.Property<Guid?>("RoleId")
+                    b.Property<Guid>("RoleId")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("f870d8ee-7332-4f7f-8ee0-63bd07cfd7e4"))
                         .HasColumnName("role_id");
 
                     b.Property<Guid?>("UserId")
@@ -669,7 +671,7 @@ namespace Caster.Api.Data.Migrations
                             Id = new Guid("1a3f26cd-9d99-4b98-b914-12931e786198"),
                             AllPermissions = true,
                             Description = "Can perform all actions on the Project",
-                            Name = "Administrator",
+                            Name = "Manager",
                             Permissions = new int[0]
                         },
                         new
@@ -679,6 +681,14 @@ namespace Caster.Api.Data.Migrations
                             Description = "Has read only access to the Project",
                             Name = "Observer",
                             Permissions = new[] { 0 }
+                        },
+                        new
+                        {
+                            Id = new Guid("f870d8ee-7332-4f7f-8ee0-63bd07cfd7e4"),
+                            AllPermissions = false,
+                            Description = "Has read only access to the Project",
+                            Name = "Member",
+                            Permissions = new[] { 0, 1, 3 }
                         });
                 });
 
@@ -776,6 +786,9 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Name")
+                        .IsUnique();
+
                     b.ToTable("system_roles");
 
                     b.HasData(
@@ -783,10 +796,28 @@ namespace Caster.Api.Data.Migrations
                         {
                             Id = new Guid("f35e8fff-f996-4cba-b303-3ba515ad8d2f"),
                             AllPermissions = true,
-                            Description = "Can perform all actions",
+                            Description = "Can perform all actions.",
                             Immutable = true,
                             Name = "Administrator",
                             Permissions = new int[0]
+                        },
+                        new
+                        {
+                            Id = new Guid("d80b73c3-95d7-4468-8650-c62bbd082507"),
+                            AllPermissions = false,
+                            Description = "Can create and manage their own Projects.",
+                            Immutable = false,
+                            Name = "Content Developer",
+                            Permissions = new[] { 0 }
+                        },
+                        new
+                        {
+                            Id = new Guid("1da3027e-725d-4753-9455-a836ed9bdb1e"),
+                            AllPermissions = false,
+                            Description = "Can perform all View actions, but not make any changes.",
+                            Immutable = false,
+                            Name = "Observer",
+                            Permissions = new[] { 1, 6, 8, 10, 12, 14, 16, 18 }
                         });
                 });
 
@@ -1189,7 +1220,9 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasOne("Caster.Api.Domain.Models.ProjectRole", "Role")
                         .WithMany()
-                        .HasForeignKey("RoleId");
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.HasOne("Caster.Api.Domain.Models.User", "User")
                         .WithMany("ProjectMemberships")

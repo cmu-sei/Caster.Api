@@ -298,6 +298,9 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Name")
+                        .IsUnique();
+
                     b.ToTable("groups");
                 });
 
@@ -488,38 +491,6 @@ namespace Caster.Api.Data.Migrations
                     b.HasIndex("PoolId");
 
                     b.ToTable("partitions");
-                });
-
-            modelBuilder.Entity("Caster.Api.Domain.Models.Permission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<string>("Key")
-                        .HasColumnType("text")
-                        .HasColumnName("key");
-
-                    b.Property<bool>("ReadOnly")
-                        .HasColumnType("boolean")
-                        .HasColumnName("read_only");
-
-                    b.Property<string>("Value")
-                        .HasColumnType("text")
-                        .HasColumnName("value");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Key", "Value")
-                        .IsUnique();
-
-                    b.ToTable("permissions");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Plan", b =>
@@ -839,32 +810,6 @@ namespace Caster.Api.Data.Migrations
                     b.HasIndex("RoleId");
 
                     b.ToTable("users");
-                });
-
-            modelBuilder.Entity("Caster.Api.Domain.Models.UserPermission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<Guid>("PermissionId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("permission_id");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PermissionId");
-
-                    b.HasIndex("UserId", "PermissionId")
-                        .IsUnique();
-
-                    b.ToTable("user_permissions");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Variable", b =>
@@ -1266,25 +1211,6 @@ namespace Caster.Api.Data.Migrations
                     b.Navigation("Role");
                 });
 
-            modelBuilder.Entity("Caster.Api.Domain.Models.UserPermission", b =>
-                {
-                    b.HasOne("Caster.Api.Domain.Models.Permission", "Permission")
-                        .WithMany("UserPermissions")
-                        .HasForeignKey("PermissionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Caster.Api.Domain.Models.User", "User")
-                        .WithMany("UserPermissions")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Permission");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("Caster.Api.Domain.Models.Variable", b =>
                 {
                     b.HasOne("Caster.Api.Domain.Models.Design", "Design")
@@ -1371,11 +1297,6 @@ namespace Caster.Api.Data.Migrations
                     b.Navigation("Vlans");
                 });
 
-            modelBuilder.Entity("Caster.Api.Domain.Models.Permission", b =>
-                {
-                    b.Navigation("UserPermissions");
-                });
-
             modelBuilder.Entity("Caster.Api.Domain.Models.Pool", b =>
                 {
                     b.Navigation("Partitions");
@@ -1402,8 +1323,6 @@ namespace Caster.Api.Data.Migrations
                     b.Navigation("GroupMemberships");
 
                     b.Navigation("ProjectMemberships");
-
-                    b.Navigation("UserPermissions");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Workspace", b =>

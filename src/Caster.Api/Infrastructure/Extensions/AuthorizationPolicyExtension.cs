@@ -20,22 +20,10 @@ namespace Caster.Api.Infrastructure.Extensions
                 Array.ForEach(authOptions.AuthorizationScope.Split(' '), x => policyBuilder.RequireClaim("scope", x));
 
                 options.DefaultPolicy = policyBuilder.Build();
-
-                options.AddPolicy(nameof(CasterClaimTypes.SystemAdmin), policy => policy.Requirements.Add(new FullRightsRequirement()));
-                options.AddPolicy(nameof(CasterClaimTypes.ContentDeveloper), policy => policy.Requirements.Add(new ContentDeveloperRequirement()));
-                options.AddPolicy(nameof(CasterClaimTypes.BaseUser), policy => policy.Requirements.Add(new BaseUserRequirement()));
-                options.AddPolicy(nameof(CasterClaimTypes.Operator), policy => policy.Requirements.Add(new OperatorRequirement()));
-                //options.AddPolicy("System Permissions", policy => policy.Requirements.Add(new PermissionsRequirement()));
             });
 
-            services.AddSingleton<IAuthorizationHandler, FullRightsHandler>();
-            services.AddSingleton<IAuthorizationHandler, ContentDeveloperHandler>();
-            services.AddSingleton<IAuthorizationHandler, OperatorHandler>();
-            services.AddSingleton<IAuthorizationHandler, BaseUserHandler>();
             services.AddSingleton<IAuthorizationHandler, SystemPermissionsHandler>();
             services.AddSingleton<IAuthorizationHandler, ProjectPermissionsHandler>();
         }
-
-
     }
 }

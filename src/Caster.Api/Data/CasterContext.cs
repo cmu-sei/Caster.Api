@@ -28,9 +28,7 @@ public partial class CasterContext : DbContext
     public DbSet<RemovedResource> RemovedResources { get; set; }
     public DbSet<Module> Modules { get; set; }
     public DbSet<ModuleVersion> ModuleVersions { get; set; }
-    public DbSet<Permission> Permissions { get; set; }
     public DbSet<User> Users { get; set; }
-    public DbSet<UserPermission> UserPermissions { get; set; }
     public DbSet<Host> Hosts { get; set; }
     public DbSet<HostMachine> HostMachines { get; set; }
     public DbSet<Design> Designs { get; set; }

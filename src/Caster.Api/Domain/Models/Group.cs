@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models;
 
@@ -19,4 +21,12 @@ public class Group : IEntity
 
     public virtual ICollection<GroupMembership> Memberships { get; set; } = new List<GroupMembership>();
     public virtual ICollection<ProjectMembership> ProjectMemberships { get; set; } = new List<ProjectMembership>();
+}
+
+public class GroupConfiguration : IEntityTypeConfiguration<Group>
+{
+    public void Configure(EntityTypeBuilder<Group> builder)
+    {
+        builder.HasIndex(e => e.Name).IsUnique();
+    }
 }
