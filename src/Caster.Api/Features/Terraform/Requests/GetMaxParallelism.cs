@@ -5,20 +5,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Domain.Services;
-using System;
-using Caster.Api.Data;
-using AutoMapper;
-using System.Text.Json.Serialization;
-using System.Collections.Generic;
 using Caster.Api.Infrastructure.Options;
 using System.Linq;
 using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Terraform
 {
@@ -32,9 +23,16 @@ namespace Caster.Api.Features.Terraform
         public class Handler(
             ICasterAuthorizationService authorizationService, TerraformOptions terraformOptions) : BaseHandler<Query, int>
         {
-            public override Task<bool> Authorize(Query request, CancellationToken cancellationToken)
+            public async override Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                return Task.FromResult(authorizationService.GetAuthorizedProjectIds().Any());
+                if (authorizationService.GetAuthorizedProjectIds().Any())
+                {
+                    return true;
+                }
+                else
+                {
+                    return await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken);
+                }
             }
 
             public override Task<int> HandleRequest(Query request, CancellationToken cancellationToken)

@@ -32,6 +32,7 @@ public enum SystemPermission
     ManageProjects,
     ImportProjects,
     LockFiles,
+    ImportResources,
     ViewUsers,
     ManageUsers,
     ViewWorkspaces,

@@ -55,7 +55,7 @@ namespace Caster.Api.Features.Resources
             ITerraformService terraformService) : BaseOperationHandler<Command, ResourceCommandResult>(mapper, dbContext, lockService, terraformOptions, terraformService)
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize<Workspace>(request.WorkspaceId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ImportResources], cancellationToken);
 
             public override async Task<ResourceCommandResult> HandleRequest(Command request, CancellationToken cancellationToken)
             {

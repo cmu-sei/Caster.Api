@@ -19,6 +19,7 @@ using System.Collections.Generic;
 using Caster.Api.Infrastructure.Options;
 using System.Linq;
 using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Terraform
 {
@@ -40,9 +41,16 @@ namespace Caster.Api.Features.Terraform
             ITerraformService terraformService,
             TerraformOptions terraformOptions) : BaseHandler<Query, TerraformVersionsResult>
         {
-            public override Task<bool> Authorize(Query request, CancellationToken cancellationToken)
+            public async override Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                return Task.FromResult(!authorizationService.GetAuthorizedProjectIds().Any());
+                if (authorizationService.GetAuthorizedProjectIds().Any())
+                {
+                    return true;
+                }
+                else
+                {
+                    return await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken);
+                }
             }
 
             public override Task<TerraformVersionsResult> HandleRequest(Query request, CancellationToken cancellationToken)
