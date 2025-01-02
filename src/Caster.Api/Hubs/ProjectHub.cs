@@ -45,6 +45,32 @@ public class ProjectHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, projectId.ToString());
     }
 
+    public async Task JoinProjectAdmin(Guid projectId)
+    {
+        if (!await _authorizationService.Authorize<Project>(projectId, [SystemPermission.ViewProjects], [ProjectPermission.ManageProject], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, ProjectHubMethods.GetProjectAdminGroup(projectId));
+    }
+
+    public async Task LeaveProjectAdmin(Guid projectId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, ProjectHubMethods.GetProjectAdminGroup(projectId));
+    }
+
+    public async Task JoinGroup(Guid groupId)
+    {
+        if (!await _authorizationService.Authorize([SystemPermission.ViewGroups], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, groupId.ToString());
+    }
+
+    public async Task LeaveGroup(Guid groupId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupId.ToString());
+    }
+
     public async Task JoinWorkspace(Guid workspaceId)
     {
         if (!await _authorizationService.Authorize<Workspace>(workspaceId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], Context.ConnectionAborted))
@@ -215,7 +241,23 @@ public static class ProjectHubMethods
     public const string DesignCreated = "DesignCreated";
     public const string DesignUpdated = "DesignUpdated";
     public const string DesignDeleted = "DesignDeleted";
+
     public const string VariableCreated = "VariableCreated";
     public const string VariableUpdated = "VariableUpdated";
     public const string VariableDeleted = "VariableDeleted";
+
+    public const string GroupMembershipCreated = nameof(GroupMembershipCreated);
+    public const string GroupMembershipUpdated = nameof(GroupMembershipUpdated);
+    public const string GroupMembershipDeleted = nameof(GroupMembershipDeleted);
+
+    public const string ProjectMembershipCreated = nameof(ProjectMembershipCreated);
+    public const string ProjectMembershipUpdated = nameof(ProjectMembershipUpdated);
+    public const string ProjectMembershipDeleted = nameof(ProjectMembershipDeleted);
+
+    private const string GroupSeparator = "-";
+
+    public static string GetProjectAdminGroup(Guid projectId)
+    {
+        return $"{HubGroups.ProjectsAdmin}{GroupSeparator}{projectId}";
+    }
 }
