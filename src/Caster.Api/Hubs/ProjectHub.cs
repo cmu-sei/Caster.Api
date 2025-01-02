@@ -97,6 +97,19 @@ public class ProjectHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.VlansAdmin));
     }
 
+    public async Task JoinRolesAdmin()
+    {
+        if (!await _authorizationService.Authorize([SystemPermission.ViewRoles], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, nameof(HubGroups.RolesAdmin));
+    }
+
+    public async Task LeaveRolesAdmin()
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.RolesAdmin));
+    }
+
     #region RunOutput
 
     enum OutputType
