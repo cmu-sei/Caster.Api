@@ -21,7 +21,7 @@ namespace Caster.Api.Domain.Services
         TerraformResult InitializeWorkspace(Workspace workspace, DataReceivedEventHandler outputHandler);
         TerraformResult Init(Workspace workspace, DataReceivedEventHandler outputHandler);
         TerraformResult SelectWorkspace(Workspace workspace, DataReceivedEventHandler outputHandler);
-        TerraformResult Plan(Workspace workspace, bool destroy, string[] targets, DataReceivedEventHandler outputHandler);
+        TerraformResult Plan(Workspace workspace, bool destroy, string[] targets, string[] replaceAddresses, DataReceivedEventHandler outputHandler);
         TerraformResult Apply(Workspace workspace, DataReceivedEventHandler outputHandler);
         TerraformResult Show(Workspace workspace);
         TerraformResult Taint(Workspace workspace, string address, string statePath);
@@ -190,7 +190,7 @@ namespace Caster.Api.Domain.Services
             return this.Run(workspace, args, outputHandler);
         }
 
-        public TerraformResult Plan(Workspace workspace, bool destroy, string[] targets, DataReceivedEventHandler outputHandler)
+        public TerraformResult Plan(Workspace workspace, bool destroy, string[] targets, string[] replaceAddresses, DataReceivedEventHandler outputHandler)
         {
             List<string> args = new List<string> { "plan", "-input=false", "-out=plan" };
 
@@ -207,6 +207,11 @@ namespace Caster.Api.Domain.Services
             foreach (string target in targets)
             {
                 args.Add($"--target={target}");
+            }
+
+            foreach (string address in replaceAddresses)
+            {
+                args.Add($"-replace={address}");
             }
 
             return this.Run(workspace, args, outputHandler);

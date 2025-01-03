@@ -46,6 +46,12 @@ namespace Caster.Api.Features.Runs
             /// </summary>
             [DataMember]
             public string[] Targets { get; set; }
+
+            /// <summary>
+            /// Optional list of resources to replace on this Run
+            /// </summary>
+            [DataMember]
+            public string[] ReplaceAddresses { get; set; }
         }
 
         public class Handler : IRequestHandler<Command, Run>
