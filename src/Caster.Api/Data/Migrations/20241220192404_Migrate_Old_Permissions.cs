@@ -15,24 +15,6 @@ namespace Caster.Api.Data.Migrations
                 SET role_id = (
                     SELECT id
                     FROM system_roles
-                    WHERE name = 'Administrator'
-                )
-                WHERE id IN (
-                    SELECT user_id
-                    FROM user_permissions
-                    WHERE permission_id = (
-                        SELECT id
-                        FROM permissions
-                        WHERE key = 'SystemAdmin'
-                    )
-                )
-            ");
-
-            migrationBuilder.Sql(@"
-                UPDATE users
-                SET role_id = (
-                    SELECT id
-                    FROM system_roles
                     WHERE name = 'Content Developer'
                 )
                 WHERE id IN (
@@ -42,6 +24,24 @@ namespace Caster.Api.Data.Migrations
                         SELECT id
                         FROM permissions
                         WHERE key = 'ContentDeveloper'
+                    )
+                )
+            ");
+
+            migrationBuilder.Sql(@"
+                UPDATE users
+                SET role_id = (
+                    SELECT id
+                    FROM system_roles
+                    WHERE name = 'Administrator'
+                )
+                WHERE id IN (
+                    SELECT user_id
+                    FROM user_permissions
+                    WHERE permission_id = (
+                        SELECT id
+                        FROM permissions
+                        WHERE key = 'SystemAdmin'
                     )
                 )
             ");
