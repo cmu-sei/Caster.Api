@@ -6,22 +6,20 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
-using Microsoft.AspNetCore.Authorization;
-using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Files.Interfaces;
 using System.Text.Json.Serialization;
+using Caster.Api.Infrastructure.Authorization;
 
 namespace Caster.Api.Features.Files
 {
     public class Rename
     {
-        [DataContract(Name="RenameFileCommand")]
+        [DataContract(Name = "RenameFileCommand")]
         public class Command : FileUpdateRequest, IRequest<File>, IFileCommand
         {
             [JsonIgnore]
@@ -37,51 +35,50 @@ namespace Caster.Api.Features.Files
             public override string Content { get; set; }
         }
 
-        public class Handler : FileCommandHandler, IRequestHandler<Command, File>
+        public class Handler(
+            CasterContext dbContext,
+            ILockService lockService,
+            IGetFileQuery fileQuery,
+            ICasterAuthorizationService authorizationService,
+            IIdentityResolver identityResolver) : FileCommandHandler<Command, File>(dbContext, lockService, fileQuery, authorizationService)
         {
             private Command _request { get; set; }
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                ILockService lockService,
-                IGetFileQuery fileQuery)
-                : base(db, mapper, authorizationService, identityResolver, lockService, fileQuery) {}
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await AuthorizationService.Authorize<Domain.Models.File>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-            public async Task<File> Handle(Command request, CancellationToken cancellationToken)
+            public override async Task<File> HandleRequest(Command request, CancellationToken cancellationToken)
             {
                 _request = request;
-                return await base.Handle(request, cancellationToken);
+                return await base.HandleRequest(request, cancellationToken);
             }
 
-            protected override async Task PerformOperation(Domain.Models.File file)
+            protected override async Task PerformOperation(Domain.Models.File file, CancellationToken cancellationToken)
             {
-                var isAdmin = await _identityResolver.IsAdminAsync();
-                var userId = _user.GetId();
-                var isNotAlreadyLocked = (userId != file.LockedById);
+                var canLock = await CanLock(file.Id, cancellationToken);
+                var userId = identityResolver.GetId();
+                var isNotAlreadyLocked = userId != file.LockedById;
 
-                if(isNotAlreadyLocked)
+                if (isNotAlreadyLocked)
                 {
                     try
                     {
-                        file.Lock(userId, isAdmin);
+                        file.Lock(userId, canLock);
                     }
-                    catch (FileConflictException) 
+                    catch (FileConflictException)
                     {
-                        throw new FileConflictException ("Cannot rename a file while it's being edited or locked by another user.");
+                        throw new FileConflictException("Cannot rename a file while it's being edited or locked by another user.");
                     }
                 }
 
                 try
                 {
                     file.Name = _request.Name;
-                    file.Save(userId, isAdmin);
+                    file.Save(userId, canLock);
                 }
                 finally
                 {
-                    if(isNotAlreadyLocked)
+                    if (isNotAlreadyLocked)
                     {
                         file.Unlock(userId);
                     }

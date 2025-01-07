@@ -4,24 +4,20 @@
 using System;
 using System.Linq;
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
-using System.Collections.Generic;
 using FluentValidation;
 using System.Text.Json.Serialization;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Vlan
 {
@@ -59,37 +55,18 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler : IRequestHandler<Command, Partition>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Partition>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly IIdentityResolver _identityResolver;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Partition> HandleRequest(Command command, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _identityResolver = identityResolver;
-            }
-
-            public async Task<Partition> Handle(Command command, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var vlans = await _db.Vlans
+                var vlans = await dbContext.Vlans
                     .Where(x => x.PoolId == command.PoolId && !x.InUse && !x.Reserved)
                     .OrderBy(x => x.VlanId)
                     .Take(command.Vlans)
-                    .ToArrayAsync();
+                    .ToArrayAsync(cancellationToken);
 
                 // Verify there are enough available vlans in this pool
                 if (vlans.Length < command.Vlans)
@@ -99,12 +76,12 @@ namespace Caster.Api.Features.Vlan
                 }
 
                 // Create partition
-                var partition = _mapper.Map<Domain.Models.Partition>(command);
+                var partition = mapper.Map<Domain.Models.Partition>(command);
                 partition.Vlans = vlans;
-                _db.Partitions.Add(partition);
-                await _db.SaveChangesAsync();
+                dbContext.Partitions.Add(partition);
+                await dbContext.SaveChangesAsync(cancellationToken);
 
-                return _mapper.Map<Partition>(partition);
+                return mapper.Map<Partition>(partition);
             }
         }
     }

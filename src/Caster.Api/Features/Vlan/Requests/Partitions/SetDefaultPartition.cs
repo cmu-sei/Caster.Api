@@ -22,6 +22,8 @@ using FluentValidation;
 using System.Text.Json.Serialization;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Vlan
 {
@@ -42,38 +44,21 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task HandleRequest(Command command, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task Handle(Command command, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
                 // Ensure that only one partition/pool can be Default
-                using var transaction = _db.Database.BeginTransaction(System.Data.IsolationLevel.Serializable);
+                using var transaction = dbContext.Database.BeginTransaction(System.Data.IsolationLevel.Serializable);
 
-                var currentDefaultPool = await _db.Pools
+                var currentDefaultPool = await dbContext.Pools
                     .Where(x => x.IsDefault)
                     .FirstOrDefaultAsync(cancellationToken);
 
-                var currentDefaultPartition = await _db.Partitions
+                var currentDefaultPartition = await dbContext.Partitions
                     .Where(x => x.IsDefault)
                     .FirstOrDefaultAsync(cancellationToken);
 
@@ -85,7 +70,7 @@ namespace Caster.Api.Features.Vlan
 
                 if (command.Id.HasValue)
                 {
-                    var partition = await _db.Partitions
+                    var partition = await dbContext.Partitions
                         .Where(x => x.Id == command.Id)
                         .Include(x => x.Pool)
                         .FirstOrDefaultAsync(cancellationToken);
@@ -94,7 +79,7 @@ namespace Caster.Api.Features.Vlan
                     partition.Pool.IsDefault = true;
                 }
 
-                await _db.SaveChangesAsync(cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
             }
         }

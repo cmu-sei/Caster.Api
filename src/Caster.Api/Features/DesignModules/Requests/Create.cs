@@ -13,6 +13,9 @@ using Caster.Api.Features.Shared;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Domain.Models;
+using AutoMapper;
+using Caster.Api.Data;
 
 namespace Caster.Api.Features.DesignModules;
 
@@ -59,21 +62,19 @@ public class Create
         }
     }
 
-    public class Handler : BaseHandler<Handler>, IRequestHandler<Command, DesignModule>
+    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, DesignModule>
     {
-        public Handler(IDependencyAggregate<Handler> aggregate) : base(aggregate) { }
+        public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+            await authorizationService.Authorize<Design>(request.DesignId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-        public async Task<DesignModule> Handle(Command request, CancellationToken cancellationToken)
+        public override async Task<DesignModule> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                throw new ForbiddenException();
+            var designModule = mapper.Map<Domain.Models.DesignModule>(request);
 
-            var designModule = _mapper.Map<Domain.Models.DesignModule>(request);
+            dbContext.DesignModules.Add(designModule);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-            _db.DesignModules.Add(designModule);
-            await _db.SaveChangesAsync(cancellationToken);
-
-            return _mapper.Map<DesignModule>(designModule);
+            return mapper.Map<DesignModule>(designModule);
         }
     }
 }

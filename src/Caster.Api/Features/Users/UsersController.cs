@@ -19,11 +19,11 @@ namespace Caster.Api.Features.Users
     {
         private readonly IMediator _mediator;
 
-        public UsersController(IMediator mediator) 
+        public UsersController(IMediator mediator)
         {
             _mediator = mediator;
         }
-        
+
         /// <summary>
         /// Get a single user.
         /// </summary>
@@ -37,7 +37,7 @@ namespace Caster.Api.Features.Users
             var result = await _mediator.Send(new Get.Query { Id = id });
             return Ok(result);
         }
-        
+
         /// <summary>
         /// Get all users.
         /// </summary>
@@ -51,20 +51,6 @@ namespace Caster.Api.Features.Users
             return Ok(result);
         }
 
-        /// <summary>
-        /// Get users with the specified permission.
-        /// </summary>
-        /// <param name="permissionId">ID of a permission.</param>
-        /// <returns></returns>
-        [HttpGet("permissions/{permissionId}/users")]
-        [ProducesResponseType(typeof(IEnumerable<User>), (int)HttpStatusCode.OK)]
-        [SwaggerOperation(OperationId = "GetUsersWithPermission")]
-        public async Task<IActionResult> GetUsersWithPermission([FromRoute] Guid permissionId)
-        {
-            var result = await _mediator.Send(new GetUsersByPermission.Query { PermissionId = permissionId });
-            return Ok(result);
-        }
-        
         /// <summary>
         /// Create a new user.
         /// </summary>
@@ -94,7 +80,7 @@ namespace Caster.Api.Features.Users
             var result = await _mediator.Send(command);
             return Ok(result);
         }
-        
+
         /// <summary>
         /// Delete a user.
         /// </summary>

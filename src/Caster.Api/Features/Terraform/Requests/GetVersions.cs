@@ -18,6 +18,8 @@ using System.Text.Json.Serialization;
 using System.Collections.Generic;
 using Caster.Api.Infrastructure.Options;
 using System.Linq;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Terraform
 {
@@ -34,37 +36,32 @@ namespace Caster.Api.Features.Terraform
             public string DefaultVersion { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, TerraformVersionsResult>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            ITerraformService terraformService,
+            TerraformOptions terraformOptions) : BaseHandler<Query, TerraformVersionsResult>
         {
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly ITerraformService _terraformService;
-            private readonly TerraformOptions _terraformOptions;
-
-            public Handler(
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                ITerraformService terraformService,
-                TerraformOptions terraformOptions)
+            public async override Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _terraformService = terraformService;
-                _terraformOptions = terraformOptions;
+                if (authorizationService.GetAuthorizedProjectIds().Any())
+                {
+                    return true;
+                }
+                else
+                {
+                    return await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken);
+                }
             }
 
-            public async Task<TerraformVersionsResult> Handle(Query request, CancellationToken cancellationToken)
+            public override Task<TerraformVersionsResult> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
+                var versions = terraformService.GetVersions();
 
-                var versions = _terraformService.GetVersions();
-
-                return new TerraformVersionsResult
+                return Task.FromResult(new TerraformVersionsResult
                 {
                     Versions = versions.ToArray(),
-                    DefaultVersion = _terraformOptions.DefaultVersion
-                };
+                    DefaultVersion = terraformOptions.DefaultVersion
+                });
             }
         }
     }

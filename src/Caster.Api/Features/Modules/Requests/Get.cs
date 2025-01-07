@@ -10,17 +10,16 @@ using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using System.Linq;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Modules
 {
     public class Get
     {
-        [DataContract(Name="GetModuleQuery")]
+        [DataContract(Name = "GetModuleQuery")]
         public class Query : IRequest<Module>
         {
             /// <summary>
@@ -30,31 +29,23 @@ namespace Caster.Api.Features.Modules
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Module>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Module>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
+                if (authorizationService.GetAuthorizedProjectIds().Any())
+                {
+                    return true;
+                }
+                else
+                {
+                    return await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+                }
             }
 
-            public async Task<Module> Handle(Query request, CancellationToken cancellationToken)
+            public override async Task<Module> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var module = await _db.Modules
+                var module = await dbContext.Modules
                     .Include(m => m.Versions)
                     .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken);
 
@@ -63,7 +54,7 @@ namespace Caster.Api.Features.Modules
 
                 module.Versions = module.Versions.OrderByDescending(x => x.DateCreated).ToList();
 
-                return _mapper.Map<Module>(module);
+                return mapper.Map<Module>(module);
             }
         }
     }

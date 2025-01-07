@@ -10,26 +10,21 @@ using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using System.Text.Json.Serialization;
 using Caster.Api.Domain.Services;
 using Microsoft.AspNetCore.Http;
 using FluentValidation;
-using System.Linq;
 using Caster.Api.Domain.Models;
-using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Caster.Api.Domain.Events;
 using Caster.Api.Data.Extensions;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Projects
 {
     public class Import
     {
-        [DataContract(Name="ImportProjectCommand")]
+        [DataContract(Name = "ImportProjectCommand")]
         public class Command : IRequest<ImportProjectResult>
         {
             [JsonIgnore]
@@ -76,40 +71,20 @@ namespace Caster.Api.Features.Projects
             public string[] LockedFiles { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, ImportProjectResult>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            IMapper mapper,
+            CasterContext dbContext,
+            IArchiveService archiveService,
+            IImportService importService,
+            IMediator mediator) : BaseHandler<Command, ImportProjectResult>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly IArchiveService _archiveService;
-            private readonly IImportService _importService;
-            private readonly IMediator _mediator;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermission.ImportProjects], [ProjectPermission.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                IArchiveService archiveService,
-                IImportService importService,
-                IMediator mediator)
+            public override async Task<ImportProjectResult> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _archiveService = archiveService;
-                _importService = importService;
-                _mediator = mediator;
-            }
-
-            public async Task<ImportProjectResult> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var project =  await _db.Projects
+                var project = await dbContext.Projects
                     .Include(e => e.Directories)
                         .ThenInclude(d => d.Workspaces)
                     .Include(e => e.Directories)
@@ -125,16 +100,16 @@ namespace Caster.Api.Features.Projects
                 {
                     await request.Archive.CopyToAsync(memStream, cancellationToken);
                     memStream.Position = 0;
-                    extractedProject = _archiveService.ExtractProject(memStream, request.Archive.FileName);
+                    extractedProject = archiveService.ExtractProject(memStream, request.Archive.FileName);
                 }
 
-                var importResult = await _importService.ImportProject(project, extractedProject, request.PreserveIds);
+                var importResult = await importService.ImportProject(project, extractedProject, request.PreserveIds);
 
-                var entries = _db.GetUpdatedEntries();
-                await _db.SaveChangesAsync(cancellationToken);
+                var entries = dbContext.GetUpdatedEntries();
+                await dbContext.SaveChangesAsync(cancellationToken);
                 await this.PublishEvents(entries);
 
-                return _mapper.Map<ImportProjectResult>(importResult);
+                return mapper.Map<ImportProjectResult>(importResult);
             }
 
             private async Task PublishEvents(EntityEntry[] entries)
@@ -145,7 +120,7 @@ namespace Caster.Api.Features.Projects
 
                     if (evt != null)
                     {
-                        await _mediator.Publish(evt);
+                        await mediator.Publish(evt);
                     }
                 }
             }

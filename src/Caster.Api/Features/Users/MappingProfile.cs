@@ -10,9 +10,7 @@ namespace Caster.Api.Features.Users
     {
         public MappingProfile()
         {
-            CreateMap<Domain.Models.User, User>()
-                .ForMember(m => m.Permissions, opt => opt.MapFrom(x => x.UserPermissions.Select(y => y.Permission)))
-                .ForMember(m => m.Permissions, opt => opt.ExplicitExpansion());
+            CreateMap<Domain.Models.User, User>();
             CreateMap<Create.Command, Domain.Models.User>();
             CreateMap<Edit.Command, Domain.Models.User>();
         }

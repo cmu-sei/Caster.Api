@@ -11,12 +11,11 @@ using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Directories.Interfaces;
 using Caster.Api.Data.Extensions;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Directories
 {
@@ -28,29 +27,14 @@ namespace Caster.Api.Features.Directories
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.Directory>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                IMediator mediator)
+            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var directory = await _db.Directories.FindAsync(request.Id);
+                var directory = await dbContext.Directories.FindAsync(request.Id);
 
                 if (directory == null)
                     throw new EntityNotFoundException<Directory>();
@@ -69,18 +53,18 @@ namespace Caster.Api.Features.Directories
                     throw new ConflictException(errorMessage);
                 }
 
-                _db.Directories.Remove(directory);
-                await _db.SaveChangesAsync(cancellationToken);
+                dbContext.Directories.Remove(directory);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            private async Task<Domain.Models.Workspace[]> CheckForResources(Domain.Models.Directory directory)
+            private async Task<Workspace[]> CheckForResources(Domain.Models.Directory directory)
             {
-                var directories = await _db.Directories
+                var directories = await dbContext.Directories
                     .GetChildren(directory, true)
                     .Include(d => d.Workspaces)
                     .ToArrayAsync();
 
-                List<Domain.Models.Workspace> workspaces = new List<Domain.Models.Workspace>();
+                List<Workspace> workspaces = new List<Workspace>();
 
                 foreach (var workspace in directories.SelectMany(d => d.Workspaces))
                 {

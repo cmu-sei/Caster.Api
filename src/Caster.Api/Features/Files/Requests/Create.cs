@@ -16,12 +16,15 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Files.Interfaces;
+using FluentValidation;
+using Caster.Api.Features.Shared.Services;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Files
 {
     public class Create
     {
-        [DataContract(Name="CreateFileCommand")]
+        [DataContract(Name = "CreateFileCommand")]
         public class Command : FileUpdateRequest, IRequest<File>
         {
             /// <summary>
@@ -49,60 +52,37 @@ namespace Caster.Api.Features.Files
             public override string Content { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command, File>
+        public class CommandValidator : AbstractValidator<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly IGetFileQuery _fileQuery;
-            private readonly IIdentityResolver _identityResolver;
+            public CommandValidator(IValidationService validationService)
+            {
+                RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
+                RuleFor(x => x.WorkspaceId.Value).WorkspaceExists(validationService).When(x => x.WorkspaceId.HasValue);
+            }
+        }
 
-            public Handler(
+        public class Handler(
                 CasterContext db,
                 IMapper mapper,
-                IAuthorizationService authorizationService,
+                ICasterAuthorizationService authorizationService,
                 IIdentityResolver identityResolver,
-                IGetFileQuery fileQuery)
+                IGetFileQuery fileQuery) : BaseHandler<Command, File>
+        {
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
+
+            public override async Task<File> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _fileQuery = fileQuery;
-                _identityResolver = identityResolver;
-            }
+                var file = mapper.Map<Domain.Models.File>(request);
+                file.Save(
+                    identityResolver.GetId(),
+                    canLock: await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.LockFiles], [ProjectPermission.LockFiles], cancellationToken),
+                    bypassLock: true);
 
-            public async Task<File> Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
+                db.Files.Add(file);
+                await db.SaveChangesAsync(cancellationToken);
 
-                await ValidateEntities(request.DirectoryId, request.WorkspaceId);
-
-                var file = _mapper.Map<Domain.Models.File>(request);
-                file.Save(_user.GetId(), isAdmin: (await _identityResolver.IsAdminAsync()), bypassLock: true);
-
-                await _db.Files.AddAsync(file, cancellationToken);
-                await _db.SaveChangesAsync(cancellationToken);
-
-                return await _fileQuery.ExecuteAsync(file.Id);
-            }
-
-            private async Task ValidateEntities(Guid directoryId, Guid? workspaceId)
-            {
-                var directory = await _db.Directories.FindAsync(directoryId);
-
-                if (directory == null)
-                    throw new EntityNotFoundException<Directory>();
-
-                if (workspaceId.HasValue)
-                {
-                    var workspace = await _db.Workspaces.FindAsync(workspaceId.Value);
-
-                    if (workspace == null)
-                        throw new EntityNotFoundException<Workspace>();
-                }
+                return await fileQuery.ExecuteAsync(file.Id);
             }
         }
     }

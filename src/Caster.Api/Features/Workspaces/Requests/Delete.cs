@@ -6,62 +6,37 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using System.Security.Principal;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Domain.Events;
-using Caster.Api.Features.Workspaces.Interfaces;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Models;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Workspaces
 {
     public class Delete
     {
         [DataContract(Name = "DeleteWorkspaceCommand")]
-        public class Command : IRequest, IWorkspaceDeleteRequest
+        public class Command : IRequest
         {
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, ILockService lockService) : BaseHandler<Command>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
-            private readonly ILockService _lockService;
+            public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver,
-                ILockService lockService)
+            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-                _lockService = lockService;
-            }
-
-            public async Task Handle(Command request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var workspace = await _db.Workspaces.FindAsync(request.Id);
+                var workspace = await dbContext.Workspaces.FindAsync([request.Id], cancellationToken);
 
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
 
-                using (var lockResult = await _lockService.GetWorkspaceLock(request.Id).LockAsync(0))
+                using (var lockResult = await lockService.GetWorkspaceLock(request.Id).LockAsync(0))
                 {
                     if (!lockResult.AcquiredLock)
                         throw new WorkspaceConflictException();
@@ -69,11 +44,11 @@ namespace Caster.Api.Features.Workspaces
                     if (workspace.GetState().GetResources().Any())
                         throw new ConflictException("Cannot delete a Workspace with deployed Resources.");
 
-                    if (await _db.AnyIncompleteRuns(request.Id))
+                    if (await dbContext.AnyIncompleteRuns(request.Id))
                         throw new ConflictException("Cannot delete a Workspace with pending Runs.");
 
-                    _db.Workspaces.Remove(workspace);
-                    await _db.SaveChangesAsync(cancellationToken);
+                    dbContext.Workspaces.Remove(workspace);
+                    await dbContext.SaveChangesAsync(cancellationToken);
                 }
             }
         }

@@ -3,8 +3,8 @@
 #
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dev
 
-ENV ASPNETCORE_URLS=http://*:5000 \
-    ASPNETCORE_ENVIRONMENT=DEVELOPMENT
+ENV ASPNETCORE_URLS=http://*:5000
+ENV ASPNETCORE_ENVIRONMENT=DEVELOPMENT
 
 COPY . /app
 WORKDIR /app/src/Caster.Api
@@ -21,7 +21,7 @@ ENV DOTNET_HOSTBUILDER__RELOADCONFIGCHANGE=false
 COPY --from=dev /app/dist /app
 
 WORKDIR /app
-ENV ASPNETCORE_HTTP_PORTS=80
+ENV ASPNETCORE_URLS=http://*:80
 EXPOSE 80
 
 CMD [ "dotnet", "Caster.Api.dll" ]

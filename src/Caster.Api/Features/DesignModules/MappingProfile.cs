@@ -14,6 +14,7 @@ public class MappingProfile : Profile
         ShouldMapProperty = p => p.GetMethod.IsPublic || p.GetMethod.IsPrivate;
 
         CreateMap<Domain.Models.DesignModule, DesignModule>()
+            .ForMember(dest => dest.Values, opt => opt.Ignore())
             .ForMember("ValuesJson", opt => opt.ExplicitExpansion());
         CreateMap<Domain.Models.ModuleValue, ModuleValue>();
 

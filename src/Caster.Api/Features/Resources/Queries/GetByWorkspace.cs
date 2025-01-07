@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
 using System.Text.Json.Serialization;
+using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Resources
 {
@@ -30,31 +31,14 @@ namespace Caster.Api.Features.Resources
             public Guid WorkspaceId { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Resource[]>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Resource[]>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Workspace>(request.WorkspaceId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
-            public Handler(
-                CasterContext db,
-                IMapper mapper,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<Resource[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<Resource[]> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var workspace = await _db.Workspaces.FindAsync(request.WorkspaceId);
+                var workspace = await dbContext.Workspaces.FindAsync(request.WorkspaceId);
 
                 if (workspace == null)
                 {
@@ -62,7 +46,7 @@ namespace Caster.Api.Features.Resources
                 }
 
                 var state = workspace.GetState();
-                return _mapper.Map<Resource[]>(state.GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes)));
+                return mapper.Map<Resource[]>(state.GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes)));
             }
         }
     }

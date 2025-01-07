@@ -8,9 +8,9 @@ namespace Caster.Api.Infrastructure.Options
 {
     public class SeedDataOptions
     {
-        public List<Permission> Permissions { get; set; }
+        public List<SystemRole> Roles { get; set; }
         public List<User> Users { get; set; }
-        public List<UserPermission> UserPermissions { get; set; }
+        public List<Group> Groups { get; set; }
     }
 }
 

@@ -5,22 +5,17 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
-using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Data;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Files
 {
     public class Get
     {
-        [DataContract(Name="GetFileQuery")]
+        [DataContract(Name = "GetFileQuery")]
         public class Query : IRequest<File>
         {
             /// <summary>
@@ -30,28 +25,14 @@ namespace Caster.Api.Features.Files
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, File>
+        public class Handler(ICasterAuthorizationService authorizationService, IGetFileQuery fileQuery) : BaseHandler<Query, File>
         {
-            private readonly IGetFileQuery _fileQuery;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize<Domain.Models.File>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
-            public Handler(
-                IGetFileQuery fileQuery,
-                IAuthorizationService authorizationService,
-                IIdentityResolver identityResolver)
+            public override async Task<File> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _fileQuery = fileQuery;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
-
-            public async Task<File> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new ContentDeveloperRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var file = await _fileQuery.ExecuteAsync(request.Id);
+                var file = await fileQuery.ExecuteAsync(request.Id);
 
                 if (file == null)
                     throw new EntityNotFoundException<File>();

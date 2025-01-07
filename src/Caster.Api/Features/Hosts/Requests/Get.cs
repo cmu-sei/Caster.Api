@@ -11,17 +11,15 @@ using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Exceptions;
-using Microsoft.AspNetCore.Authorization;
-using System.Security.Claims;
-using System.Security.Principal;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
+using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Hosts
 {
     public class Get
     {
-        [DataContract(Name="GetHostQuery")]
+        [DataContract(Name = "GetHostQuery")]
         public class Query : IRequest<Host>
         {
             /// <summary>
@@ -31,34 +29,21 @@ namespace Caster.Api.Features.Hosts
             public Guid Id { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, Host>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Host>
         {
-            private readonly CasterContext _db;
-            private readonly IMapper _mapper;
-            private readonly IAuthorizationService _authorizationService;
-            private readonly ClaimsPrincipal _user;
+            public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
+                await authorizationService.Authorize([SystemPermission.ViewHosts], cancellationToken);
 
-            public Handler(CasterContext db, IMapper mapper, IAuthorizationService authorizationService, IIdentityResolver identityResolver)
+            public override async Task<Host> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                _db = db;
-                _mapper = mapper;
-                _authorizationService = authorizationService;
-                _user = identityResolver.GetClaimsPrincipal();
-            }
+                var host = await dbContext.Hosts
+                    .ProjectTo<Host>(mapper.ConfigurationProvider)
+                    .SingleOrDefaultAsync(e => e.Id == request.Id, cancellationToken);
 
-            public async Task<Host> Handle(Query request, CancellationToken cancellationToken)
-            {
-                if (!(await _authorizationService.AuthorizeAsync(_user, null, new FullRightsRequirement())).Succeeded)
-                    throw new ForbiddenException();
-
-                var Host =  await _db.Hosts
-                    .ProjectTo<Host>(_mapper.ConfigurationProvider)
-                    .SingleOrDefaultAsync(e => e.Id == request.Id);
-
-                if (Host == null)
+                if (host == null)
                     throw new EntityNotFoundException<Host>();
 
-                return Host;
+                return host;
             }
         }
     }
