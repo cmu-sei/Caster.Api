@@ -15,7 +15,6 @@ namespace Caster.Api.Infrastructure.Identity
     {
         ClaimsPrincipal GetClaimsPrincipal();
         Guid GetId();
-        Task<bool> IsAdminAsync();
     }
 
     public class IdentityResolver : IIdentityResolver
@@ -39,21 +38,6 @@ namespace Caster.Api.Infrastructure.Identity
         public Guid GetId()
         {
             return this.GetClaimsPrincipal().GetId();
-        }
-
-        public async Task<bool> IsAdminAsync()
-        {
-            if ((await _authorizationService.AuthorizeAsync(
-                this.GetClaimsPrincipal(),
-                null,
-                new FullRightsRequirement())).Succeeded)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
         }
     }
 }
