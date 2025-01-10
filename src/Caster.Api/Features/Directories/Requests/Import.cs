@@ -100,7 +100,7 @@ namespace Caster.Api.Features.Directories
                 }
 
                 var directories = await dbContext.GetDirectoryWithChildren(directory.Id, cancellationToken);
-                var importResult = await importService.ImportDirectory(directory, extractedDirectory, request.PreserveIds);
+                var importResult = await importService.ImportDirectory(directory, extractedDirectory, request.PreserveIds, cancellationToken);
 
                 var entries = dbContext.GetUpdatedEntries();
                 await dbContext.SaveChangesAsync(cancellationToken);

@@ -103,7 +103,7 @@ namespace Caster.Api.Features.Projects
                     extractedProject = archiveService.ExtractProject(memStream, request.Archive.FileName);
                 }
 
-                var importResult = await importService.ImportProject(project, extractedProject, request.PreserveIds);
+                var importResult = await importService.ImportProject(project, extractedProject, request.PreserveIds, cancellationToken);
 
                 var entries = dbContext.GetUpdatedEntries();
                 await dbContext.SaveChangesAsync(cancellationToken);
