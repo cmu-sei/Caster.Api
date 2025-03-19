@@ -139,7 +139,6 @@ namespace Caster.Api.Domain.Services
                     };
 
                     _context.Users.Add(user);
-                    await _context.SaveChangesAsync();
                 }
                 else
                 {
@@ -147,9 +146,14 @@ namespace Caster.Api.Domain.Services
                     {
                         user.Name = nameClaim;
                         _context.Update(user);
-                        await _context.SaveChangesAsync();
                     }
                 }
+
+                try
+                {
+                    await _context.SaveChangesAsync();
+                }
+                catch (Exception) { }
             }
 
             return user;
@@ -198,7 +202,8 @@ namespace Caster.Api.Domain.Services
                         x.Value == permission))
                     {
                         claims.Add(new Claim(AuthorizationConstants.PermissionsClaimType, permission));
-                    };
+                    }
+                    ;
                 }
             }
 
