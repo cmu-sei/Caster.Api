@@ -101,6 +101,19 @@ namespace Caster.Api.Features.Directories
         }
 
         /// <summary>
+        /// Retrieve all directories for the current user.
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet("directories/mine")]
+        [ProducesResponseType(typeof(IEnumerable<Directory>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetMyDirectories")]
+        public async Task<IActionResult> GetMine([FromQuery] GetMine.Query query)
+        {
+            var result = await _mediator.Send(query);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Retrieve all directories that are children of a specified directory
         /// </summary>
         /// <param name="directoryId"></param>
