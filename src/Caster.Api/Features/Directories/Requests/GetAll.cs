@@ -6,13 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
-using Caster.Api.Infrastructure.Exceptions;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Shared;
@@ -52,7 +48,7 @@ namespace Caster.Api.Features.Directories
                 {
                     return await dbContext.Directories
                         .Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent)
-                        .ToArrayAsync();
+                        .ToArrayAsync(cancellationToken);
                 }
                 else
                 {
@@ -63,9 +59,8 @@ namespace Caster.Api.Features.Directories
                         .ToListAsync(cancellationToken);
 
                     var myDirectories = await dbContext.Directories
-                        .Where(d => myProjectIds
-                        .Contains(d.ProjectId))
-                        .ProjectTo<Directory>(mapper.ConfigurationProvider)
+                        .Where(d => myProjectIds.Contains(d.ProjectId))
+                        .Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent)
                         .ToArrayAsync(cancellationToken);
 
                     return myDirectories;
