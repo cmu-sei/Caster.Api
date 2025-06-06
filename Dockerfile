@@ -24,10 +24,13 @@ ENV DOTNET_HOSTBUILDER__RELOADCONFIGCHANGE=false
 EXPOSE 8080
 WORKDIR /app
 COPY --link --from=build /app .
-USER $APP_UID
-ENTRYPOINT ["./Caster.Api"]
 
 # Install git and set credential store
 RUN apt-get update                   && \
     apt-get install -y git jq curl   && \
     git config --global credential.helper store
+
+USER $APP_UID
+ENTRYPOINT ["./Caster.Api"]
+
+
