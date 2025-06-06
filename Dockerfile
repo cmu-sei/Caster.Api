@@ -21,13 +21,17 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS prod
 ARG commit
 ENV COMMIT=$commit
 ENV DOTNET_HOSTBUILDER__RELOADCONFIGCHANGE=false
+
+# This can be removed this after switching to IHost builder
+ENV ASPNETCORE_URLS=http://*:8080
+
 EXPOSE 8080
 WORKDIR /app
 COPY --link --from=build /app .
 
 # Install git and set credential store
 RUN apt-get update                   && \
-    apt-get install -y git jq curl   && \
+    apt-get install -y git jq curl unzip wget  && \
     git config --global credential.helper store
 
 USER $APP_UID

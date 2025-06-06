@@ -7,7 +7,6 @@ using Caster.Api.Infrastructure.Options;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
@@ -16,7 +15,7 @@ namespace Caster.Api.Infrastructure.Extensions
 {
     public static class DatabaseExtensions
     {
-        public static IHost InitializeDatabase(this IHost webHost)
+        public static IWebHost InitializeDatabase(this IWebHost webHost)
         {
             using (var serviceScope = webHost.Services.CreateScope())
             {
