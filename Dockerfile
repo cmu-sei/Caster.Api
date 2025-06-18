@@ -1,32 +1,40 @@
-#
-#multi-stage target: dev
-#
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dev
+# Adapted from https://github.com/dotnet/dotnet-docker/blob/main/samples/aspnetapp/Dockerfile.chiseled
 
-ENV ASPNETCORE_URLS=http://*:5000
-ENV ASPNETCORE_ENVIRONMENT=DEVELOPMENT
+# Build stage
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ARG TARGETARCH
+WORKDIR /source
 
-COPY . /app
-WORKDIR /app/src/Caster.Api
-RUN dotnet publish -c Release -o /app/dist
-CMD [ "dotnet", "run" ]
+# Copy project files and restore as distinct layers
+COPY --link src/Caster.Api/*.csproj ./src/Caster.Api/
+WORKDIR /source/src/Caster.Api
+RUN dotnet restore -a $TARGETARCH
 
-#
-#multi-stage target: prod
-#
+# Copy source code and publish app
+WORKDIR /source
+COPY --link . .
+WORKDIR /source/src/Caster.Api
+RUN dotnet publish -a $TARGETARCH --no-restore -o /app
+
+# Production Stage
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS prod
 ARG commit
 ENV COMMIT=$commit
 ENV DOTNET_HOSTBUILDER__RELOADCONFIGCHANGE=false
-COPY --from=dev /app/dist /app
 
+# This can be removed after switching to IHost builder
+ENV ASPNETCORE_URLS=http://*:8080
+
+EXPOSE 8080
 WORKDIR /app
-ENV ASPNETCORE_URLS=http://*:80
-EXPOSE 80
+COPY --link --from=build /app .
 
-CMD [ "dotnet", "Caster.Api.dll" ]
-
-#Install git and set credential store
+# Install git and set credential store
 RUN apt-get update                   && \
-    apt-get install -y git jq curl   && \
+    apt-get install -y git jq curl unzip wget  && \
     git config --global credential.helper store
+
+USER $APP_UID
+ENTRYPOINT ["./Caster.Api"]
+
+
