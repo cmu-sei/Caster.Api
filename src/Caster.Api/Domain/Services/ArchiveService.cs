@@ -263,7 +263,7 @@ namespace Caster.Api.Domain.Services
                 System.IO.Path.AltDirectorySeparatorChar
             });
 
-            return paths;
+            return paths.Where(x => x != string.Empty).ToArray();
         }
 
         #endregion
