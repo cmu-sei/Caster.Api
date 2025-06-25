@@ -45,24 +45,7 @@ namespace Caster.Api.Features.Vlan
             public override async Task<Pool> HandleRequest(Command request, CancellationToken cancellationToken)
             {
                 var pool = mapper.Map<Domain.Models.Pool>(request);
-                dbContext.Pools.Add(pool);
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                var vlans = new List<Domain.Models.Vlan>();
-
-                for (int i = 0; i < 4096; i++)
-                {
-                    vlans.Add(new Domain.Models.Vlan
-                    {
-                        VlanId = i,
-                        Reserved = request.ReservedVlanIds.Contains(i),
-                        PoolId = pool.Id
-                    });
-                }
-
-                await dbContext.BulkInsertAsync(vlans,
-                    new BulkConfig { PropertiesToExclude = new List<string> { nameof(Pool.Id) } }); // workaround until id properties in pgsql are fixed
-
+                await dbContext.CreateVlanPool(pool, request.ReservedVlanIds, true, cancellationToken);
                 return mapper.Map<Pool>(pool);
             }
         }
