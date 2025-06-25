@@ -387,4 +387,17 @@ public class VlansController : ControllerBase
         var result = await _mediator.Send(command);
         return Ok(result);
     }
+
+    /// <summary>
+    /// Reserve or Unreserve the selected VLANs
+    /// </summary>
+    /// <returns></returns>
+    [HttpPost("vlans/actions/reserve-vlans")]
+    [ProducesResponseType(typeof(ReserveVlans.ReserveVlansResult), (int)HttpStatusCode.OK)]
+    [SwaggerOperation(OperationId = "ReserveVlans")]
+    public async Task<IActionResult> ReserveVlans(ReserveVlans.Command command)
+    {
+        var result = await _mediator.Send(command);
+        return Ok(result);
+    }
 }
