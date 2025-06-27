@@ -14,4 +14,5 @@ public class Vlan
     public bool InUse { get; set; }
     public string Tag { get; set; }
     public bool Reserved { get; set; }
+    public bool ReservedEditable { get; set; }
 }

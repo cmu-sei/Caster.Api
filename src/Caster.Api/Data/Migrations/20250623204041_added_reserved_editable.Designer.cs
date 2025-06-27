@@ -8,6 +8,7 @@ using System;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -16,9 +17,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Caster.Api.Data.Migrations
 {
     [DbContext(typeof(CasterContext))]
-    partial class CasterContextModelSnapshot : ModelSnapshot
+    [Migration("20250623204041_added_reserved_editable")]
+    partial class added_reserved_editable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -53,7 +56,7 @@ namespace Caster.Api.Data.Migrations
                     b.HasIndex("RunId")
                         .IsUnique();
 
-                    b.ToTable("applies", (string)null);
+                    b.ToTable("applies");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Design", b =>
@@ -80,7 +83,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("DirectoryId");
 
-                    b.ToTable("designs", (string)null);
+                    b.ToTable("designs");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.DesignModule", b =>
@@ -121,7 +124,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("ModuleId");
 
-                    b.ToTable("design_modules", (string)null);
+                    b.ToTable("design_modules");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Directory", b =>
@@ -174,7 +177,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("ProjectId");
 
-                    b.ToTable("directories", (string)null);
+                    b.ToTable("directories");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.File", b =>
@@ -231,7 +234,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("WorkspaceId");
 
-                    b.ToTable("files", (string)null);
+                    b.ToTable("files");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.FileVersion", b =>
@@ -282,7 +285,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("TaggedById");
 
-                    b.ToTable("file_versions", (string)null);
+                    b.ToTable("file_versions");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Group", b =>
@@ -306,7 +309,7 @@ namespace Caster.Api.Data.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("groups", (string)null);
+                    b.ToTable("groups");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.GroupMembership", b =>
@@ -332,7 +335,7 @@ namespace Caster.Api.Data.Migrations
                     b.HasIndex("GroupId", "UserId")
                         .IsUnique();
 
-                    b.ToTable("group_memberships", (string)null);
+                    b.ToTable("group_memberships");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Host", b =>
@@ -371,7 +374,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("ProjectId");
 
-                    b.ToTable("hosts", (string)null);
+                    b.ToTable("hosts");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.HostMachine", b =>
@@ -400,7 +403,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("WorkspaceId");
 
-                    b.ToTable("host_machines", (string)null);
+                    b.ToTable("host_machines");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Module", b =>
@@ -429,7 +432,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("modules", (string)null);
+                    b.ToTable("modules");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.ModuleVersion", b =>
@@ -468,7 +471,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("ModuleId");
 
-                    b.ToTable("module_versions", (string)null);
+                    b.ToTable("module_versions");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Partition", b =>
@@ -495,7 +498,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("PoolId");
 
-                    b.ToTable("partitions", (string)null);
+                    b.ToTable("partitions");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Plan", b =>
@@ -523,7 +526,7 @@ namespace Caster.Api.Data.Migrations
                     b.HasIndex("RunId")
                         .IsUnique();
 
-                    b.ToTable("plans", (string)null);
+                    b.ToTable("plans");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Pool", b =>
@@ -544,7 +547,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("pools", (string)null);
+                    b.ToTable("pools");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Project", b =>
@@ -567,7 +570,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("PartitionId");
 
-                    b.ToTable("projects", (string)null);
+                    b.ToTable("projects");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.ProjectMembership", b =>
@@ -607,7 +610,7 @@ namespace Caster.Api.Data.Migrations
                     b.HasIndex("ProjectId", "UserId", "GroupId")
                         .IsUnique();
 
-                    b.ToTable("project_memberships", (string)null);
+                    b.ToTable("project_memberships");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.ProjectRole", b =>
@@ -636,7 +639,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("project_roles", (string)null);
+                    b.ToTable("project_roles");
 
                     b.HasData(
                         new
@@ -673,7 +676,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("removed_resources", (string)null);
+                    b.ToTable("removed_resources");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Run", b =>
@@ -730,7 +733,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("WorkspaceId");
 
-                    b.ToTable("runs", (string)null);
+                    b.ToTable("runs");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.SystemRole", b =>
@@ -766,7 +769,7 @@ namespace Caster.Api.Data.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("system_roles", (string)null);
+                    b.ToTable("system_roles");
 
                     b.HasData(
                         new
@@ -818,7 +821,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("users", (string)null);
+                    b.ToTable("users");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Variable", b =>
@@ -849,7 +852,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("DesignId");
 
-                    b.ToTable("variables", (string)null);
+                    b.ToTable("variables");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Vlan", b =>
@@ -898,7 +901,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("VlanId");
 
-                    b.ToTable("vlans", (string)null);
+                    b.ToTable("vlans");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Workspace", b =>
@@ -959,7 +962,7 @@ namespace Caster.Api.Data.Migrations
 
                     b.HasIndex("HostId");
 
-                    b.ToTable("workspaces", (string)null);
+                    b.ToTable("workspaces");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Apply", b =>

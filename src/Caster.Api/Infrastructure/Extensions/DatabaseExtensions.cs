@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace Caster.Api.Infrastructure.Extensions
@@ -27,7 +28,19 @@ namespace Caster.Api.Infrastructure.Extensions
                     context.Database.Migrate();
 
                     var seedDataOptions = services.GetService<SeedDataOptions>();
-                    ProcessSeedDataOptions(seedDataOptions, context);
+                    var errors = ProcessSeedDataOptions(seedDataOptions, context);
+
+                    if (errors.Any())
+                    {
+                        var logger = services.GetRequiredService<ILogger<Program>>();
+
+                        foreach (var errorString in errors)
+                        {
+                            logger.LogError(errorString);
+                        }
+
+                        throw new ArgumentException("Errors in SeedData. Application will restart.");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -43,8 +56,10 @@ namespace Caster.Api.Infrastructure.Extensions
             return webHost;
         }
 
-        private static void ProcessSeedDataOptions(SeedDataOptions options, CasterContext context)
+        private static List<string> ProcessSeedDataOptions(SeedDataOptions options, CasterContext context)
         {
+            List<string> errors = new();
+
             if (options.Roles?.Any() == true)
             {
                 var dbRoles = context.SystemRoles.ToHashSet();
@@ -92,11 +107,11 @@ namespace Caster.Api.Infrastructure.Extensions
 
             if (options.Groups?.Any() == true)
             {
-                var dbGroup = context.Groups.ToHashSet();
+                var dbGroups = context.Groups.ToHashSet();
 
                 foreach (var group in options.Groups)
                 {
-                    if (!dbGroup.Any(x => x.Name == group.Name))
+                    if (!dbGroups.Any(x => x.Name == group.Name))
                     {
                         context.Groups.Add(group);
                     }
@@ -104,6 +119,80 @@ namespace Caster.Api.Infrastructure.Extensions
 
                 context.SaveChanges();
             }
+
+            // If vlans are no longer Reserved in SeedData, set them back to ReservedEditable = true and Reserved = false and vice versa
+            var dbPools = context.Pools.ToHashSet();
+
+            foreach (var dbPool in dbPools)
+            {
+                var pool = options?.Vlans?.Pools.FirstOrDefault(x => x.Name == dbPool.Name);
+                int[] reservedVlans = [];
+
+                if (pool != null)
+                {
+                    reservedVlans = pool.Reserved;
+                }
+
+                context.Vlans
+                    .Where(x => x.PoolId == dbPool.Id && x.Reserved && !x.ReservedEditable && !reservedVlans.Contains(x.VlanId))
+                    .ExecuteUpdate(x => x.SetProperty(y => y.Reserved, false));
+
+                context.Vlans
+                    .Where(x => x.PoolId == dbPool.Id && !x.ReservedEditable && !reservedVlans.Contains(x.VlanId))
+                    .ExecuteUpdate(x => x.SetProperty(y => y.ReservedEditable, true));
+
+                context.Vlans
+                    .Where(x => x.PoolId == dbPool.Id && reservedVlans.Contains(x.VlanId))
+                    .ExecuteUpdate(x => x.SetProperty(y => y.Reserved, true));
+
+                context.Vlans
+                    .Where(x => x.PoolId == dbPool.Id && reservedVlans.Contains(x.VlanId))
+                    .ExecuteUpdate(x => x.SetProperty(y => y.ReservedEditable, false));
+            }
+
+            if (options.Vlans != null)
+            {
+                var vlanErrors = options.Vlans.Validate(dbPools);
+
+                if (vlanErrors.Any())
+                {
+                    errors.AddRange(vlanErrors);
+                }
+                else
+                {
+                    foreach (var pool in options.Vlans.Pools)
+                    {
+                        if (!dbPools.Any(x => x.Name == pool.Name))
+                        {
+                            var dbPool = context.CreateVlanPool(new Pool
+                            {
+                                Name = pool.Name,
+                                IsDefault = pool.Partitions.Any(x => x.IsDefault)
+                            },
+                            pool.Reserved, false, default).Result;
+
+                            var dbVlans = context.Vlans.Where(x => x.PoolId == dbPool.Id).ToList();
+
+                            foreach (var partition in pool.Partitions)
+                            {
+                                var dbPartition = new Partition
+                                {
+                                    IsDefault = partition.IsDefault,
+                                    Name = partition.Name,
+                                    PoolId = dbPool.Id,
+                                    Vlans = dbVlans.Where(x => partition.Vlans.ToList().Contains(x.VlanId)).ToArray()
+                                };
+
+                                context.Partitions.Add(dbPartition);
+                            }
+
+                            context.SaveChanges();
+                        }
+                    }
+                }
+            }
+
+            return errors;
         }
     }
 }
