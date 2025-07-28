@@ -39,6 +39,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 
 [assembly: ApiController]
 namespace Caster.Api
@@ -52,7 +54,7 @@ namespace Caster.Api
         private readonly TerraformOptions _terraformOptions = new TerraformOptions();
         private readonly ILoggerFactory _loggerFactory;
         private string _pathbase;
-
+        private readonly TelemetryOptions _telemetryOptions = new();
         private const string _routePrefix = "api";
 
         public Startup(IConfiguration configuration, ILoggerFactory loggerFactory)
@@ -61,6 +63,7 @@ namespace Caster.Api
             Configuration.GetSection("Authorization").Bind(_authOptions);
             Configuration.GetSection("Client").Bind(_clientOptions);
             Configuration.GetSection("Terraform").Bind(_terraformOptions);
+            Configuration.GetSection("Telemetry").Bind(_telemetryOptions);
             _pathbase = Configuration["PathBase"] ?? "";
 
             _loggerFactory = loggerFactory;
@@ -237,6 +240,44 @@ namespace Caster.Api
 
             services.AddScoped<IGetFileQuery, GetFileQuery>();
             services.AddTransient<EventInterceptor>();
+
+            services.AddSingleton<TelemetryService>();
+            var metricsBuilder = services.AddOpenTelemetry()
+                .WithMetrics(builder =>
+                {
+                    builder
+                        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("TelemetryService"))
+                        .AddMeter
+                        (
+                            TelemetryService.CasterMeterName
+                        )
+                        .AddPrometheusExporter();
+                    if (_telemetryOptions.AddAspNetCoreInstrumentation)
+                    {
+                        builder.AddAspNetCoreInstrumentation();
+                    }
+                    if (_telemetryOptions.AddHttpClientInstrumentation)
+                    {
+                        builder.AddHttpClientInstrumentation();
+                    }
+                    if (_telemetryOptions.UseMeterMicrosoftAspNetCoreHosting)
+                    {
+                        builder.AddMeter("Microsoft.AspNetCore.Hosting");
+                    }
+                    if (_telemetryOptions.UseMeterMicrosoftAspNetCoreServerKestrel)
+                    {
+                        builder.AddMeter("Microsoft.AspNetCore.Server.Kestrel");
+                    }
+                    if (_telemetryOptions.UseMeterSystemNetHttp)
+                    {
+                        builder.AddMeter("System.Net.Http");
+                    }
+                    if (_telemetryOptions.UseMeterSystemNetNameResolution)
+                    {
+                        builder.AddMeter("System.Net.NameResolution");
+                    }
+                }
+            );
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -264,6 +305,7 @@ namespace Caster.Api
                     Predicate = (check) => check.Tags.Contains("live"),
                 });
                 endpoints.MapHub<ProjectHub>("/hubs/project");
+                endpoints.MapPrometheusScrapingEndpoint().RequireAuthorization();
             });
 
             app.UseSwagger();
