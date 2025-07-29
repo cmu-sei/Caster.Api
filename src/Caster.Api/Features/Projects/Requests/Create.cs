@@ -2,21 +2,20 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System.Runtime.Serialization;
-using System.Security.Claims;
-using System.Security.Principal;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
-using Microsoft.AspNetCore.Authorization;
+using System.Collections.Generic;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Models;
-using Microsoft.Extensions.DependencyInjection;
 using Caster.Api.Features.Shared;
+using Microsoft.EntityFrameworkCore;
+using Caster.Api.Domain.Services;
 
 namespace Caster.Api.Features.Projects
 {
@@ -32,7 +31,12 @@ namespace Caster.Api.Features.Projects
             public string Name { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext, IIdentityResolver identityResolver) : BaseHandler<Command, Project>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            IMapper mapper,
+            CasterContext dbContext,
+            TelemetryService telemetryService,
+            IIdentityResolver identityResolver) : BaseHandler<Command, Project>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.CreateProjects], cancellationToken);
@@ -50,6 +54,8 @@ namespace Caster.Api.Features.Projects
                 dbContext.ProjectMemberships.Add(projectMembership);
 
                 await dbContext.SaveChangesAsync(cancellationToken);
+                var count = await dbContext.Projects.LongCountAsync(cancellationToken);
+                telemetryService.Projects.Record((int)count);
                 return mapper.Map<Project>(project);
             }
         }

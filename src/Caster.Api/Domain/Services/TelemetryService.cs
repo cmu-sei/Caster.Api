@@ -11,13 +11,15 @@ namespace Caster.Api.Domain.Services
 
     public class TelemetryService : ITelemetryService
     {
-        public const string CasterMeterName = "cmu_sei_caster_meter";
+        public const string CasterMeterName = "cmu_sei_crucible_caster";
         public readonly Meter CasterMeter = new Meter(CasterMeterName, "1.0");
-        public  Gauge<int> CasterGauge1;
+        public Gauge<int> Projects;
+        public Gauge<int> Workspaces;
 
         public TelemetryService()
         {
-            CasterGauge1 = CasterMeter.CreateGauge<int>("caster_info");
+            Projects = CasterMeter.CreateGauge<int>("caster_projects");
+            Workspaces = CasterMeter.CreateGauge<int>("caster_workspaces");
         }
 
     }

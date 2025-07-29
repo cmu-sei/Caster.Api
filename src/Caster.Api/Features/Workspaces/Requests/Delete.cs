@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +14,7 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
+using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -24,14 +26,18 @@ namespace Caster.Api.Features.Workspaces
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, ILockService lockService) : BaseHandler<Command>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            CasterContext dbContext,
+            TelemetryService telemetryService,
+            ILockService lockService) : BaseHandler<Command>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var workspace = await dbContext.Workspaces.FindAsync([request.Id], cancellationToken);
+                var workspace = await dbContext.Workspaces.Include(m => m.Directory).SingleOrDefaultAsync(m => m.Id == request.Id, cancellationToken);
 
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
@@ -49,6 +55,30 @@ namespace Caster.Api.Features.Workspaces
 
                     dbContext.Workspaces.Remove(workspace);
                     await dbContext.SaveChangesAsync(cancellationToken);
+                    var directoryMetrics = await dbContext.Directories.Select(d => new
+                    {
+                        Directory = d.Name,
+                        DirectoryId = d.Id,
+                        Project = d.Project.Name,
+                        ProjectId = d.ProjectId,
+                        Count = d.Workspaces.Count
+                    }).SingleOrDefaultAsync(m => m.DirectoryId == workspace.DirectoryId);
+                    telemetryService.Workspaces.Record(directoryMetrics.Count,
+                        new KeyValuePair<string, object>("project", directoryMetrics.Project),
+                        new KeyValuePair<string, object>("project_id", directoryMetrics.ProjectId),
+                        new KeyValuePair<string, object>("directory", directoryMetrics.Directory),
+                        new KeyValuePair<string, object>("directory_id", directoryMetrics.DirectoryId)
+                    );
+                    var projectMetrics = await dbContext.Projects.Select(p => new
+                    {
+                        Project = p.Name,
+                        ProjectId = p.Id,
+                        Count = p.Directories.Select(d => d.Workspaces.Count).Sum()
+                    }).SingleOrDefaultAsync(m => m.ProjectId == workspace.Directory.ProjectId);
+                    telemetryService.Workspaces.Record(projectMetrics.Count,
+                        new KeyValuePair<string, object>("project", projectMetrics.Project),
+                        new KeyValuePair<string, object>("project_id", projectMetrics.ProjectId)
+                    );
                 }
             }
         }

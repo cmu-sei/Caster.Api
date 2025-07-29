@@ -251,7 +251,9 @@ namespace Caster.Api
                         (
                             TelemetryService.CasterMeterName
                         )
-                        .AddPrometheusExporter();
+                        .AddPrometheusExporter()
+                        .AddRuntimeInstrumentation()
+                        .AddProcessInstrumentation();
                     if (_telemetryOptions.AddAspNetCoreInstrumentation)
                     {
                         builder.AddAspNetCoreInstrumentation();
