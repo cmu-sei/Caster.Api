@@ -19,6 +19,7 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services;
 
 namespace Caster.Api.Features.Projects
 {
@@ -30,7 +31,10 @@ namespace Caster.Api.Features.Projects
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            TelemetryService telemetryService,
+            CasterContext dbContext) : BaseHandler<Command>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);

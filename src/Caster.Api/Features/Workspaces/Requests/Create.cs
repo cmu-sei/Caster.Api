@@ -17,6 +17,10 @@ using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Features.Shared;
 using Caster.Api.Features.Shared.Validators;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+using System.Collections.Generic;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -83,7 +87,8 @@ namespace Caster.Api.Features.Workspaces
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
             CasterContext dbContext,
-            TerraformOptions terraformOptions) : BaseHandler<Command, Workspace>
+            TerraformOptions terraformOptions,
+            TelemetryService telemetryService) : BaseHandler<Command, Workspace>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);

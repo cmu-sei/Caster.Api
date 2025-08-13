@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +14,7 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
+using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Features.Workspaces
 {
@@ -24,14 +26,18 @@ namespace Caster.Api.Features.Workspaces
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, ILockService lockService) : BaseHandler<Command>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            CasterContext dbContext,
+            TelemetryService telemetryService,
+            ILockService lockService) : BaseHandler<Command>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var workspace = await dbContext.Workspaces.FindAsync([request.Id], cancellationToken);
+                var workspace = await dbContext.Workspaces.Include(m => m.Directory).SingleOrDefaultAsync(m => m.Id == request.Id, cancellationToken);
 
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
