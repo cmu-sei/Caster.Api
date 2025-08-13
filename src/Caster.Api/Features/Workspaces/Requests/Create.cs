@@ -100,30 +100,6 @@ namespace Caster.Api.Features.Workspaces
 
                 dbContext.Workspaces.Add(workspace);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                var directoryMetrics = await dbContext.Directories.Select(d => new
-                {
-                    Directory = d.Name,
-                    DirectoryId = d.Id,
-                    Project = d.Project.Name,
-                    ProjectId = d.ProjectId,
-                    Count = d.Workspaces.Count
-                }).SingleOrDefaultAsync(m => m.DirectoryId == workspace.DirectoryId);
-                telemetryService.Workspaces.Record(directoryMetrics.Count,
-                    new KeyValuePair<string, object>("project", directoryMetrics.Project),
-                    new KeyValuePair<string, object>("project_id", directoryMetrics.ProjectId),
-                    new KeyValuePair<string, object>("directory", directoryMetrics.Directory),
-                    new KeyValuePair<string, object>("directory_id", directoryMetrics.DirectoryId)
-                );
-                var projectMetrics = await dbContext.Projects.Select(p => new
-                {
-                    Project = p.Name,
-                    ProjectId = p.Id,
-                    Count = p.Directories.Select(d => d.Workspaces.Count).Sum()
-                }).SingleOrDefaultAsync(m => m.ProjectId == workspace.Directory.ProjectId);
-                telemetryService.Workspaces.Record(projectMetrics.Count,
-                    new KeyValuePair<string, object>("project", projectMetrics.Project),
-                    new KeyValuePair<string, object>("project_id", projectMetrics.ProjectId)
-                );
                 return mapper.Map<Workspace>(workspace);
             }
 

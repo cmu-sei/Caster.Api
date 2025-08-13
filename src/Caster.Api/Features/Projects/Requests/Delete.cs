@@ -48,8 +48,6 @@ namespace Caster.Api.Features.Projects
 
                 dbContext.Projects.Remove(project);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                var count = await dbContext.Projects.LongCountAsync(cancellationToken);
-                telemetryService.Projects.Record((int)count);
             }
         }
     }

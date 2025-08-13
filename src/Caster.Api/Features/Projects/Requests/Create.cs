@@ -54,8 +54,6 @@ namespace Caster.Api.Features.Projects
                 dbContext.ProjectMemberships.Add(projectMembership);
 
                 await dbContext.SaveChangesAsync(cancellationToken);
-                var count = await dbContext.Projects.LongCountAsync(cancellationToken);
-                telemetryService.Projects.Record((int)count);
                 return mapper.Map<Project>(project);
             }
         }
