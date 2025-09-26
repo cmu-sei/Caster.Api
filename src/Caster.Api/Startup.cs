@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using AutoMapper.Internal;
 using Caster.Api.Data;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Extensions;
 using Caster.Api.Features.Files;
 using Caster.Api.Features.Shared;
@@ -36,6 +37,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -212,8 +214,8 @@ namespace Caster.Api
             services.AddAuthorizationPolicy(_authOptions);
 
             services.AddApiClients(_clientOptions, _terraformOptions, _loggerFactory);
+            services.AddTerraformServices(_terraformOptions);
 
-            services.AddScoped<ITerraformService, TerraformService>();
             services.AddScoped<IClaimsTransformation, AuthorizationClaimsTransformer>();
             services.AddScoped<IUserClaimsService, UserClaimsService>();
             services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
@@ -224,19 +226,26 @@ namespace Caster.Api
             services.AddScoped<IValidationService, ValidationService>();
             services.AddScoped<ICasterAuthorizationService, AuthorizationService>();
 
+            services.AddSingleton<IRegexService, RegexService>();
             services.AddSingleton<Domain.Services.IAuthenticationService, Domain.Services.AuthenticationService>();
             services.AddSingleton<ILockService, LockService>();
             services.AddSingleton<IUserIdProvider, SubUserIdProvider>();
             services.AddSingleton<IOutputService, OutputService>();
 
             services.AddSingleton<IFileVersionScrubService, FileVersionScrubService>();
-            services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(x => x.GetService<IFileVersionScrubService>());
+            services.AddSingleton<IHostedService>(x => x.GetService<IFileVersionScrubService>());
 
             services.AddSingleton<IPlayerSyncService, PlayerSyncService>();
-            services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(x => x.GetService<IPlayerSyncService>());
+            services.AddSingleton<IHostedService>(x => x.GetService<IPlayerSyncService>());
+
+            // Order matters - ImageTagService must get registered before RunQueueService
+            // or image tag validation may fail for resumed runs
+            services.AddSingleton<ImageTagService>();
+            services.AddSingleton<IImageTagService>(x => x.GetService<ImageTagService>());
+            services.AddSingleton<IHostedService>(x => x.GetService<ImageTagService>());
 
             services.AddSingleton<IRunQueueService, RunQueueService>();
-            services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(x => x.GetService<IRunQueueService>());
+            services.AddSingleton<IHostedService>(x => x.GetService<IRunQueueService>());
 
             services.AddScoped<IGetFileQuery, GetFileQuery>();
             services.AddTransient<EventInterceptor>();

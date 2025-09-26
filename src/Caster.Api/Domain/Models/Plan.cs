@@ -28,8 +28,11 @@ namespace Caster.Api.Domain.Models
         Queued = 0,
         Failed = 1,
         Rejected = 2,
+        PrePlanning = 6,
         Planning = 3,
-        Planned = 4
+        PostPlanning = 7,
+        Planned = 4,
+        Initializing = 5,
     }
 }
 

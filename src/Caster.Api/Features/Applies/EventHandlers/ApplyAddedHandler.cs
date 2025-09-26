@@ -65,10 +65,13 @@ namespace Caster.Api.Features.Applies.EventHandlers
             {
                 _output = _outputService.GetOrAddOutput(_apply.Id);
 
-                // Update status
-                _apply.Status = Domain.Models.ApplyStatus.Applying;
-                _apply.Run.Status = Domain.Models.RunStatus.Applying;
-                await this.UpdateApply();
+                if (_apply.Status == ApplyStatus.Queued)
+                {
+                    // Update status
+                    _apply.Status = Domain.Models.ApplyStatus.Applying;
+                    _apply.Run.Status = Domain.Models.RunStatus.Applying;
+                    await this.UpdateApply();
+                }
 
                 workingDir = _apply.Run.Workspace.GetPath(_options.RootWorkingDirectory);
 
@@ -88,7 +91,13 @@ namespace Caster.Api.Features.Applies.EventHandlers
 
             try
             {
-                var result = _terraformService.Apply(_apply.Run.Workspace, OutputHandler);
+                var result = await _terraformService.Apply(_apply.Run.Workspace, _apply.Status == ApplyStatus.PostApply, OutputHandler, async (string output) =>
+                {
+                    _apply.Status = ApplyStatus.PostApply;
+                    _apply.Output = output;
+                    await _db.SaveChangesAsync();
+                });
+
                 bool isError = result.IsError;
 
                 lock (_apply)
@@ -97,7 +106,7 @@ namespace Caster.Api.Features.Applies.EventHandlers
                     _timer.Stop();
                 }
 
-                _apply.Output = _output.Content;
+                _apply.Output = result.Output;
                 _apply.Status = !isError ? ApplyStatus.Applied : ApplyStatus.Failed;
                 _apply.Run.Status = !isError ? RunStatus.Applied : RunStatus.Failed;
 
@@ -170,11 +179,11 @@ namespace Caster.Api.Features.Applies.EventHandlers
             await _mediator.Publish(new RunUpdated(_apply.RunId));
         }
 
-        private void OutputHandler(object sender, DataReceivedEventArgs e)
+        private void OutputHandler(string data)
         {
-            if (e.Data != null && _output != null)
+            if (data is not null && _output is not null)
             {
-                _output.AddLine(e.Data);
+                _output.AddLine(data);
             }
         }
 
