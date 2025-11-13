@@ -1,7 +1,7 @@
 # Adapted from https://github.com/dotnet/dotnet-docker/blob/main/samples/aspnetapp/Dockerfile.chiseled
 
 # Build stage
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /source
 
@@ -17,7 +17,7 @@ WORKDIR /source/src/Caster.Api
 RUN dotnet publish -a $TARGETARCH --no-restore -o /app
 
 # Production Stage
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS prod
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS prod
 ARG commit
 ENV COMMIT=$commit
 ENV DOTNET_HOSTBUILDER__RELOADCONFIGCHANGE=false
