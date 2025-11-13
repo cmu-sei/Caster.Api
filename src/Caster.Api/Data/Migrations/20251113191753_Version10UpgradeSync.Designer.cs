@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Caster.Api.Data.Migrations
 {
     [DbContext(typeof(CasterContext))]
-    [Migration("20251113182834_Version10UpgradeSync")]
+    [Migration("20251113191753_Version10UpgradeSync")]
     partial class Version10UpgradeSync
     {
         /// <inheritdoc />
@@ -20,7 +20,7 @@ namespace Caster.Api.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.8")
+                .HasAnnotation("ProductVersion", "10.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "uuid-ossp");
@@ -628,7 +628,7 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
-                    b.Property<int[]>("Permissions")
+                    b.PrimitiveCollection<int[]>("Permissions")
                         .HasColumnType("integer[]")
                         .HasColumnName("permissions");
 
@@ -755,7 +755,7 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
-                    b.Property<int[]>("Permissions")
+                    b.PrimitiveCollection<int[]>("Permissions")
                         .HasColumnType("integer[]")
                         .HasColumnName("permissions");
 

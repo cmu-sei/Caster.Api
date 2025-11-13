@@ -17,7 +17,7 @@ namespace Caster.Api.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.8")
+                .HasAnnotation("ProductVersion", "10.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "uuid-ossp");
@@ -625,7 +625,7 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
-                    b.Property<int[]>("Permissions")
+                    b.PrimitiveCollection<int[]>("Permissions")
                         .HasColumnType("integer[]")
                         .HasColumnName("permissions");
 
@@ -752,7 +752,7 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
-                    b.Property<int[]>("Permissions")
+                    b.PrimitiveCollection<int[]>("Permissions")
                         .HasColumnType("integer[]")
                         .HasColumnName("permissions");
 

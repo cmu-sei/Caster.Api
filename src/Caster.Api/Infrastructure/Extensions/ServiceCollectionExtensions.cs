@@ -18,11 +18,11 @@ using Caster.Api.Infrastructure.Swashbuckle.SchemaFilters;
 using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.OpenApi.Models;
 using Polly;
 using Polly.Extensions.Http;
 using Player.Vm.Api;
 using Caster.Api.Infrastructure.Swashbuckle.DocumentFilters;
+using Microsoft.OpenApi;
 
 namespace Caster.Api.Infrastructure.Extensions
 {
@@ -149,29 +149,38 @@ namespace Caster.Api.Infrastructure.Extensions
                     }
                 });
 
-
-                c.AddSecurityRequirement(new OpenApiSecurityRequirement()
+                c.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
                 {
-                    {
-                        new OpenApiSecurityScheme
-                        {
-                            Reference = new OpenApiReference
-                            {
-                                Type = ReferenceType.SecurityScheme,
-                                Id = "oauth2"
-                            },
-                            Scheme = "oauth2"
-                        },
-                        new[] {authOptions.AuthorizationScope}
-                    }
+                    { new OpenApiSecuritySchemeReference("oauth2"), [authOptions.AuthorizationScope] }
                 });
 
                 c.EnableAnnotations();
 
                 c.IncludeXmlComments(commentsFilePath);
-                c.MapType<Optional<Guid?>>(() => new OpenApiSchema { Type = "string", Format = "uuid" });
-                c.MapType<Optional<int?>>(() => new OpenApiSchema { Type = "integer", Format = "int32", Nullable = true });
-                c.MapType<JsonElement?>(() => new OpenApiSchema { Type = "object", Nullable = true });
+                c.MapType<Optional<Guid?>>(() => new OpenApiSchema
+                {
+                    OneOf = new List<IOpenApiSchema>
+                    {
+                        new OpenApiSchema { Type = JsonSchemaType.String, Format = "uuid" },
+                        new OpenApiSchema { Type = JsonSchemaType.Null }
+                    }
+                });
+                c.MapType<Optional<int?>>(() => new OpenApiSchema
+                {
+                    OneOf = new List<IOpenApiSchema>
+                    {
+                        new OpenApiSchema { Type = JsonSchemaType.Integer, Format = "int32" },
+                        new OpenApiSchema { Type = JsonSchemaType.Null }
+                    }
+                });
+                c.MapType<JsonElement?>(() => new OpenApiSchema
+                {
+                    OneOf = new List<IOpenApiSchema>
+                    {
+                        new OpenApiSchema { Type = JsonSchemaType.Object },
+                        new OpenApiSchema { Type = JsonSchemaType.Null }
+                    }
+                });
             });
         }
 
