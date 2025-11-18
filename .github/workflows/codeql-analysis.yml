@@ -56,7 +56,7 @@ jobs:
           # queries: ./path/to/local/query, your-org/your-repo/queries@main
 
       - run: |
-          cd Blueprint.Api
+          cd Alloy.Api
           dotnet build -c Release
 
       - name: Perform CodeQL Analysis
