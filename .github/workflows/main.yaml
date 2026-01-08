@@ -3,9 +3,10 @@ name: Build and Publish Image
 on:
   pull_request:
     branches:
-      - development
+      - main
   push:
-    branches: [development, staging]
+    branches:
+      - main
   release:
     types: ["published"]
 
