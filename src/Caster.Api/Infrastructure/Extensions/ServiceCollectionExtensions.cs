@@ -9,7 +9,6 @@ using System.Reflection;
 using System.Runtime.Serialization;
 using System.Text.Json;
 using System.Threading;
-using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.HttpHandlers;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Swashbuckle.OperationFilters;
@@ -23,6 +22,9 @@ using Polly;
 using Polly.Extensions.Http;
 using Player.Vm.Api;
 using Caster.Api.Infrastructure.Swashbuckle.DocumentFilters;
+using k8s;
+using Caster.Api.Domain.Services.Terraform;
+using Caster.Api.Domain.Services;
 
 namespace Caster.Api.Infrastructure.Extensions
 {
@@ -182,5 +184,30 @@ namespace Caster.Api.Infrastructure.Extensions
         }
 
         #endregion
+
+        public static void AddTerraformServices(this IServiceCollection services, TerraformOptions terraformOptions)
+        {
+            if (terraformOptions.KubernetesJobs.Enabled)
+            {
+                services.AddScoped<ITerraformService, KubernetesTerraformService>();
+                KubernetesClientConfiguration config;
+
+                if (KubernetesClientConfiguration.IsInCluster())
+                {
+                    config = KubernetesClientConfiguration.InClusterConfig();
+                }
+                else
+                {
+                    config = KubernetesClientConfiguration.BuildConfigFromConfigFile(currentContext: string.IsNullOrEmpty(terraformOptions.KubernetesJobs.Context) ? null : terraformOptions.KubernetesJobs.Context);
+                }
+
+                var k8sClient = new Kubernetes(config);
+                services.AddSingleton<IKubernetes>(k8sClient);
+            }
+            else
+            {
+                services.AddScoped<ITerraformService, ProcessTerraformService>();
+            }
+        }
     }
 }

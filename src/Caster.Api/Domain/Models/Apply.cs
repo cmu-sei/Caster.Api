@@ -26,6 +26,7 @@ namespace Caster.Api.Domain.Models
         Queued = 0,
         Failed = 1,
         Applying = 2,
+        PostApply = 6,
         Applied = 3,
 
         [EnumMember(Value = "Applied - State Error")]

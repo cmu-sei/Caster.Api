@@ -42,6 +42,7 @@ public partial class CasterContext : DbContext
     public DbSet<ProjectMembership> ProjectMemberships { get; set; }
     public DbSet<Group> Groups { get; set; }
     public DbSet<GroupMembership> GroupMemberships { get; set; }
+    public DbSet<ContainerImage> ContainerImages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

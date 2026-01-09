@@ -69,6 +69,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
                     .ThenInclude(w => w.Directory)
                 .Include(r => r.Workspace)
                     .ThenInclude(w => w.Host)
+                .Include(r => r.Plan)
                 .SingleOrDefaultAsync(x => x.Id == notification.RunId);
 
             try
@@ -103,58 +104,94 @@ namespace Caster.Api.Features.Runs.EventHandlers
             _plan = await CreatePlan(run);
 
             var workspace = run.Workspace;
-            var files = await _db.GetWorkspaceFiles(workspace, workspace.Directory);
             var workingDir = workspace.GetPath(_options.RootWorkingDirectory);
 
-            if (dynamicHost)
+            if (_plan.Status == PlanStatus.Queued)
             {
-                // check if host already selected for this workspace
-                if (workspace.HostId.HasValue)
+                var files = await _db.GetWorkspaceFiles(workspace, workspace.Directory);
+
+                if (dynamicHost)
                 {
-                    host = workspace.Host;
-                }
-                else
-                {
-                    // select a host. multiply by 1.0 to cast as double
-                    host = await _db.Hosts
-                        .Where(h => h.ProjectId == projectId && h.Enabled && !h.Development)
-                        .OrderBy(h => (h.Machines.Count * 1.0 / h.MaximumMachines * 1.0) * 100.0).FirstOrDefaultAsync();
+                    // check if host already selected for this workspace
+                    if (workspace.HostId.HasValue)
+                    {
+                        host = workspace.Host;
+                    }
+                    else
+                    {
+                        // select a host. multiply by 1.0 to cast as double
+                        host = await _db.Hosts
+                            .Where(h => h.ProjectId == projectId && h.Enabled && !h.Development)
+                            .OrderBy(h => (h.Machines.Count * 1.0 / h.MaximumMachines * 1.0) * 100.0).FirstOrDefaultAsync();
+                    }
+
+                    if (host == null)
+                    {
+                        _output.AddLine("No Host could be found to use for this Plan");
+                        return true;
+                    }
+                    else
+                    {
+                        _output.AddLine($"Attempting to use Host {host.Name} for this Plan");
+                    }
+
+                    files.Add(host.GetHostFile());
                 }
 
-                if (host == null)
-                {
-                    _output.AddLine("No Host could be found to use for this Plan");
-                    return true;
-                }
-                else
-                {
-                    _output.AddLine($"Attempting to use Host {host.Name} for this Plan");
-                }
+                await workspace.PrepareFileSystem(workingDir, files);
 
-                files.Add(host.GetHostFile());
+                _plan.Status = PlanStatus.Initializing;
+                await _db.SaveChangesAsync();
             }
-
-            await workspace.PrepareFileSystem(workingDir, files);
 
             _timer = new System.Timers.Timer(_options.OutputSaveInterval);
             _timer.Elapsed += OnTimedEvent;
             _timer.Start();
 
             bool isError = false;
+            string initOutput = string.Empty;
 
-            // Init
-            var initResult = _terraformService.InitializeWorkspace(workspace, OutputHandler);
-            isError = initResult.IsError;
+            if (_plan.Status == PlanStatus.Initializing)
+            {
+                // Init
+                var initResult = await _terraformService.InitializeWorkspace(workspace, OutputHandler);
+                initOutput = initResult.Output;
+                isError = initResult.IsError;
+
+                if (!isError)
+                {
+                    _plan.Status = PlanStatus.PrePlanning;
+                    _plan.Output = initOutput;
+                    await _db.SaveChangesAsync();
+                }
+            }
+            else
+            {
+                initOutput = _plan.Output;
+            }
 
             if (!isError)
             {
-                if (run.IsDestroy && (run.Targets == null || !run.Targets.Any()) && initResult.Output.Contains(AZURERM))
+                if (_plan.Status == PlanStatus.PrePlanning)
                 {
-                    await HandleAzureDestroy(workspace, workingDir);
+                    if (run.IsDestroy && (run.Targets == null || !run.Targets.Any()) && initOutput.Contains(AZURERM))
+                    {
+                        await HandleAzureDestroy(workspace, workingDir);
+                    }
+
+                    _plan.Status = PlanStatus.Planning;
+                    _plan.Output = _output.Content;
+                    await _db.SaveChangesAsync();
                 }
 
                 // Plan
-                var planResult = _terraformService.Plan(workspace, run.IsDestroy, run.Targets, run.ReplaceAddresses, OutputHandler);
+                var planResult = await _terraformService.Plan(workspace, run.IsDestroy, run.Targets, run.ReplaceAddresses, _plan.Status == PlanStatus.PostPlanning, OutputHandler, async (string output) =>
+                {
+                    _plan.Status = PlanStatus.PostPlanning;
+                    _plan.Output = output;
+                    await _db.SaveChangesAsync();
+                });
+
                 isError = planResult.IsError;
             }
 
@@ -166,7 +203,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
 
             if (dynamicHost)
             {
-                var result = _terraformService.Show(workspace);
+                var result = await _terraformService.Show(workspace);
                 isError = result.IsError;
 
                 if (!isError)
@@ -220,29 +257,38 @@ namespace Caster.Api.Features.Runs.EventHandlers
 
         private async Task<Domain.Models.Plan> CreatePlan(Domain.Models.Run run)
         {
-            var plan = new Domain.Models.Plan
+            Plan plan;
+
+            if (run.Plan != null)
             {
-                RunId = run.Id,
-                Status = Domain.Models.PlanStatus.Planning
-            };
+                plan = run.Plan;
+            }
+            else
+            {
+                plan = new Domain.Models.Plan
+                {
+                    RunId = run.Id,
+                    Status = Domain.Models.PlanStatus.Queued
+                };
 
-            run.Plan = plan;
-            run.Status = Domain.Models.RunStatus.Planning;
+                run.Plan = plan;
+                run.Status = Domain.Models.RunStatus.Planning;
 
-            await _db.AddAsync(plan);
-            await _db.SaveChangesAsync();
+                _db.Add(plan);
+                await _db.SaveChangesAsync();
+                await _mediator.Publish(new RunUpdated(run.Id));
+            }
 
             _output = _outputService.GetOrAddOutput(plan.Id);
-            await _mediator.Publish(new RunUpdated(run.Id));
 
             return plan;
         }
 
-        private void OutputHandler(object sender, DataReceivedEventArgs e)
+        private void OutputHandler(string data)
         {
-            if (e.Data != null && _output != null)
+            if (data is not null && _output is not null)
             {
-                _output.AddLine(e.Data);
+                _output.AddLine(data);
             }
         }
 
@@ -329,7 +375,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
                             }
                         }
 
-                        _terraformService.RemoveResources(workspace, targetAddresses.ToArray(), workspace.GetStatePath(workingDirectory, backupState: false));
+                        await _terraformService.RemoveResourcesAsync(workspace, targetAddresses.ToArray());
 
                         _output.AddLine("");
                         _output.AddLine($"Azure workspace errors detected. Removed the following resources from state to attempt to recover:");
