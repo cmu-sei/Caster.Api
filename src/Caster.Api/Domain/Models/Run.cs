@@ -66,14 +66,16 @@ namespace Caster.Api.Domain.Models
 
     public static class RunHelpers
     {
-        public static RunStatus[] GetActiveStatuses()
+        private static readonly RunStatus[] ActiveStatuses =
+        [
+            RunStatus.Queued,
+            RunStatus.Planning,
+            RunStatus.Applying,
+        ];
+
+        public static IReadOnlyList<RunStatus> GetActiveStatuses()
         {
-            return new RunStatus[]
-            {
-                RunStatus.Queued,
-                RunStatus.Planning,
-                RunStatus.Applying,
-            };
+            return ActiveStatuses;
         }
     }
 

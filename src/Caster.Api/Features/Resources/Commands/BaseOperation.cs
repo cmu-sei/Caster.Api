@@ -62,14 +62,7 @@ namespace Caster.Api.Features.Resources
             var files = await dbContext.GetWorkspaceFiles(workspace, workspace.Directory);
             await workspace.PrepareFileSystem(workingDir, files);
 
-            var initResult = terraformService.InitializeWorkspace(workspace, null);
-
-            var statePath = string.Empty;
-
-            if (!workspace.IsDefault)
-            {
-                statePath = workspace.GetStatePath(workingDir, backupState: false);
-            }
+            var initResult = await terraformService.InitializeWorkspace(workspace, null);
 
             if (!initResult.IsError)
             {
@@ -86,10 +79,10 @@ namespace Caster.Api.Features.Resources
                             switch (operation)
                             {
                                 case ResourceOperation.taint:
-                                    taintResult = terraformService.Taint(workspace, address, statePath);
+                                    taintResult = await terraformService.Taint(workspace, address);
                                     break;
                                 case ResourceOperation.untaint:
-                                    taintResult = terraformService.Untaint(workspace, address, statePath);
+                                    taintResult = await terraformService.UntaintAsync(workspace, address);
                                     break;
                             }
 
@@ -100,16 +93,16 @@ namespace Caster.Api.Features.Resources
                         }
                         break;
                     case ResourceOperation.refresh:
-                        result = terraformService.Refresh(workspace, statePath);
+                        result = await terraformService.RefreshAsync(workspace);
                         break;
                     case ResourceOperation.remove:
-                        result = terraformService.RemoveResources(workspace, addresses, statePath);
+                        result = await terraformService.RemoveResourcesAsync(workspace, addresses);
                         break;
                     case ResourceOperation.import:
-                        result = terraformService.Import(workspace, addresses[0], args, statePath);
+                        result = await terraformService.Import(workspace, addresses[0], args);
                         break;
                     case ResourceOperation.output:
-                        result = terraformService.GetOutputs(workspace, statePath);
+                        result = await terraformService.GetOutputsAsync(workspace);
                         outputs = JsonDocument.Parse(result.Output).RootElement;
                         break;
                 }

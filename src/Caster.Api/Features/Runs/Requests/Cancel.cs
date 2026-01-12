@@ -57,7 +57,7 @@ namespace Caster.Api.Features.Runs
 
                 ValidateRun(run);
 
-                terraformService.CancelRun(run.Workspace, request.Force);
+                await terraformService.CancelRun(run.Workspace, request.Force);
 
                 return await dbContext.Runs
                     .ProjectTo<Run>(mapper.ConfigurationProvider)
