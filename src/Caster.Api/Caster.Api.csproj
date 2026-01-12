@@ -5,6 +5,7 @@
     <noWarn>1591</noWarn>
     <ProjectGuid>{CE177C12-4188-4D93-ABC9-1464D6E5AE81}</ProjectGuid>
     <LangVersion>latest</LangVersion>
+    <UserSecretsId>cmu-sei-crucible-caster-api</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
