@@ -242,7 +242,11 @@ public class KubernetesTerraformService : BaseTerraformService
         }
         else
         {
-            var options = new V1DeleteOptions(propagationPolicy: "Foreground", gracePeriodSeconds: long.MaxValue);
+            var options = new V1DeleteOptions
+            {
+                PropagationPolicy = "Foreground",
+                GracePeriodSeconds = long.MaxValue
+            };
 
             if (force)
             {
@@ -503,7 +507,11 @@ public class KubernetesTerraformService : BaseTerraformService
                 await _k8sClient.BatchV1.DeleteNamespacedJobAsync(
                     jobName,
                     jobNamespace,
-                    new V1DeleteOptions(propagationPolicy: "Foreground"));
+                        new V1DeleteOptions
+                        {
+                            PropagationPolicy = "Foreground"
+                        }
+                    );
                 _logger.LogDebug("Job delete request sent");
             }
             catch (Exception ex)
@@ -661,7 +669,11 @@ public class KubernetesTerraformService : BaseTerraformService
     private new V1EnvVar[] GetEnvironmentVariables()
     {
         return base.GetEnvironmentVariables()
-            .Select(x => new V1EnvVar(x.Key, x.Value))
+            .Select(x => new V1EnvVar
+            {
+                Name = x.Key,
+                Value = x.Value
+            })
             .ToArray();
     }
 
