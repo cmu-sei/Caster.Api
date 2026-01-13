@@ -3,8 +3,7 @@
 
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.OpenApi.Models;
-using Swashbuckle.AspNetCore.Swagger;
+using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Caster.Api.Infrastructure.Swashbuckle.OperationFilters

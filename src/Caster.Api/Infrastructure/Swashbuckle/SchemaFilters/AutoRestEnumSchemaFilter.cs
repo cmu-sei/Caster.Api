@@ -1,26 +1,26 @@
 // Copyright 2021 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
-using Microsoft.OpenApi.Any;
-using Microsoft.OpenApi.Models;
+
+using System.Text.Json.Nodes;
+using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Caster.Api.Infrastructure.Swashbuckle.SchemaFilters
 {
     public class AutoRestEnumSchemaFilter : ISchemaFilter
     {
-        public void Apply(OpenApiSchema schema, SchemaFilterContext context)
+        public void Apply(IOpenApiSchema schema, SchemaFilterContext context)
         {
             var type = context.Type;
             if (type.IsEnum)
             {
-                schema.Extensions.Add(
-                    "x-ms-enum",
-                    new OpenApiObject
-                    {
-                        ["name"] = new OpenApiString(type.Name),
-                        ["modelAsString"] = new OpenApiBoolean(true)
-                    }
-                );
+                var extensionData = new JsonObject
+                {
+                    ["name"] = JsonValue.Create(type.Name),
+                    ["modelAsString"] = JsonValue.Create(true)
+                };
+
+                schema.Extensions.Add("x-ms-enum", new JsonNodeExtension(extensionData));
             };
         }
     }

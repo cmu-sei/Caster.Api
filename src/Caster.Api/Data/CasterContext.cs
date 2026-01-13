@@ -2,9 +2,14 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Extensions;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Caster.Api.Data;
 
@@ -12,6 +17,9 @@ public partial class CasterContext : DbContext
 {
     // Needed for EventInterceptor
     public IServiceProvider ServiceProvider;
+
+    // Entity Events collected by EventTransactionInterceptor and published in SaveChanges
+    public List<INotification> Events { get; } = [];
 
     public CasterContext(DbContextOptions options) : base(options)
     {
@@ -53,6 +61,36 @@ public partial class CasterContext : DbContext
         {
             modelBuilder.AddPostgresUUIDGeneration();
             modelBuilder.UsePostgresCasing();
+        }
+    }
+
+    public override int SaveChanges()
+    {
+        var result = base.SaveChanges();
+        PublishEvents().Wait();
+        return result;
+    }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var result = await base.SaveChangesAsync(cancellationToken);
+        await PublishEvents(cancellationToken);
+        return result;
+    }
+
+    private async Task PublishEvents(CancellationToken cancellationToken = default)
+    {
+        // Publish deferred events after transaction is committed and cleared
+        if (Events.Count > 0 && ServiceProvider is not null)
+        {
+            var mediator = ServiceProvider.GetRequiredService<IMediator>();
+            var eventsToPublish = Events.ToArray();
+            Events.Clear();
+
+            foreach (var evt in eventsToPublish)
+            {
+                await mediator.Publish(evt, cancellationToken);
+            }
         }
     }
 }

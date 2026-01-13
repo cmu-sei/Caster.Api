@@ -8,6 +8,7 @@ using System;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -16,9 +17,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Caster.Api.Data.Migrations
 {
     [DbContext(typeof(CasterContext))]
-    partial class CasterContextModelSnapshot : ModelSnapshot
+    [Migration("20251113191753_Version10UpgradeSync")]
+    partial class Version10UpgradeSync
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -54,27 +57,6 @@ namespace Caster.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("applies");
-                });
-
-            modelBuilder.Entity("Caster.Api.Domain.Models.ContainerImage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("uuid_generate_v4()");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text")
-                        .HasColumnName("name");
-
-                    b.Property<string[]>("Tags")
-                        .HasColumnType("text[]")
-                        .HasColumnName("tags");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("container_images");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Design", b =>
