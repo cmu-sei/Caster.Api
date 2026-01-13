@@ -36,23 +36,23 @@ public class EventInterceptor : DbTransactionInterceptor, ISaveChangesIntercepto
 
     public override async Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData eventData, CancellationToken cancellationToken = default)
     {
-        await TransactionCommittedInternal(eventData);
+        TransactionCommittedInternal(eventData);
         await base.TransactionCommittedAsync(transaction, eventData, cancellationToken);
     }
 
     public override void TransactionCommitted(DbTransaction transaction, TransactionEndEventData eventData)
     {
-        TransactionCommittedInternal(eventData).Wait();
+        TransactionCommittedInternal(eventData);
         base.TransactionCommitted(transaction, eventData);
     }
 
-    private async Task TransactionCommittedInternal(TransactionEndEventData eventData)
+    private void TransactionCommittedInternal(TransactionEndEventData eventData)
     {
         try
         {
             // Store events in the context to be published after SaveChangesAsync completes
             // This avoids the Npgsql 10+ "Transaction is already completed" error
-            await SaveEvents(eventData.Context);
+            SaveEvents(eventData.Context);
         }
         catch (Exception ex)
         {
@@ -62,30 +62,23 @@ public class EventInterceptor : DbTransactionInterceptor, ISaveChangesIntercepto
 
     public int SavedChanges(SaveChangesCompletedEventData eventData, int result)
     {
-        SavedChangesInternal(eventData, false).Wait();
+        SavedChangesInternal(eventData);
         return result;
     }
 
-    public async ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
+    public ValueTask<int> SavedChangesAsync(SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
     {
-        await SavedChangesInternal(eventData, true);
-        return result;
+        SavedChangesInternal(eventData);
+        return new(result);
     }
 
-    private async Task SavedChangesInternal(SaveChangesCompletedEventData eventData, bool async)
+    private void SavedChangesInternal(SaveChangesCompletedEventData eventData)
     {
         try
         {
             if (eventData.Context.Database.CurrentTransaction == null)
             {
-                if (async)
-                {
-                    await SaveEvents(eventData.Context);
-                }
-                else
-                {
-                    SaveEvents(eventData.Context).Wait();
-                }
+                SaveEvents(eventData.Context);
             }
         }
         catch (Exception ex)
@@ -109,7 +102,7 @@ public class EventInterceptor : DbTransactionInterceptor, ISaveChangesIntercepto
     public ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default(CancellationToken))
     {
         SaveEntries(eventData.Context);
-        return new ValueTask<InterceptionResult<int>>(result);
+        return new(result);
     }
 
     /// <summary>
@@ -117,7 +110,7 @@ public class EventInterceptor : DbTransactionInterceptor, ISaveChangesIntercepto
     /// </summary>
     /// <param name="dbContext">The DbContext used for this transaction</param>
     /// <returns></returns>
-    private async Task SaveEvents(DbContext dbContext)
+    private void SaveEvents(DbContext dbContext)
     {
         try
         {
@@ -131,8 +124,6 @@ public class EventInterceptor : DbTransactionInterceptor, ISaveChangesIntercepto
         {
             _logger.LogError(ex, "Error in SaveEvents");
         }
-
-        await Task.CompletedTask;
     }
 
     private List<INotification> CreateEvents()
