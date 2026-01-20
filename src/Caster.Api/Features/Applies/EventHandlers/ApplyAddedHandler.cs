@@ -60,6 +60,7 @@ namespace Caster.Api.Features.Applies.EventHandlers
 
             string workingDir = string.Empty;
             var stateRetrieved = false;
+            var planExists = true;
 
             try
             {
@@ -91,26 +92,37 @@ namespace Caster.Api.Features.Applies.EventHandlers
 
             try
             {
-                var result = await _terraformService.Apply(_apply.Run.Workspace, _apply.Status == ApplyStatus.PostApply, OutputHandler, async (string output) =>
-                {
-                    _apply.Status = ApplyStatus.PostApply;
-                    _apply.Output = output;
-                    await _db.SaveChangesAsync();
-                });
+                planExists = _apply.Run.Workspace.PlanExists(workingDir);
 
-                bool isError = result.IsError;
-
-                lock (_apply)
+                if (!planExists)
                 {
-                    _timerComplete = true;
-                    _timer.Stop();
+                    _apply.Output = "Plan file not found. Please try to Plan again.";
+                    _apply.Status = ApplyStatus.Failed;
+                    _apply.Run.Status = RunStatus.Failed;
                 }
+                else
+                {
+                    var result = await _terraformService.Apply(_apply.Run.Workspace, _apply.Status == ApplyStatus.PostApply, OutputHandler, async (string output) =>
+                    {
+                        _apply.Status = ApplyStatus.PostApply;
+                        _apply.Output = output;
+                        await _db.SaveChangesAsync();
+                    });
 
-                _apply.Output = result.Output;
-                _apply.Status = !isError ? ApplyStatus.Applied : ApplyStatus.Failed;
-                _apply.Run.Status = !isError ? RunStatus.Applied : RunStatus.Failed;
+                    bool isError = result.IsError;
 
-                stateRetrieved = await this.RetrieveState(workingDir);
+                    lock (_apply)
+                    {
+                        _timerComplete = true;
+                        _timer.Stop();
+                    }
+
+                    _apply.Output = result.Output;
+                    _apply.Status = !isError ? ApplyStatus.Applied : ApplyStatus.Failed;
+                    _apply.Run.Status = !isError ? RunStatus.Applied : RunStatus.Failed;
+
+                    stateRetrieved = await this.RetrieveState(workingDir);
+                }
             }
             catch (Exception ex)
             {
@@ -118,7 +130,7 @@ namespace Caster.Api.Features.Applies.EventHandlers
             }
             finally
             {
-                if (!stateRetrieved)
+                if (planExists && !stateRetrieved)
                 {
                     _apply.Status = _apply.Status == ApplyStatus.Applied ? ApplyStatus.Applied_StateError : ApplyStatus.Failed_StateError;
                     _apply.Run.Status = _apply.Run.Status == RunStatus.Applied ? RunStatus.Applied_StateError : RunStatus.Failed_StateError;
