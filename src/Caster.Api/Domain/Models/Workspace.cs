@@ -263,6 +263,11 @@ namespace Caster.Api.Domain.Models
 
             return success;
         }
+
+        public bool PlanExists(string workingDir)
+        {
+            return System.IO.File.Exists(Path.Combine(workingDir, "plan"));
+        }
     }
 
     public class WorkspaceConfiguration : IEntityTypeConfiguration<Workspace>
