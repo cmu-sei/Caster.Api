@@ -54,7 +54,7 @@ These settings are defined in `appsettings.json`.
 * **PersistentVolumeClaimName**
   Name of an existing PVC mounted into each Job. This same volume must also be mounted into the Caster container (or otherwise writable by Caster).
 
-  Caster writes Terraform files to this volume before starting a Job, and the Job uses them during execution.
+  Caster writes Terraform files to this volume before starting a Job, and the Job uses them during execution. **This volume's access mode must be ReadWriteMany to support running Jobs on multiple cluster nodes.**
 
 * **VolumeMountPath**
   Path inside the Job where the volume is mounted.
