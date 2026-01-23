@@ -63,4 +63,5 @@ public class ConfigMap
 {
     public string Name { get; set; }
     public string MountPath { get; set; }
+    public string SubPath { get; set; }
 }
