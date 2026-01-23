@@ -647,7 +647,8 @@ public class KubernetesTerraformService : BaseTerraformService
             var mount = new V1VolumeMount
             {
                 Name = configMap.Name,
-                MountPath = configMap.MountPath
+                MountPath = configMap.MountPath,
+                SubPath = configMap.SubPath
             };
 
             var vol = new V1Volume
