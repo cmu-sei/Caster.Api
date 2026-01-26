@@ -72,6 +72,7 @@ public class KubernetesTerraformService : BaseTerraformService
             var securityContext = await GetSecurityContext();
             var (volumes, volumeMounts) = GetVolumes();
             var envVars = GetEnvironmentVariables();
+            var affinity = GetAffinity();
 
             var jobRequest = new V1Job
             {
@@ -109,6 +110,7 @@ public class KubernetesTerraformService : BaseTerraformService
                             ],
                             Volumes = volumes,
                             SecurityContext = securityContext,
+                            Affinity = affinity,
                             RestartPolicy = "Never"
                         }
                     },
@@ -679,4 +681,24 @@ public class KubernetesTerraformService : BaseTerraformService
     }
 
     private string GetJobName(Workspace workspace) => $"{_appName}-{workspace.Id}";
+
+    private V1Affinity GetAffinity()
+    {
+        if (string.IsNullOrWhiteSpace(_options.KubernetesJobs.AffinityYaml))
+        {
+            return null;
+        }
+
+        try
+        {
+            var affinity = KubernetesYaml.Deserialize<V1Affinity>(_options.KubernetesJobs.AffinityYaml);
+            _logger.LogDebug("Successfully loaded Affinity configuration from YAML");
+            return affinity;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to parse Affinity YAML configuration");
+            return null;
+        }
+    }
 }

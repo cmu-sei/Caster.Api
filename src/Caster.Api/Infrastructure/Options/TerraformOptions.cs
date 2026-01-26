@@ -50,6 +50,8 @@ public class KubernetesJobOptions
     public string QueryImageTagsRegex { get; set; }
 
     public ConfigMap[] ConfigMaps { get; set; } = [];
+
+    public string AffinityYaml { get; set; }
 }
 
 public class EnvironmentVariableOptions
