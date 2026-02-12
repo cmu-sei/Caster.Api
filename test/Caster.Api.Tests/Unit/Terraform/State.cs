@@ -8,6 +8,7 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Serialization;
 using Xunit;
 using File = System.IO.File;
+using Path = System.IO.Path;
 
 namespace Caster.Api.Tests.Unit
 {
@@ -165,7 +166,7 @@ namespace Caster.Api.Tests.Unit
 
         public StateFixture()
         {
-            _rawState = File.ReadAllText($"{Environment.CurrentDirectory}\\Data\\terraform.tfstate");
+            _rawState = File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "Data", "terraform.tfstate"));
             _workspace = new Workspace { State = _rawState };
             _state = _workspace.GetState();
             _resources = _state.GetResources();
