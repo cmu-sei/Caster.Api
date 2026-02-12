@@ -8,6 +8,7 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Serialization;
 using Xunit;
 using File = System.IO.File;
+using Path = System.IO.Path;
 
 namespace Caster.Api.Tests.Unit
 {
@@ -45,7 +46,7 @@ namespace Caster.Api.Tests.Unit
 
         public PlanFixture()
         {
-            _rawPlanOutput = File.ReadAllText($"{Environment.CurrentDirectory}\\Data\\plan.json");
+            _rawPlanOutput = File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "Data", "plan.json"));
             _planOutput = JsonSerializer.Deserialize<PlanOutput>(_rawPlanOutput, DefaultJsonSettings.Settings);
         }
 
