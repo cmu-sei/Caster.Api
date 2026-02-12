@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Caster.Api.Data
 {
-    public partial class CasterContext : DbContext
+    public partial class CasterContext
     {
         /// <summary>
         /// Returns an array of EntityEntry for each entity that has been Added or Modified
