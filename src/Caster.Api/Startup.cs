@@ -41,6 +41,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Crucible.Common.ServiceDefaults;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 
@@ -55,17 +56,17 @@ namespace Caster.Api
         private readonly ClientOptions _clientOptions = new ClientOptions();
         private readonly TerraformOptions _terraformOptions = new TerraformOptions();
         private readonly ILoggerFactory _loggerFactory;
+        private readonly IWebHostEnvironment _env;
         private string _pathbase;
-        private readonly TelemetryOptions _telemetryOptions = new();
         private const string _routePrefix = "api";
 
-        public Startup(IConfiguration configuration, ILoggerFactory loggerFactory)
+        public Startup(IConfiguration configuration, ILoggerFactory loggerFactory, IWebHostEnvironment env)
         {
+            _env = env;
             Configuration = configuration;
             Configuration.GetSection("Authorization").Bind(_authOptions);
             Configuration.GetSection("Client").Bind(_clientOptions);
             Configuration.GetSection("Terraform").Bind(_terraformOptions);
-            Configuration.GetSection("Telemetry").Bind(_telemetryOptions);
             _pathbase = Configuration["PathBase"] ?? "";
 
             _loggerFactory = loggerFactory;
@@ -255,46 +256,28 @@ namespace Caster.Api
                 .WithMetrics(builder =>
                 {
                     builder
-                        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("TelemetryService"))
+                        .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("caster-api"))
                         .AddMeter
                         (
                             TelemetryService.CasterMeterName
                         )
                         .AddPrometheusExporter();
-                    if (_telemetryOptions.AddRuntimeInstrumentation)
-                    {
-                        builder.AddRuntimeInstrumentation();
-                    }
-                    if (_telemetryOptions.AddProcessInstrumentation)
-                    {
-                        builder.AddProcessInstrumentation();
-                    }
-                    if (_telemetryOptions.AddAspNetCoreInstrumentation)
-                    {
-                        builder.AddAspNetCoreInstrumentation();
-                    }
-                    if (_telemetryOptions.AddHttpClientInstrumentation)
-                    {
-                        builder.AddHttpClientInstrumentation();
-                    }
-                    if (_telemetryOptions.UseMeterMicrosoftAspNetCoreHosting)
-                    {
-                        builder.AddMeter("Microsoft.AspNetCore.Hosting");
-                    }
-                    if (_telemetryOptions.UseMeterMicrosoftAspNetCoreServerKestrel)
-                    {
-                        builder.AddMeter("Microsoft.AspNetCore.Server.Kestrel");
-                    }
-                    if (_telemetryOptions.UseMeterSystemNetHttp)
-                    {
-                        builder.AddMeter("System.Net.Http");
-                    }
-                    if (_telemetryOptions.UseMeterSystemNetNameResolution)
-                    {
-                        builder.AddMeter("System.Net.NameResolution");
-                    }
                 }
             );
+
+            // Add Crucible Common Service Defaults
+            services.AddServiceDefaults(_env, Configuration, openTelemetryOptions =>
+            {
+                // Bind configuration from appsettings.json "OpenTelemetry" section
+                var telemetrySection = Configuration.GetSection("OpenTelemetry");
+                if (telemetrySection.Exists())
+                {
+                    telemetrySection.Bind(openTelemetryOptions);
+                }
+
+                // Add the custom meter
+                openTelemetryOptions.CustomMeters = openTelemetryOptions.CustomMeters.Append(TelemetryService.CasterMeterName);
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
