@@ -3,7 +3,7 @@
 
 using System.Threading;
 using System.Threading.Tasks;
-using Caster.Api.Domain.Events;
+using Crucible.Common.EntityEvents.Events;
 using MediatR;
 using Microsoft.Extensions.Caching.Memory;
 

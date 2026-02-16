@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
 using Caster.Api.Data;
-using Caster.Api.Domain.Events;
+using Crucible.Common.EntityEvents.Events;
 using Caster.Api.Features.DesignModules;
 using Caster.Api.Hubs;
 using Caster.Api.Infrastructure.Extensions;

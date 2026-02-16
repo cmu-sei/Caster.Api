@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
-using Caster.Api.Domain.Events;
+using Crucible.Common.EntityEvents.Events;
 using Caster.Api.Hubs;
 using MediatR;
 using Microsoft.AspNetCore.SignalR;

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
-using Caster.Api.Domain.Events;
+using Crucible.Common.EntityEvents.Events;
 using Caster.Api.Domain.Models;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
