@@ -17,9 +17,9 @@ using Caster.Api.Features.Shared.Services;
 using Caster.Api.Hubs;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.ClaimsTransformers;
-using Caster.Api.Infrastructure.DbInterceptors;
 using Caster.Api.Infrastructure.Exceptions.Middleware;
 using Caster.Api.Infrastructure.Extensions;
+using Crucible.Common.EntityEvents.Extensions;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Infrastructure.Mapping;
 using Caster.Api.Infrastructure.Options;
@@ -82,12 +82,8 @@ namespace Caster.Api
                     failureStatus: HealthStatus.Unhealthy,
                     tags: new[] { "live" });
 
-            services.AddPooledDbContextFactory<CasterContext>((serviceProvider, builder) =>
-                builder.AddInterceptors(serviceProvider.GetRequiredService<EventInterceptor>())
-                .UseNpgsql(Configuration.GetConnectionString("PostgreSQL")));
-
-            services.AddScoped<CasterContextFactory>();
-            services.AddScoped(sp => sp.GetRequiredService<CasterContextFactory>().CreateDbContext());
+            services.AddEventPublishingDbContextFactory<CasterContext>((serviceProvider, builder) =>
+                builder.UseNpgsql(Configuration.GetConnectionString("PostgreSQL")));
 
             services.AddHealthChecks().AddNpgSql(Configuration.GetConnectionString("PostgreSQL"), tags: new[] { "ready", "live" });
             services.AddCors(options => options.UseConfiguredCors(Configuration.GetSection("CorsPolicy")));
@@ -249,7 +245,6 @@ namespace Caster.Api
             services.AddSingleton<IHostedService>(x => x.GetService<IRunQueueService>());
 
             services.AddScoped<IGetFileQuery, GetFileQuery>();
-            services.AddTransient<EventInterceptor>();
 
             services.AddSingleton<TelemetryService>();
             var metricsBuilder = services.AddOpenTelemetry()

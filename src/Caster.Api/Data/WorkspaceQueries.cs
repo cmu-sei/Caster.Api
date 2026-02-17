@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Data
 {
-    public partial class CasterContext : DbContext
+    public partial class CasterContext
     {
         public async Task<List<File>> GetWorkspaceFiles(Workspace workspace, Directory directory)
         {

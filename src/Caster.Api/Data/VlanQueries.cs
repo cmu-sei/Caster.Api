@@ -6,14 +6,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Caster.Api.Data.Extensions;
 using Caster.Api.Domain.Models;
 using EFCore.BulkExtensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Data
 {
-    public partial class CasterContext : DbContext
+    public partial class CasterContext
     {
         public async Task<Pool> CreateVlanPool(Pool pool, int[] reservedVlanIds, bool reservedEditable, CancellationToken cancellationToken)
         {
