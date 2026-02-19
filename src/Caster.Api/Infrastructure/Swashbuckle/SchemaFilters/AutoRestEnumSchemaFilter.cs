@@ -11,6 +11,8 @@ namespace Caster.Api.Infrastructure.Swashbuckle.SchemaFilters
     {
         public void Apply(IOpenApiSchema schema, SchemaFilterContext context)
         {
+            if (schema?.Extensions == null) return;
+
             var type = context.Type;
             if (type.IsEnum)
             {

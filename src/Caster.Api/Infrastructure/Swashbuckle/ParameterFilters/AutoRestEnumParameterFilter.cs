@@ -11,6 +11,8 @@ namespace Caster.Api.Infrastructure.Swashbuckle.ParameterFilters
     {
         public void Apply(IOpenApiParameter parameter, ParameterFilterContext context)
         {
+            if (parameter?.Extensions == null) return;
+
             var type = context.ApiParameterDescription.Type;
 
             if (type != null && type.IsEnum)
