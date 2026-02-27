@@ -100,39 +100,10 @@ namespace Caster.Api.Features.Workspaces
                 var workspace = mapper.Map<Domain.Models.Workspace>(request);
                 workspace = await SetCascadedProperties(workspace, request, cancellationToken);
 
-                try
-                {
-                    dbContext.Workspaces.Add(workspace);
-                    await dbContext.SaveChangesAsync(cancellationToken);
+                dbContext.Workspaces.Add(workspace);
+                await dbContext.SaveChangesAsync(cancellationToken);
 
-
-                    return mapper.Map<Workspace>(workspace);
-                }
-                catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx)
-                {
-
-                    // Handle specific PostgreSQL errors
-                    switch (pgEx.SqlState)
-                    {
-                        case "23505": // unique_violation
-                            throw new InvalidOperationException($"A Workspace with the ID '{workspace.Id}' already exists.", ex);
-                        case "23503": // foreign_key_violation
-                            var constraintName = pgEx.ConstraintName ?? "unknown";
-                            if (constraintName.Contains("DirectoryId", StringComparison.OrdinalIgnoreCase))
-                            {
-                                throw new InvalidOperationException($"Invalid DirectoryId '{request.DirectoryId}'. The Directory does not exist.", ex);
-                            }
-                            throw new InvalidOperationException($"Foreign key constraint violated: {constraintName}. Please verify all referenced entities exist.", ex);
-                        case "23514": // check_violation
-                            throw new InvalidOperationException($"Data validation failed: {pgEx.MessageText}", ex);
-                        default:
-                            throw new InvalidOperationException($"Database error creating Workspace: {pgEx.MessageText}", ex);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException($"An unexpected error occurred while creating the Workspace: {ex.Message}", ex);
-                }
+                return mapper.Map<Workspace>(workspace);
             }
 
             private async Task<Domain.Models.Workspace> SetCascadedProperties(Domain.Models.Workspace workspace, Command request, CancellationToken ct)
