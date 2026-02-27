@@ -47,7 +47,6 @@ namespace Caster.Api.Features.Projects
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
             CasterContext dbContext,
-            TelemetryService telemetryService,
             IIdentityResolver identityResolver) : BaseHandler<Command, Project>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
