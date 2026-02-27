@@ -15,7 +15,9 @@ using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
 using Microsoft.EntityFrameworkCore;
+using System;
 using Caster.Api.Domain.Services;
+using FluentValidation;
 
 namespace Caster.Api.Features.Projects
 {
@@ -31,11 +33,20 @@ namespace Caster.Api.Features.Projects
             public string Name { get; set; }
         }
 
+        public class CommandValidator : AbstractValidator<Command>
+        {
+            public CommandValidator()
+            {
+                RuleFor(x => x.Name)
+                    .NotEmpty()
+                    .WithMessage("Project Name is required and cannot be empty.");
+            }
+        }
+
         public class Handler(
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
             CasterContext dbContext,
-            TelemetryService telemetryService,
             IIdentityResolver identityResolver) : BaseHandler<Command, Project>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
@@ -54,6 +65,7 @@ namespace Caster.Api.Features.Projects
                 dbContext.ProjectMemberships.Add(projectMembership);
 
                 await dbContext.SaveChangesAsync(cancellationToken);
+
                 return mapper.Map<Project>(project);
             }
         }

@@ -16,6 +16,8 @@ using System.Linq;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Caster.Api.Infrastructure.Exceptions.Middleware
 {
@@ -46,6 +48,12 @@ namespace Caster.Api.Infrastructure.Exceptions.Middleware
             }
             catch (Exception ex)
             {
+                // Transform PostgreSQL errors into clear messages
+                if (ex is DbUpdateException dbEx && dbEx.InnerException is PostgresException pgEx)
+                {
+                    ex = TransformPostgresException(pgEx);
+                }
+
                 _logger.LogError($"Unhandled Exception: {ex}");
 
                 if (ex.GetType() == typeof(ValidationException))
@@ -112,6 +120,32 @@ namespace Caster.Api.Infrastructure.Exceptions.Middleware
             }
 
             return (int)statusCode;
+        }
+
+        /// <summary>
+        /// Transform PostgreSQL exceptions into user-friendly messages.
+        /// Logs detailed error information while returning generic messages to prevent
+        /// exposing database internals to users.
+        /// </summary>
+        private Exception TransformPostgresException(PostgresException pgEx)
+        {
+            // Log detailed error for developers/ops
+            _logger.LogError($"PostgreSQL {pgEx.SqlState}: Table={pgEx.TableName}, Constraint={pgEx.ConstraintName}, Message={pgEx.MessageText}");
+
+            // Always return generic user-friendly messages
+            return pgEx.SqlState switch
+            {
+                "23505" => // unique_violation
+                    new InvalidOperationException("A record with this identifier already exists."),
+
+                "23503" => // foreign_key_violation
+                    new InvalidOperationException("Referenced entity does not exist. Please verify all referenced entities exist."),
+
+                "23514" => // check_violation
+                    new InvalidOperationException("Data validation failed."),
+
+                _ => new InvalidOperationException("A database error occurred.")
+            };
         }
     }
 }

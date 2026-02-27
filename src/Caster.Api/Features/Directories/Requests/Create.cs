@@ -107,6 +107,7 @@ namespace Caster.Api.Features.Directories
 
                 dbContext.Directories.Add(directory);
                 await dbContext.SaveChangesAsync(cancellationToken);
+
                 return mapper.Map<Directory>(directory);
             }
 
