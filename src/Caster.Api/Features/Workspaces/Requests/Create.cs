@@ -20,8 +20,6 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using Npgsql;
 using System.Collections.Generic;
 
 namespace Caster.Api.Features.Workspaces

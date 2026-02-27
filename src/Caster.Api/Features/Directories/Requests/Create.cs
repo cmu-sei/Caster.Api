@@ -22,8 +22,6 @@ using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Features.Shared.Validators;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Logging;
-using Npgsql;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Features.Shared;
 

@@ -15,10 +15,9 @@ using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using Npgsql;
 using System;
 using Caster.Api.Domain.Services;
+using FluentValidation;
 
 namespace Caster.Api.Features.Projects
 {
@@ -34,6 +33,16 @@ namespace Caster.Api.Features.Projects
             public string Name { get; set; }
         }
 
+        public class CommandValidator : AbstractValidator<Command>
+        {
+            public CommandValidator()
+            {
+                RuleFor(x => x.Name)
+                    .NotEmpty()
+                    .WithMessage("Project Name is required and cannot be empty.");
+            }
+        }
+
         public class Handler(
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
@@ -46,10 +55,6 @@ namespace Caster.Api.Features.Projects
 
             public override async Task<Project> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                // Validate required fields
-                if (string.IsNullOrWhiteSpace(request.Name))
-                    throw new ArgumentException("Project Name is required and cannot be empty.", nameof(request.Name));
-
                 var project = mapper.Map<Domain.Models.Project>(request);
                 dbContext.Projects.Add(project);
 
