@@ -123,25 +123,28 @@ namespace Caster.Api.Infrastructure.Exceptions.Middleware
         }
 
         /// <summary>
-        /// Transform PostgreSQL exceptions into user-friendly messages
+        /// Transform PostgreSQL exceptions into user-friendly messages.
+        /// Logs detailed error information while returning generic messages to prevent
+        /// exposing database internals to users.
         /// </summary>
         private Exception TransformPostgresException(PostgresException pgEx)
         {
-            var constraintName = pgEx.ConstraintName ?? "unknown";
-            var tableName = pgEx.TableName ?? "unknown";
+            // Log detailed error for developers/ops
+            _logger.LogError($"PostgreSQL {pgEx.SqlState}: Table={pgEx.TableName}, Constraint={pgEx.ConstraintName}, Message={pgEx.MessageText}");
 
+            // Always return generic user-friendly messages
             return pgEx.SqlState switch
             {
                 "23505" => // unique_violation
-                    new InvalidOperationException($"A {tableName} with this identifier already exists."),
+                    new InvalidOperationException("A record with this identifier already exists."),
 
                 "23503" => // foreign_key_violation
-                    new InvalidOperationException($"Referenced entity does not exist. Constraint: {constraintName}. Please verify all referenced entities exist."),
+                    new InvalidOperationException("Referenced entity does not exist. Please verify all referenced entities exist."),
 
                 "23514" => // check_violation
-                    new InvalidOperationException($"Data validation failed: {pgEx.MessageText}"),
+                    new InvalidOperationException("Data validation failed."),
 
-                _ => new InvalidOperationException($"Database error: {pgEx.MessageText}")
+                _ => new InvalidOperationException("A database error occurred.")
             };
         }
     }
