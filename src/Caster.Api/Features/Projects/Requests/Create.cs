@@ -48,7 +48,7 @@ namespace Caster.Api.Features.Projects
             {
                 // Validate required fields
                 if (string.IsNullOrWhiteSpace(request.Name))
-                    throw new ArgumentException("Project Name is required and cannot be empty.");
+                    throw new ArgumentException("Project Name is required and cannot be empty.", nameof(request.Name));
 
                 var project = mapper.Map<Domain.Models.Project>(request);
                 dbContext.Projects.Add(project);
