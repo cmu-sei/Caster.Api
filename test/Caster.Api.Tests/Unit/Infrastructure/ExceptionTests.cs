@@ -3,103 +3,105 @@
 
 using System.Net;
 using Caster.Api.Infrastructure.Exceptions;
-using Xunit;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
 
 namespace Caster.Api.Tests.Unit.Infrastructure
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "Exceptions")]
+    [Category("Unit")]
+    [Category("Exceptions")]
     public class ExceptionTests
     {
-        [Fact]
-        public void ForbiddenException_HasCorrectStatusCode()
+        [Test]
+        public async Task ForbiddenException_HasCorrectStatusCode()
         {
             var exception = new ForbiddenException();
 
-            Assert.Equal(HttpStatusCode.Forbidden, exception.GetStatusCode());
+            await Assert.That(exception.GetStatusCode()).IsEqualTo(HttpStatusCode.Forbidden);
         }
 
-        [Fact]
-        public void ForbiddenException_HasDefaultMessage()
+        [Test]
+        public async Task ForbiddenException_HasDefaultMessage()
         {
             var exception = new ForbiddenException();
 
-            Assert.Equal("Insufficient Permissions", exception.Message);
+            await Assert.That(exception.Message).IsEqualTo("Insufficient Permissions");
         }
 
-        [Fact]
-        public void ForbiddenException_WithCustomMessage_UsesCustomMessage()
+        [Test]
+        public async Task ForbiddenException_WithCustomMessage_UsesCustomMessage()
         {
             var exception = new ForbiddenException("Custom forbidden message");
 
-            Assert.Equal("Custom forbidden message", exception.Message);
+            await Assert.That(exception.Message).IsEqualTo("Custom forbidden message");
         }
 
-        [Fact]
-        public void EntityNotFoundException_HasCorrectStatusCode()
+        [Test]
+        public async Task EntityNotFoundException_HasCorrectStatusCode()
         {
             var exception = new EntityNotFoundException<Caster.Api.Features.Projects.Project>();
 
-            Assert.Equal(HttpStatusCode.NotFound, exception.GetStatusCode());
+            await Assert.That(exception.GetStatusCode()).IsEqualTo(HttpStatusCode.NotFound);
         }
 
-        [Fact]
-        public void EntityNotFoundException_HasFormattedMessage()
+        [Test]
+        public async Task EntityNotFoundException_HasFormattedMessage()
         {
             var exception = new EntityNotFoundException<Caster.Api.Features.Projects.Project>();
 
-            Assert.Contains("Project", exception.Message);
-            Assert.Contains("not found", exception.Message);
+            await Assert.That(exception.Message).Contains("Project");
+            await Assert.That(exception.Message).Contains("not found");
         }
 
-        [Fact]
-        public void EntityNotFoundException_WithCustomMessage_UsesCustomMessage()
+        [Test]
+        public async Task EntityNotFoundException_WithCustomMessage_UsesCustomMessage()
         {
             var exception = new EntityNotFoundException<Caster.Api.Features.Projects.Project>("Custom not found");
 
-            Assert.Equal("Custom not found", exception.Message);
+            await Assert.That(exception.Message).IsEqualTo("Custom not found");
         }
 
-        [Fact]
-        public void EntityNotFoundException_WithCamelCaseType_InsertsSpaces()
+        [Test]
+        public async Task EntityNotFoundException_WithCamelCaseType_InsertsSpaces()
         {
             var exception = new EntityNotFoundException<Domain.Models.ProjectMembership>();
 
             // Should contain spaces between words
-            Assert.Contains("Project", exception.Message);
-            Assert.Contains("Membership", exception.Message);
+            await Assert.That(exception.Message).Contains("Project");
+            await Assert.That(exception.Message).Contains("Membership");
         }
 
-        [Fact]
-        public void FileConflictException_HasDefaultMessage()
+        [Test]
+        public async Task FileConflictException_HasDefaultMessage()
         {
             var exception = new FileConflictException();
 
-            Assert.Contains("lock", exception.Message);
+            await Assert.That(exception.Message).Contains("lock");
         }
 
-        [Fact]
-        public void FileConflictException_HasConflictStatusCode()
+        [Test]
+        public async Task FileConflictException_HasConflictStatusCode()
         {
             var exception = new FileConflictException();
 
-            Assert.Equal(HttpStatusCode.Conflict, exception.GetStatusCode());
+            await Assert.That(exception.GetStatusCode()).IsEqualTo(HttpStatusCode.Conflict);
         }
 
-        [Fact]
-        public void FileAdminLockedException_HasCorrectMessage()
+        [Test]
+        public async Task FileAdminLockedException_HasCorrectMessage()
         {
             var exception = new FileAdminLockedException();
 
-            Assert.Contains("Administrator", exception.Message);
+            await Assert.That(exception.Message).Contains("Administrator");
         }
 
-        [Fact]
-        public void FileInsufficientPrivilegesException_HasCorrectMessage()
+        [Test]
+        public async Task FileInsufficientPrivilegesException_HasCorrectMessage()
         {
             var exception = new FileInsufficientPrivilegesException();
 
-            Assert.Contains("privileges", exception.Message);
+            await Assert.That(exception.Message).Contains("privileges");
         }
     }
 }

@@ -4,34 +4,39 @@
 using System;
 using System.Linq;
 using Caster.Api.Domain.Models;
-using Xunit;
+using Directory = Caster.Api.Domain.Models.Directory;
+using File = Caster.Api.Domain.Models.File;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
 
 namespace Caster.Api.Tests.Unit.Models
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "Run")]
+    [Category("Unit")]
+    [Category("Run")]
     public class RunTests
     {
-        [Fact]
-        public void DefaultStatus_IsQueued()
+        [Test]
+        public async Task DefaultStatus_IsQueued()
         {
             var run = new Run();
 
-            Assert.Equal(RunStatus.Queued, run.Status);
+            await Assert.That(run.Status).IsEqualTo(RunStatus.Queued);
         }
 
-        [Fact]
-        public void CreatedAt_IsSetOnConstruction()
+        [Test]
+        public async Task CreatedAt_IsSetOnConstruction()
         {
             var before = DateTime.UtcNow;
             var run = new Run();
             var after = DateTime.UtcNow;
 
-            Assert.InRange(run.CreatedAt, before, after);
+            await Assert.That(run.CreatedAt).IsGreaterThanOrEqualTo(before);
+            await Assert.That(run.CreatedAt).IsLessThanOrEqualTo(after);
         }
 
-        [Fact]
-        public void Modify_UpdatesModifiedAtAndModifiedById()
+        [Test]
+        public async Task Modify_UpdatesModifiedAtAndModifiedById()
         {
             var run = new Run();
             var userId = Guid.NewGuid();
@@ -39,38 +44,38 @@ namespace Caster.Api.Tests.Unit.Models
 
             run.Modify(userId);
 
-            Assert.Equal(userId, run.ModifiedById);
-            Assert.NotNull(run.ModifiedAt);
-            Assert.True(run.ModifiedAt >= before);
+            await Assert.That(run.ModifiedById).IsEqualTo(userId);
+            await Assert.That(run.ModifiedAt).IsNotNull();
+            await Assert.That(run.ModifiedAt!.Value).IsGreaterThanOrEqualTo(before);
         }
 
-        [Fact]
-        public void GetActiveStatuses_ContainsExpectedStatuses()
+        [Test]
+        public async Task GetActiveStatuses_ContainsExpectedStatuses()
         {
             var activeStatuses = RunHelpers.GetActiveStatuses();
 
-            Assert.Contains(RunStatus.Queued, activeStatuses);
-            Assert.Contains(RunStatus.Planning, activeStatuses);
-            Assert.Contains(RunStatus.Applying, activeStatuses);
+            await Assert.That(activeStatuses).Contains(RunStatus.Queued);
+            await Assert.That(activeStatuses).Contains(RunStatus.Planning);
+            await Assert.That(activeStatuses).Contains(RunStatus.Applying);
         }
 
-        [Fact]
-        public void GetActiveStatuses_DoesNotContainTerminalStatuses()
+        [Test]
+        public async Task GetActiveStatuses_DoesNotContainTerminalStatuses()
         {
             var activeStatuses = RunHelpers.GetActiveStatuses();
 
-            Assert.DoesNotContain(RunStatus.Applied, activeStatuses);
-            Assert.DoesNotContain(RunStatus.Failed, activeStatuses);
-            Assert.DoesNotContain(RunStatus.Rejected, activeStatuses);
-            Assert.DoesNotContain(RunStatus.Planned, activeStatuses);
+            await Assert.That(activeStatuses).DoesNotContain(RunStatus.Applied);
+            await Assert.That(activeStatuses).DoesNotContain(RunStatus.Failed);
+            await Assert.That(activeStatuses).DoesNotContain(RunStatus.Rejected);
+            await Assert.That(activeStatuses).DoesNotContain(RunStatus.Planned);
         }
 
-        [Fact]
-        public void GetActiveStatuses_HasExactly3Statuses()
+        [Test]
+        public async Task GetActiveStatuses_HasExactly3Statuses()
         {
             var activeStatuses = RunHelpers.GetActiveStatuses();
 
-            Assert.Equal(3, activeStatuses.Count);
+            await Assert.That(activeStatuses.Count).IsEqualTo(3);
         }
     }
 }

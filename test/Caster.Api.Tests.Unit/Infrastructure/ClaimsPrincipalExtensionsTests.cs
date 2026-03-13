@@ -5,15 +5,17 @@ using System;
 using System.Linq;
 using System.Security.Claims;
 using Caster.Api.Infrastructure.Extensions;
-using Xunit;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
 
 namespace Caster.Api.Tests.Unit.Infrastructure
 {
-    [Trait("Category", "Unit")]
+    [Category("Unit")]
     public class ClaimsPrincipalExtensionsTests
     {
-        [Fact]
-        public void GetId_WithSubClaim_ReturnsGuid()
+        [Test]
+        public async Task GetId_WithSubClaim_ReturnsGuid()
         {
             var userId = Guid.NewGuid();
             var claims = new[] { new Claim("sub", userId.ToString()) };
@@ -21,11 +23,11 @@ namespace Caster.Api.Tests.Unit.Infrastructure
 
             var result = principal.GetId();
 
-            Assert.Equal(userId, result);
+            await Assert.That(result).IsEqualTo(userId);
         }
 
-        [Fact]
-        public void GetId_WithNameIdentifierClaim_ReturnsGuid()
+        [Test]
+        public async Task GetId_WithNameIdentifierClaim_ReturnsGuid()
         {
             var userId = Guid.NewGuid();
             var claims = new[] { new Claim("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier", userId.ToString()) };
@@ -33,21 +35,21 @@ namespace Caster.Api.Tests.Unit.Infrastructure
 
             var result = principal.GetId();
 
-            Assert.Equal(userId, result);
+            await Assert.That(result).IsEqualTo(userId);
         }
 
-        [Fact]
-        public void GetId_WhenPrincipalIsNull_ReturnsEmptyGuid()
+        [Test]
+        public async Task GetId_WhenPrincipalIsNull_ReturnsEmptyGuid()
         {
             ClaimsPrincipal principal = null;
 
             var result = principal.GetId();
 
-            Assert.Equal(Guid.Empty, result);
+            await Assert.That(result).IsEqualTo(Guid.Empty);
         }
 
-        [Fact]
-        public void NormalizeScopeClaims_WithSpaceSeparatedScopes_SplitsIntoMultipleClaims()
+        [Test]
+        public async Task NormalizeScopeClaims_WithSpaceSeparatedScopes_SplitsIntoMultipleClaims()
         {
             var claims = new[] { new Claim("scope", "openid profile email") };
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
@@ -55,11 +57,11 @@ namespace Caster.Api.Tests.Unit.Infrastructure
             var normalized = principal.NormalizeScopeClaims();
 
             var scopeClaims = normalized.FindAll("scope").ToList();
-            Assert.Equal(3, scopeClaims.Count);
+            await Assert.That(scopeClaims.Count).IsEqualTo(3);
         }
 
-        [Fact]
-        public void NormalizeScopeClaims_WithSingleScope_KeepsAsIs()
+        [Test]
+        public async Task NormalizeScopeClaims_WithSingleScope_KeepsAsIs()
         {
             var claims = new[] { new Claim("scope", "openid") };
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
@@ -67,12 +69,12 @@ namespace Caster.Api.Tests.Unit.Infrastructure
             var normalized = principal.NormalizeScopeClaims();
 
             var scopeClaims = normalized.FindAll("scope").ToList();
-            Assert.Single(scopeClaims);
-            Assert.Equal("openid", scopeClaims[0].Value);
+            await Assert.That(scopeClaims).HasSingleItem();
+            await Assert.That(scopeClaims[0].Value).IsEqualTo("openid");
         }
 
-        [Fact]
-        public void NormalizeScopeClaims_WithNonScopeClaims_PreservesThem()
+        [Test]
+        public async Task NormalizeScopeClaims_WithNonScopeClaims_PreservesThem()
         {
             var userId = Guid.NewGuid();
             var claims = new[]
@@ -84,7 +86,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
 
             var normalized = principal.NormalizeScopeClaims();
 
-            Assert.Equal(userId.ToString(), normalized.FindFirst("sub")?.Value);
+            await Assert.That(normalized.FindFirst("sub")?.Value).IsEqualTo(userId.ToString());
         }
     }
 }

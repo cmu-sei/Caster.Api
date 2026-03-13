@@ -6,32 +6,27 @@ using System.Linq;
 using System.Text.Json;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Serialization;
-using Xunit;
+using TUnit.Core;
 
 namespace Caster.Api.Tests.Unit.Terraform
 {
-    [Trait("Category", "Unit")]
-    public class PlanOutputTests : IClassFixture<PlanFixture>
+    [Category("Unit")]
+    [ClassDataSource<PlanFixture>(Shared = SharedType.PerTestSession)]
+    public class PlanOutputTests(PlanFixture planFixture)
     {
-        private readonly PlanFixture _planFixture;
-        private readonly PlanOutput _planOutput;
+        private readonly PlanFixture _planFixture = planFixture;
+        private readonly PlanOutput _planOutput = planFixture.GetPlanOutput();
 
-        public PlanOutputTests(PlanFixture planFixture)
+        [Test]
+        public async Task ResourceChanges_WhenDeserialized_ReturnsExpectedCount()
         {
-            _planFixture = planFixture;
-            _planOutput = planFixture.GetPlanOutput();
+            await Assert.That(_planOutput.ResourceChanges.Count()).IsEqualTo(10);
         }
 
-        [Fact]
-        public void ResourceChanges_WhenDeserialized_ReturnsExpectedCount()
+        [Test]
+        public async Task GetAddedMachines_WhenCalled_ReturnsExpectedCount()
         {
-            Assert.Equal(10, _planOutput.ResourceChanges.Count());
-        }
-
-        [Fact]
-        public void GetAddedMachines_WhenCalled_ReturnsExpectedCount()
-        {
-            Assert.Equal(7, _planFixture.GetPlanOutput().GetAddedMachines().Count());
+            await Assert.That(_planFixture.GetPlanOutput().GetAddedMachines().Count()).IsEqualTo(7);
         }
     }
 

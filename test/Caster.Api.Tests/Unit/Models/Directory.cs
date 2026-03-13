@@ -3,20 +3,24 @@
 
 using System;
 using Caster.Api.Domain.Models;
-using Xunit;
+using Directory = Caster.Api.Domain.Models.Directory;
+using File = Caster.Api.Domain.Models.File;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
 
 namespace Caster.Api.Tests.Unit
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "Directory")]
+    [Category("Unit")]
+    [Category("Directory")]
     public class DirectoryUnitTest
     {
         public DirectoryUnitTest()
         {
         }
 
-        [Fact]
-        public void Test_Directory_Path_To_List()
+        [Test]
+        public async Task Test_Directory_Path_To_List()
         {
             var greatGrandparentId = Guid.NewGuid();
             var grandparentId = Guid.NewGuid();
@@ -35,11 +39,11 @@ namespace Caster.Api.Tests.Unit
             var expectedPathIds = new Guid[] {greatGrandparentId,grandparentId,parentId,id};
             var pathIds = directory.PathIds();
 
-            Assert.Equal(expectedPathIds, pathIds);
+            await Assert.That(pathIds).IsEquivalentTo(expectedPathIds);
         }
 
-        [Fact]
-        public void Test_Directory_Set_Import_Name()
+        [Test]
+        public async Task Test_Directory_Set_Import_Name()
         {
             string nameWithGuid = "DirectoryWithId__b7ef25e6-555e-41c9-88d7-22078d3a13c1";
             string nameWithoutGuid = "Directory";
@@ -53,14 +57,14 @@ namespace Caster.Api.Tests.Unit
             dir2.SetImportName(nameWithoutGuid);
             dir3.SetImportName(nameWithInvalidGuid);
 
-            Assert.Equal("DirectoryWithId", dir1.Name);
-            Assert.Equal(new Guid("b7ef25e6-555e-41c9-88d7-22078d3a13c1"), dir1.Id);
+            await Assert.That(dir1.Name).IsEqualTo("DirectoryWithId");
+            await Assert.That(dir1.Id).IsEqualTo(new Guid("b7ef25e6-555e-41c9-88d7-22078d3a13c1"));
 
-            Assert.Equal("Directory", dir2.Name);
-            Assert.Equal(Guid.Empty, dir2.Id);
+            await Assert.That(dir2.Name).IsEqualTo("Directory");
+            await Assert.That(dir2.Id).IsEqualTo(Guid.Empty);
 
-            Assert.Equal("DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1", dir3.Name);
-            Assert.Equal(Guid.Empty, dir3.Id);
+            await Assert.That(dir3.Name).IsEqualTo("DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1");
+            await Assert.That(dir3.Id).IsEqualTo(Guid.Empty);
 
         }
     }

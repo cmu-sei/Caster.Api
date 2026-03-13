@@ -9,45 +9,40 @@ using Caster.Api.Tests.Integration.Fixtures;
 
 namespace Caster.Api.Tests.Integration.Tests.Controllers;
 
-[Trait("Category", "Integration")]
-[Trait("Category", "Projects")]
-public class ProjectsControllerTests : IClassFixture<CasterTestContext>
+[Category("Integration")]
+[Category("Projects")]
+[ClassDataSource<CasterTestContext>(Shared = SharedType.PerTestSession)]
+public class ProjectsControllerTests(CasterTestContext context)
 {
-    private readonly HttpClient _client;
-    private readonly JsonSerializerOptions _jsonOptions;
+    private readonly HttpClient _client = context.CreateClient();
+    private readonly JsonSerializerOptions _jsonOptions = DefaultJsonSettings.Settings;
 
-    public ProjectsControllerTests(CasterTestContext context)
-    {
-        _client = context.CreateClient();
-        _jsonOptions = DefaultJsonSettings.Settings;
-    }
-
-    [Fact]
+    [Test]
     public async Task GetAll_WhenCalled_ReturnsSuccessStatusCode()
     {
         var response = await _client.GetAsync("/api/projects");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
     }
 
-    [Fact]
+    [Test]
     public async Task Create_WithValidName_ReturnsCreatedProject()
     {
         var command = new { Name = "Integration Test Project" };
 
         var response = await _client.PostAsJsonAsync("/api/projects", command, _jsonOptions);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         var project = JsonSerializer.Deserialize<ProjectResponse>(content, _jsonOptions);
 
-        Assert.NotNull(project);
-        Assert.Equal("Integration Test Project", project.Name);
-        Assert.NotEqual(Guid.Empty, project.Id);
+        await Assert.That(project).IsNotNull();
+        await Assert.That(project.Name).IsEqualTo("Integration Test Project");
+        await Assert.That(project.Id).IsNotEqualTo(Guid.Empty);
     }
 
-    [Fact]
+    [Test]
     public async Task Get_WithExistingProject_ReturnsProject()
     {
         // Create a project first
@@ -59,25 +54,25 @@ public class ProjectsControllerTests : IClassFixture<CasterTestContext>
         // Now get it
         var response = await _client.GetAsync($"/api/projects/{created!.Id}");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         var project = JsonSerializer.Deserialize<ProjectResponse>(content, _jsonOptions);
 
-        Assert.NotNull(project);
-        Assert.Equal(created.Id, project.Id);
-        Assert.Equal("Get Test Project", project.Name);
+        await Assert.That(project).IsNotNull();
+        await Assert.That(project.Id).IsEqualTo(created.Id);
+        await Assert.That(project.Name).IsEqualTo("Get Test Project");
     }
 
-    [Fact]
+    [Test]
     public async Task Get_WithNonExistentProject_ReturnsNotFound()
     {
         var response = await _client.GetAsync($"/api/projects/{Guid.NewGuid()}");
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
     }
 
-    [Fact]
+    [Test]
     public async Task Edit_WithExistingProject_UpdatesName()
     {
         // Create
@@ -90,16 +85,16 @@ public class ProjectsControllerTests : IClassFixture<CasterTestContext>
         var editCommand = new { Name = "Edit Test Updated" };
         var response = await _client.PutAsJsonAsync($"/api/projects/{created!.Id}", editCommand, _jsonOptions);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
         var project = JsonSerializer.Deserialize<ProjectResponse>(content, _jsonOptions);
 
-        Assert.NotNull(project);
-        Assert.Equal("Edit Test Updated", project.Name);
+        await Assert.That(project).IsNotNull();
+        await Assert.That(project.Name).IsEqualTo("Edit Test Updated");
     }
 
-    [Fact]
+    [Test]
     public async Task Delete_WithExistingProject_RemovesProjectSuccessfully()
     {
         // Create
@@ -111,13 +106,12 @@ public class ProjectsControllerTests : IClassFixture<CasterTestContext>
         // Delete
         var response = await _client.DeleteAsync($"/api/projects/{created!.Id}");
 
-        Assert.True(
-            response.StatusCode == HttpStatusCode.NoContent || response.StatusCode == HttpStatusCode.OK,
-            $"Expected NoContent or OK, got {response.StatusCode}");
+        await Assert.That(response.StatusCode == HttpStatusCode.NoContent || response.StatusCode == HttpStatusCode.OK)
+            .IsTrue();
 
         // Verify deleted
         var getResponse = await _client.GetAsync($"/api/projects/{created.Id}");
-        Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
+        await Assert.That(getResponse.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
     }
 
     /// <summary>

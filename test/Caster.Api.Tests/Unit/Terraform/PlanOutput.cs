@@ -6,35 +6,32 @@ using System.Linq;
 using System.Text.Json;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Serialization;
-using Xunit;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
 using File = System.IO.File;
 using Path = System.IO.Path;
 
 namespace Caster.Api.Tests.Unit
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "TerraformPlanOutput")]
-    public class TerraformPlanOutputUnitTest : IClassFixture<PlanFixture>
+    [Category("Unit")]
+    [Category("TerraformPlanOutput")]
+    [ClassDataSource<PlanFixture>(Shared = SharedType.PerTestSession)]
+    public class TerraformPlanOutputUnitTest(PlanFixture planFixture)
     {
-        private readonly PlanFixture _planFixture;
-        private readonly PlanOutput _planOutput;
+        private readonly PlanFixture _planFixture = planFixture;
+        private readonly PlanOutput _planOutput = planFixture.GetPlanOutput();
 
-        public TerraformPlanOutputUnitTest(PlanFixture planFixture)
+        [Test]
+        public async Task Test_Resource_Count()
         {
-            _planFixture = planFixture;
-            _planOutput = planFixture.GetPlanOutput();
+            await Assert.That(_planOutput.ResourceChanges.Count()).IsEqualTo(10);
         }
 
-        [Fact]
-        public void Test_Resource_Count()
+        [Test]
+        public async Task Test_New_Vm_Count()
         {
-            Assert.Equal(10, _planOutput.ResourceChanges.Count());
-        }
-
-        [Fact]
-        public void Test_New_Vm_Count()
-        {
-            Assert.Equal(7, _planFixture.GetPlanOutput().GetAddedMachines().Count());
+            await Assert.That(_planFixture.GetPlanOutput().GetAddedMachines().Count()).IsEqualTo(7);
         }
 
     }

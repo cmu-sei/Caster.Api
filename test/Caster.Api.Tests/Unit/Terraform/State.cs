@@ -6,123 +6,121 @@ using System.Linq;
 using System.Text.Json;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Serialization;
-using Xunit;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
 using File = System.IO.File;
 using Path = System.IO.Path;
 
 namespace Caster.Api.Tests.Unit
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "TerraformState")]
-    public class TerraformStateUnitTest : IClassFixture<StateFixture>
+    [Category("Unit")]
+    [Category("TerraformState")]
+    [ClassDataSource<StateFixture>(Shared = SharedType.PerTestSession)]
+    public class TerraformStateUnitTest(StateFixture stateFixture)
     {
-        private readonly StateFixture _stateFixture;
+        private readonly StateFixture _stateFixture = stateFixture;
 
-        public TerraformStateUnitTest(StateFixture stateFixture)
+        [Test]
+        public async Task Test_Resource_Count()
         {
-            _stateFixture = stateFixture;
-        }
-
-        [Fact]
-        public void Test_Resource_Count()
-        {
-            Assert.Equal(13, _stateFixture.GetResources().Length);
+            await Assert.That(_stateFixture.GetResources().Length).IsEqualTo(13);
         }
 
         #region Networks
 
-        [Fact]
-        public void Test_vSphere_Host_Port_Groups()
+        [Test]
+        public async Task Test_vSphere_Host_Port_Groups()
         {
-            this.VerifyHostPortGroup("course-ext-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-ext-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course-ext");
-            this.VerifyHostPortGroup("course-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course");
-            this.VerifyHostPortGroup("course-net-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-net-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course-net");
+            await this.VerifyHostPortGroup("course-ext-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-ext-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course-ext");
+            await this.VerifyHostPortGroup("course-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course");
+            await this.VerifyHostPortGroup("course-net-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-net-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course-net");
         }
 
-        private void VerifyHostPortGroup(string name, string id, string addressName)
+        private async Task VerifyHostPortGroup(string name, string id, string addressName)
         {
             var network = _stateFixture.GetResources().Where(r => r.Id == id).FirstOrDefault();
-            Assert.NotNull(network);
-            Assert.Equal(name, network.Name);
-            Assert.Equal("vsphere_host_port_group", network.Type);
-            Assert.Equal($"vsphere_host_port_group.{addressName}", network.Address);
-            Assert.Equal($"vsphere_host_port_group.{addressName}", network.BaseAddress);
+            await Assert.That(network).IsNotNull();
+            await Assert.That(network.Name).IsEqualTo(name);
+            await Assert.That(network.Type).IsEqualTo("vsphere_host_port_group");
+            await Assert.That(network.Address).IsEqualTo($"vsphere_host_port_group.{addressName}");
+            await Assert.That(network.BaseAddress).IsEqualTo($"vsphere_host_port_group.{addressName}");
         }
 
         #endregion
 
-        [Fact]
-        public void Test_vSphere_Virtual_Switches()
+        [Test]
+        public async Task Test_vSphere_Virtual_Switches()
         {
             var vSwitch = _stateFixture.GetResources().Where(r => r.Id == "tf-HostVirtualSwitch:host-87:vSwitch-4c2eb68c-a77f-45aa-990a").FirstOrDefault();
-            Assert.NotNull(vSwitch);
-            Assert.Equal("vSwitch-4c2eb68c-a77f-45aa-990a", vSwitch.Name);
-            Assert.Equal("vsphere_host_virtual_switch", vSwitch.Type);
-            Assert.Equal("vsphere_host_virtual_switch.switch", vSwitch.Address);
-            Assert.Equal("vsphere_host_virtual_switch.switch", vSwitch.BaseAddress);
+            await Assert.That(vSwitch).IsNotNull();
+            await Assert.That(vSwitch.Name).IsEqualTo("vSwitch-4c2eb68c-a77f-45aa-990a");
+            await Assert.That(vSwitch.Type).IsEqualTo("vsphere_host_virtual_switch");
+            await Assert.That(vSwitch.Address).IsEqualTo("vsphere_host_virtual_switch.switch");
+            await Assert.That(vSwitch.BaseAddress).IsEqualTo("vsphere_host_virtual_switch.switch");
         }
 
         #region vSphere_Virtual_Machines
-        [Fact]
-        public void Test_vSphere_Virtual_Machines()
+        [Test]
+        public async Task Test_vSphere_Virtual_Machines()
         {
-            this.VerifyVirtualMachine(
+            await this.VerifyVirtualMachine(
                 "course.centos6.student.1.4c2eb68c-a77f-45aa-990a-6b837ee59d71",
                 "423ccd67-a76a-ea9f-7089-caa891a621f2",
                 "course-centos6-student",
                 new Guid("925e2634-52b5-4492-ba5e-c800fe3401f1"),
                 0);
 
-            this.VerifyVirtualMachine(
+            await this.VerifyVirtualMachine(
                 "course.centos6.student.2.4c2eb68c-a77f-45aa-990a-6b837ee59d71",
                 "423c087c-4715-bfca-2475-9cadb6954f2e",
                 "course-centos6-student",
                 new Guid("925e2634-52b5-4492-ba5e-c800fe3401f1"),
                 1);
 
-            this.VerifyVirtualMachine(
+            await this.VerifyVirtualMachine(
                 "course.centos7.server-4c2eb68c-a77f-45aa-990a-6b837ee59d71",
                 "423c3932-665f-5764-ce9a-aa4a8d8a2023",
                 "course-centos7-server",
                 null,
                 null);
 
-            this.VerifyVirtualMachine(
+            await this.VerifyVirtualMachine(
                 "course.freebsd10-4c2eb68c-a77f-45aa-990a-6b837ee59d71",
                 "423c0a62-8566-950c-f5e9-cc4cdf5660be",
                 "course-freebsd10-ws01",
                 null,
                 null);
 
-            this.VerifyVirtualMachine(
+            await this.VerifyVirtualMachine(
                 "course.freebsd9-4c2eb68c-a77f-45aa-990a-6b837ee59d71",
                 "423c0fb1-220d-7da5-9310-4fdefe4024a4",
                 "course-freebsd9-ws01",
                 null,
                 null);
 
-            this.VerifyVirtualMachine(
+            await this.VerifyVirtualMachine(
                 "course.sol10-4c2eb68c-a77f-45aa-990a-6b837ee59d71",
                 "423cb77b-6789-cef5-69e2-9b29b2b2b252",
                 "course-sol10-ws01",
                 null,
                 null);
 
-            this.VerifyVirtualMachine(
+            await this.VerifyVirtualMachine(
                 "course.sol11-4c2eb68c-a77f-45aa-990a-6b837ee59d71",
                 "423cbe4b-761d-f479-13ec-ca4adc5e7b36",
                 "course-sol11-ws01",
                 null,
                 null);
 
-            this.VerifyVirtualMachine(
+            await this.VerifyVirtualMachine(
                 "course.ubuntu14.server-4c2eb68c-a77f-45aa-990a-6b837ee59d71",
                 "423c09a2-5bd4-1568-3dd7-7fe81512c101",
                 "course-ubuntu14-server",
                 null,
                 null);
 
-            this.VerifyVirtualMachine(
+            await this.VerifyVirtualMachine(
                 "course.ubuntu16.server-4c2eb68c-a77f-45aa-990a-6b837ee59d71",
                 "423cf12c-013b-f590-3be8-f53a3115ab92",
                 "course-ubuntu16-server",
@@ -130,19 +128,19 @@ namespace Caster.Api.Tests.Unit
                 null);
         }
 
-        private void VerifyVirtualMachine(string name, string id, string addressName, Guid? teamId, int? count)
+        private async Task VerifyVirtualMachine(string name, string id, string addressName, Guid? teamId, int? count)
         {
             var machine = _stateFixture.GetResources().Where(r => r.Id == id).FirstOrDefault();
-            Assert.NotNull(machine);
-            Assert.Equal(name, machine.Name);
-            Assert.Equal("vsphere_virtual_machine", machine.Type);
-            Assert.Equal($"vsphere_virtual_machine.{addressName}{(count.HasValue ? string.Format("[{0}]", count) : "")}", machine.Address);
-            Assert.Equal($"vsphere_virtual_machine.{addressName}", machine.BaseAddress);
-            Assert.Equal(teamId, machine.GetTeamIds()?.FirstOrDefault());
+            await Assert.That(machine).IsNotNull();
+            await Assert.That(machine.Name).IsEqualTo(name);
+            await Assert.That(machine.Type).IsEqualTo("vsphere_virtual_machine");
+            await Assert.That(machine.Address).IsEqualTo($"vsphere_virtual_machine.{addressName}{(count.HasValue ? string.Format("[{0}]", count) : "")}");
+            await Assert.That(machine.BaseAddress).IsEqualTo($"vsphere_virtual_machine.{addressName}");
+            await Assert.That(machine.GetTeamIds()?.FirstOrDefault()).IsEqualTo(teamId);
         }
 
-        [Fact]
-        public void Test_Resource_Searchable()
+        [Test]
+        public async Task Test_Resource_Searchable()
         {
             var resources = _stateFixture.GetResources();
 

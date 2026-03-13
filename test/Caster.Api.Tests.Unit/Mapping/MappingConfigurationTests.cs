@@ -3,26 +3,26 @@
 
 using System;
 using AutoMapper;
-using Xunit;
+using TUnit.Core;
 
 namespace Caster.Api.Tests.Unit.Mapping
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "Mapping")]
+    [Category("Unit")]
+    [Category("Mapping")]
     public class MappingConfigurationTests
     {
-        [Fact]
-        public void CreateMapper_WithProjectProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithProjectProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Projects.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void Map_CreateCommandToProject_ShouldMapNameCorrectly()
+        [Test]
+        public async Task Map_CreateCommandToProject_ShouldMapNameCorrectly()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Projects.MappingProfile>());
@@ -31,11 +31,11 @@ namespace Caster.Api.Tests.Unit.Mapping
             var command = new Features.Projects.Create.Command { Name = "Test" };
             var result = mapper.Map<Domain.Models.Project>(command);
 
-            Assert.Equal("Test", result.Name);
+            await Assert.That(result.Name).IsEqualTo("Test");
         }
 
-        [Fact]
-        public void Map_ProjectDomainToDto_ShouldMapAllFieldsCorrectly()
+        [Test]
+        public async Task Map_ProjectDomainToDto_ShouldMapAllFieldsCorrectly()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Projects.MappingProfile>());
@@ -44,12 +44,12 @@ namespace Caster.Api.Tests.Unit.Mapping
             var project = new Domain.Models.Project { Id = Guid.NewGuid(), Name = "TestProject" };
             var result = mapper.Map<Features.Projects.Project>(project);
 
-            Assert.Equal(project.Id, result.Id);
-            Assert.Equal("TestProject", result.Name);
+            await Assert.That(result.Id).IsEqualTo(project.Id);
+            await Assert.That(result.Name).IsEqualTo("TestProject");
         }
 
-        [Fact]
-        public void Map_EditCommandToProject_ShouldUpdateExistingProject()
+        [Test]
+        public async Task Map_EditCommandToProject_ShouldUpdateExistingProject()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Projects.MappingProfile>());
@@ -59,171 +59,171 @@ namespace Caster.Api.Tests.Unit.Mapping
             var command = new Features.Projects.Edit.Command { Id = existingProject.Id, Name = "Updated" };
             mapper.Map(command, existingProject);
 
-            Assert.Equal("Updated", existingProject.Name);
+            await Assert.That(existingProject.Name).IsEqualTo("Updated");
         }
 
-        [Fact]
-        public void CreateMapper_WithDirectoryProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithDirectoryProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Directories.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithWorkspaceProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithWorkspaceProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Workspaces.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithRunProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithRunProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Runs.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithPlanProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithPlanProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Plans.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithApplyProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithApplyProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Applies.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithFileProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithFileProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Files.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithUserProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithUserProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Users.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithHostProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithHostProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Hosts.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithModuleProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithModuleProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Modules.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithDesignProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithDesignProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Designs.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithDesignModuleProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithDesignModuleProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.DesignModules.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithVariableProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithVariableProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Variables.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithGroupProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithGroupProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Groups.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithSystemRoleProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithSystemRoleProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.SystemRoles.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithProjectRoleProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithProjectRoleProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.ProjectRoles.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithVlanProfile_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithVlanProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Vlan.MappingProfile>());
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
 
-        [Fact]
-        public void CreateMapper_WithAllProfiles_ShouldSucceed()
+        [Test]
+        public async Task CreateMapper_WithAllProfiles_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
             {
@@ -247,7 +247,7 @@ namespace Caster.Api.Tests.Unit.Mapping
             });
             var mapper = config.CreateMapper();
 
-            Assert.NotNull(mapper);
+            await Assert.That(mapper).IsNotNull();
         }
     }
 }

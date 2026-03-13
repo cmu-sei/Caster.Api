@@ -6,62 +6,58 @@ using System.Linq;
 using System.Text.Json;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Serialization;
-using Xunit;
+using TUnit.Core;
 
 namespace Caster.Api.Tests.Unit.Terraform
 {
-    [Trait("Category", "Unit")]
-    public class StateTests : IClassFixture<StateFixture>
+    [Category("Unit")]
+    [ClassDataSource<StateFixture>(Shared = SharedType.PerTestSession)]
+    public class StateTests(StateFixture stateFixture)
     {
-        private readonly StateFixture _stateFixture;
+        private readonly StateFixture _stateFixture = stateFixture;
 
-        public StateTests(StateFixture stateFixture)
+        [Test]
+        public async Task GetResources_WhenCalled_ReturnsExpectedCount()
         {
-            _stateFixture = stateFixture;
-        }
-
-        [Fact]
-        public void GetResources_WhenCalled_ReturnsExpectedCount()
-        {
-            Assert.Equal(13, _stateFixture.GetResources().Length);
+            await Assert.That(_stateFixture.GetResources().Length).IsEqualTo(13);
         }
 
         #region Networks
 
-        [Fact]
-        public void GetResources_WhenFilteredByPortGroups_ReturnsExpectedPortGroups()
+        [Test]
+        public async Task GetResources_WhenFilteredByPortGroups_ReturnsExpectedPortGroups()
         {
             this.VerifyHostPortGroup("course-ext-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-ext-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course-ext");
             this.VerifyHostPortGroup("course-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course");
             this.VerifyHostPortGroup("course-net-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-net-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course-net");
         }
 
-        private void VerifyHostPortGroup(string name, string id, string addressName)
+        private async Task VerifyHostPortGroup(string name, string id, string addressName)
         {
             var network = _stateFixture.GetResources().Where(r => r.Id == id).FirstOrDefault();
-            Assert.NotNull(network);
-            Assert.Equal(name, network.Name);
-            Assert.Equal("vsphere_host_port_group", network.Type);
-            Assert.Equal($"vsphere_host_port_group.{addressName}", network.Address);
-            Assert.Equal($"vsphere_host_port_group.{addressName}", network.BaseAddress);
+            await Assert.That(network).IsNotNull();
+            await Assert.That(network.Name).IsEqualTo(name);
+            await Assert.That(network.Type).IsEqualTo("vsphere_host_port_group");
+            await Assert.That(network.Address).IsEqualTo($"vsphere_host_port_group.{addressName}");
+            await Assert.That(network.BaseAddress).IsEqualTo($"vsphere_host_port_group.{addressName}");
         }
 
         #endregion
 
-        [Fact]
-        public void GetResources_WhenFilteredByVirtualSwitch_ReturnsExpectedSwitch()
+        [Test]
+        public async Task GetResources_WhenFilteredByVirtualSwitch_ReturnsExpectedSwitch()
         {
             var vSwitch = _stateFixture.GetResources().Where(r => r.Id == "tf-HostVirtualSwitch:host-87:vSwitch-4c2eb68c-a77f-45aa-990a").FirstOrDefault();
-            Assert.NotNull(vSwitch);
-            Assert.Equal("vSwitch-4c2eb68c-a77f-45aa-990a", vSwitch.Name);
-            Assert.Equal("vsphere_host_virtual_switch", vSwitch.Type);
-            Assert.Equal("vsphere_host_virtual_switch.switch", vSwitch.Address);
-            Assert.Equal("vsphere_host_virtual_switch.switch", vSwitch.BaseAddress);
+            await Assert.That(vSwitch).IsNotNull();
+            await Assert.That(vSwitch.Name).IsEqualTo("vSwitch-4c2eb68c-a77f-45aa-990a");
+            await Assert.That(vSwitch.Type).IsEqualTo("vsphere_host_virtual_switch");
+            await Assert.That(vSwitch.Address).IsEqualTo("vsphere_host_virtual_switch.switch");
+            await Assert.That(vSwitch.BaseAddress).IsEqualTo("vsphere_host_virtual_switch.switch");
         }
 
         #region vSphere_Virtual_Machines
-        [Fact]
-        public void GetResources_WhenFilteredByVirtualMachines_ReturnsExpectedMachines()
+        [Test]
+        public async Task GetResources_WhenFilteredByVirtualMachines_ReturnsExpectedMachines()
         {
             this.VerifyVirtualMachine(
                 "course.centos6.student.1.4c2eb68c-a77f-45aa-990a-6b837ee59d71",
@@ -127,19 +123,19 @@ namespace Caster.Api.Tests.Unit.Terraform
                 null);
         }
 
-        private void VerifyVirtualMachine(string name, string id, string addressName, Guid? teamId, int? count)
+        private async Task VerifyVirtualMachine(string name, string id, string addressName, Guid? teamId, int? count)
         {
             var machine = _stateFixture.GetResources().Where(r => r.Id == id).FirstOrDefault();
-            Assert.NotNull(machine);
-            Assert.Equal(name, machine.Name);
-            Assert.Equal("vsphere_virtual_machine", machine.Type);
-            Assert.Equal($"vsphere_virtual_machine.{addressName}{(count.HasValue ? string.Format("[{0}]", count) : "")}", machine.Address);
-            Assert.Equal($"vsphere_virtual_machine.{addressName}", machine.BaseAddress);
-            Assert.Equal(teamId, machine.GetTeamIds()?.FirstOrDefault());
+            await Assert.That(machine).IsNotNull();
+            await Assert.That(machine.Name).IsEqualTo(name);
+            await Assert.That(machine.Type).IsEqualTo("vsphere_virtual_machine");
+            await Assert.That(machine.Address).IsEqualTo($"vsphere_virtual_machine.{addressName}{(count.HasValue ? string.Format("[{0}]", count) : "")}");
+            await Assert.That(machine.BaseAddress).IsEqualTo($"vsphere_virtual_machine.{addressName}");
+            await Assert.That(machine.GetTeamIds()?.FirstOrDefault()).IsEqualTo(teamId);
         }
 
-        [Fact]
-        public void SearchableAttributes_WhenAccessed_ReturnsSerializableData()
+        [Test]
+        public async Task SearchableAttributes_WhenAccessed_ReturnsSerializableData()
         {
             var resources = _stateFixture.GetResources();
 

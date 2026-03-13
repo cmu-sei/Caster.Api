@@ -3,15 +3,15 @@
 
 using System;
 using Caster.Api.Domain.Models;
-using Xunit;
+using TUnit.Core;
 
 namespace Caster.Api.Tests.Unit.Models
 {
-    [Trait("Category", "Unit")]
+    [Category("Unit")]
     public class DirectoryTests
     {
-        [Fact]
-        public void PathIds_WithNestedHierarchy_ReturnsAllIds()
+        [Test]
+        public async Task PathIds_WithNestedHierarchy_ReturnsAllIds()
         {
             var greatGrandparentId = Guid.NewGuid();
             var grandparentId = Guid.NewGuid();
@@ -30,36 +30,36 @@ namespace Caster.Api.Tests.Unit.Models
             var expectedPathIds = new Guid[] { greatGrandparentId, grandparentId, parentId, id };
             var pathIds = directory.PathIds();
 
-            Assert.Equal(expectedPathIds, pathIds);
+            await Assert.That(pathIds).IsEquivalentTo(expectedPathIds);
         }
 
-        [Theory]
-        [InlineData("DirectoryWithId__b7ef25e6-555e-41c9-88d7-22078d3a13c1", "DirectoryWithId", "b7ef25e6-555e-41c9-88d7-22078d3a13c1")]
-        [InlineData("Directory", "Directory", "00000000-0000-0000-0000-000000000000")]
-        [InlineData("DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1", "DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1", "00000000-0000-0000-0000-000000000000")]
-        public void SetImportName_WithVariousFormats_ParsesNameAndIdCorrectly(string importName, string expectedName, string expectedGuid)
+        [Test]
+        [Arguments("DirectoryWithId__b7ef25e6-555e-41c9-88d7-22078d3a13c1", "DirectoryWithId", "b7ef25e6-555e-41c9-88d7-22078d3a13c1")]
+        [Arguments("Directory", "Directory", "00000000-0000-0000-0000-000000000000")]
+        [Arguments("DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1", "DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1", "00000000-0000-0000-0000-000000000000")]
+        public async Task SetImportName_WithVariousFormats_ParsesNameAndIdCorrectly(string importName, string expectedName, string expectedGuid)
         {
             var directory = new Directory();
 
             directory.SetImportName(importName);
 
-            Assert.Equal(expectedName, directory.Name);
-            Assert.Equal(new Guid(expectedGuid), directory.Id);
+            await Assert.That(directory.Name).IsEqualTo(expectedName);
+            await Assert.That(directory.Id).IsEqualTo(new Guid(expectedGuid));
         }
 
-        [Fact]
-        public void SetPath_WithNoParent_UsesOwnId()
+        [Test]
+        public async Task SetPath_WithNoParent_UsesOwnId()
         {
             var id = Guid.NewGuid();
             var directory = new Directory { Id = id };
 
             directory.SetPath();
 
-            Assert.Equal($"{id}/", directory.Path);
+            await Assert.That(directory.Path).IsEqualTo($"{id}/");
         }
 
-        [Fact]
-        public void SetPath_WithParentPath_PrependsParentPath()
+        [Test]
+        public async Task SetPath_WithParentPath_PrependsParentPath()
         {
             var id = Guid.NewGuid();
             var parentId = Guid.NewGuid();
@@ -67,13 +67,13 @@ namespace Caster.Api.Tests.Unit.Models
 
             directory.SetPath($"{parentId}/");
 
-            Assert.Equal($"{parentId}/{id}/", directory.Path);
+            await Assert.That(directory.Path).IsEqualTo($"{parentId}/{id}/");
         }
 
-        [Theory]
-        [InlineData(true, "TestDir__{0}")]
-        [InlineData(false, "TestDir")]
-        public void GetExportName_WithIncludeIdOption_ReturnsExpectedFormat(bool includeId, string expectedFormat)
+        [Test]
+        [Arguments(true, "TestDir__{0}")]
+        [Arguments(false, "TestDir")]
+        public async Task GetExportName_WithIncludeIdOption_ReturnsExpectedFormat(bool includeId, string expectedFormat)
         {
             var id = Guid.NewGuid();
             var directory = new Directory { Id = id, Name = "TestDir" };
@@ -81,32 +81,32 @@ namespace Caster.Api.Tests.Unit.Models
             var exportName = directory.GetExportName(includeId: includeId);
 
             var expected = includeId ? string.Format(expectedFormat, id) : expectedFormat;
-            Assert.Equal(expected, exportName);
+            await Assert.That(exportName).IsEqualTo(expected);
         }
 
-        [Fact]
-        public void GetPathNames_WithNoParent_ReturnsOwnName()
+        [Test]
+        public async Task GetPathNames_WithNoParent_ReturnsOwnName()
         {
             var directory = new Directory { Name = "RootDir" };
 
             var pathNames = directory.GetPathNames();
 
-            Assert.Equal("RootDir/", pathNames);
+            await Assert.That(pathNames).IsEqualTo("RootDir/");
         }
 
-        [Fact]
-        public void GetPathNames_WithParent_ReturnsFullPath()
+        [Test]
+        public async Task GetPathNames_WithParent_ReturnsFullPath()
         {
             var parent = new Directory { Name = "ParentDir" };
             var child = new Directory { Name = "ChildDir", Parent = parent };
 
             var pathNames = child.GetPathNames();
 
-            Assert.Equal("ParentDir/ChildDir/", pathNames);
+            await Assert.That(pathNames).IsEqualTo("ParentDir/ChildDir/");
         }
 
-        [Fact]
-        public void GetPathNames_WithGrandparent_ReturnsFullHierarchy()
+        [Test]
+        public async Task GetPathNames_WithGrandparent_ReturnsFullHierarchy()
         {
             var grandparent = new Directory { Name = "GrandParent" };
             var parent = new Directory { Name = "Parent", Parent = grandparent };
@@ -114,11 +114,11 @@ namespace Caster.Api.Tests.Unit.Models
 
             var pathNames = child.GetPathNames();
 
-            Assert.Equal("GrandParent/Parent/Child/", pathNames);
+            await Assert.That(pathNames).IsEqualTo("GrandParent/Parent/Child/");
         }
 
-        [Fact]
-        public void Constructor_WithParentDirectory_SetsProjectIdFromParent()
+        [Test]
+        public async Task Constructor_WithParentDirectory_SetsProjectIdFromParent()
         {
             var projectId = Guid.NewGuid();
             var parent = new Directory { Id = Guid.NewGuid(), Name = "Parent", ProjectId = projectId };
@@ -126,24 +126,24 @@ namespace Caster.Api.Tests.Unit.Models
 
             var child = new Directory("Child", parent, Guid.NewGuid());
 
-            Assert.Equal(projectId, child.ProjectId);
-            Assert.Equal(parent.Id, child.ParentId);
+            await Assert.That(child.ProjectId).IsEqualTo(projectId);
+            await Assert.That(child.ParentId).IsEqualTo(parent.Id);
         }
 
-        [Fact]
-        public void Constructor_WithoutParentDirectory_SetsPathFromOwnId()
+        [Test]
+        public async Task Constructor_WithoutParentDirectory_SetsPathFromOwnId()
         {
             var id = Guid.NewGuid();
 
             var directory = new Directory("TestDir", null, id);
 
-            Assert.Equal("TestDir", directory.Name);
-            Assert.Equal(id, directory.Id);
-            Assert.Equal($"{id}/", directory.Path);
+            await Assert.That(directory.Name).IsEqualTo("TestDir");
+            await Assert.That(directory.Id).IsEqualTo(id);
+            await Assert.That(directory.Path).IsEqualTo($"{id}/");
         }
 
-        [Fact]
-        public void PathIds_WithMultipleLevels_ReturnsCorrectGuidArray()
+        [Test]
+        public async Task PathIds_WithMultipleLevels_ReturnsCorrectGuidArray()
         {
             var id1 = Guid.NewGuid();
             var id2 = Guid.NewGuid();
@@ -153,7 +153,7 @@ namespace Caster.Api.Tests.Unit.Models
 
             var pathIds = directory.PathIds();
 
-            Assert.Equal(new[] { id1, id2, id3 }, pathIds);
+            await Assert.That(pathIds).IsEquivalentTo(new[] { id1, id2, id3 });
         }
     }
 }

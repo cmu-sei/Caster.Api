@@ -17,11 +17,11 @@ using Caster.Api.Infrastructure.Identity;
 using Crucible.Common.Testing.Fixtures;
 using FakeItEasy;
 using Microsoft.EntityFrameworkCore;
-using Xunit;
+using TUnit.Core;
 
 namespace Caster.Api.Tests.Unit.Handlers
 {
-    [Trait("Category", "Unit")]
+    [Category("Unit")]
     public class ProjectHandlerTests : IDisposable
     {
         private readonly CasterContext _dbContext;
@@ -67,7 +67,7 @@ namespace Caster.Api.Tests.Unit.Handlers
 
         #region Create Tests
 
-        [Fact]
+        [Test]
         public async Task Handle_CreateWithValidCommand_ReturnsProject()
         {
             var handler = new Create.Handler(_authService, _mapper, _dbContext, _telemetryService, _identityResolver);
@@ -75,12 +75,12 @@ namespace Caster.Api.Tests.Unit.Handlers
 
             var result = await handler.Handle(command, CancellationToken.None);
 
-            Assert.NotNull(result);
-            Assert.Equal("Test Project", result.Name);
-            Assert.NotEqual(Guid.Empty, result.Id);
+            await Assert.That(result).IsNotNull();
+            await Assert.That(result.Name).IsEqualTo("Test Project");
+            await Assert.That(result.Id).IsNotEqualTo(Guid.Empty);
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_CreateWithValidCommand_PersistsProjectToDatabase()
         {
             var handler = new Create.Handler(_authService, _mapper, _dbContext, _telemetryService, _identityResolver);
@@ -89,11 +89,11 @@ namespace Caster.Api.Tests.Unit.Handlers
             var result = await handler.Handle(command, CancellationToken.None);
 
             var dbProject = await _dbContext.Projects.FindAsync(result.Id);
-            Assert.NotNull(dbProject);
-            Assert.Equal("Persisted Project", dbProject.Name);
+            await Assert.That(dbProject).IsNotNull();
+            await Assert.That(dbProject.Name).IsEqualTo("Persisted Project");
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_CreateWithValidCommand_CreatesProjectMembership()
         {
             var handler = new Create.Handler(_authService, _mapper, _dbContext, _telemetryService, _identityResolver);
@@ -103,11 +103,11 @@ namespace Caster.Api.Tests.Unit.Handlers
 
             var membership = await _dbContext.ProjectMemberships
                 .FirstOrDefaultAsync(m => m.ProjectId == result.Id);
-            Assert.NotNull(membership);
-            Assert.Equal(ProjectRoleDefaults.ProjectCreatorRoleId, membership.RoleId);
+            await Assert.That(membership).IsNotNull();
+            await Assert.That(membership.RoleId).IsEqualTo(ProjectRoleDefaults.ProjectCreatorRoleId);
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_CreateWhenNotAuthorized_ThrowsForbiddenException()
         {
             A.CallTo(() => _authService.Authorize(A<SystemPermission[]>._, A<CancellationToken>._))
@@ -116,15 +116,15 @@ namespace Caster.Api.Tests.Unit.Handlers
             var handler = new Create.Handler(_authService, _mapper, _dbContext, _telemetryService, _identityResolver);
             var command = new Create.Command { Name = "Unauthorized Project" };
 
-            await Assert.ThrowsAsync<ForbiddenException>(() =>
-                handler.Handle(command, CancellationToken.None));
+            await Assert.That(async () => await handler.Handle(command, CancellationToken.None))
+                .ThrowsExactly<ForbiddenException>();
         }
 
         #endregion
 
         #region Get Tests
 
-        [Fact]
+        [Test]
         public async Task Handle_GetWithExistingProject_ReturnsProject()
         {
             var project = new Domain.Models.Project("Existing Project");
@@ -136,22 +136,22 @@ namespace Caster.Api.Tests.Unit.Handlers
 
             var result = await handler.Handle(query, CancellationToken.None);
 
-            Assert.NotNull(result);
-            Assert.Equal("Existing Project", result.Name);
-            Assert.Equal(project.Id, result.Id);
+            await Assert.That(result).IsNotNull();
+            await Assert.That(result.Name).IsEqualTo("Existing Project");
+            await Assert.That(result.Id).IsEqualTo(project.Id);
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_GetWithNonExistentProject_ThrowsEntityNotFoundException()
         {
             var handler = new Get.Handler(_authService, _mapper, _dbContext);
             var query = new Get.Query { Id = Guid.NewGuid() };
 
-            await Assert.ThrowsAsync<EntityNotFoundException<Features.Projects.Project>>(() =>
-                handler.Handle(query, CancellationToken.None));
+            await Assert.That(async () => await handler.Handle(query, CancellationToken.None))
+                .ThrowsExactly<EntityNotFoundException<Features.Projects.Project>>();
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_GetWhenNotAuthorized_ThrowsForbiddenException()
         {
             A.CallTo(() => _authService.Authorize<Domain.Models.Project>(A<Guid?>._, A<SystemPermission[]>._, A<ProjectPermission[]>._, A<CancellationToken>._))
@@ -160,15 +160,15 @@ namespace Caster.Api.Tests.Unit.Handlers
             var handler = new Get.Handler(_authService, _mapper, _dbContext);
             var query = new Get.Query { Id = Guid.NewGuid() };
 
-            await Assert.ThrowsAsync<ForbiddenException>(() =>
-                handler.Handle(query, CancellationToken.None));
+            await Assert.That(async () => await handler.Handle(query, CancellationToken.None))
+                .ThrowsExactly<ForbiddenException>();
         }
 
         #endregion
 
         #region GetAll Tests
 
-        [Fact]
+        [Test]
         public async Task Handle_GetAllWithMultipleProjects_ReturnsAllProjects()
         {
             _dbContext.Projects.Add(new Domain.Models.Project("Project 1"));
@@ -180,10 +180,10 @@ namespace Caster.Api.Tests.Unit.Handlers
 
             var result = await handler.Handle(query, CancellationToken.None);
 
-            Assert.Equal(2, result.Length);
+            await Assert.That(result.Length).IsEqualTo(2);
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_GetAllWhenOnlyMineTrue_FiltersToUserProjects()
         {
             var handler = new GetAll.Handler(_authService, _mapper, _dbContext);
@@ -193,10 +193,10 @@ namespace Caster.Api.Tests.Unit.Handlers
 
             var result = await handler.Handle(query, CancellationToken.None);
 
-            Assert.Empty(result);
+            await Assert.That(result).IsEmpty();
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_GetAllWhenUnauthorized_ThrowsForbiddenException()
         {
             A.CallTo(() => _authService.Authorize(A<SystemPermission[]>._, A<CancellationToken>._))
@@ -205,15 +205,15 @@ namespace Caster.Api.Tests.Unit.Handlers
             var handler = new GetAll.Handler(_authService, _mapper, _dbContext);
             var query = new GetAll.Query { OnlyMine = false };
 
-            await Assert.ThrowsAsync<ForbiddenException>(() =>
-                handler.Handle(query, CancellationToken.None));
+            await Assert.That(async () => await handler.Handle(query, CancellationToken.None))
+                .ThrowsExactly<ForbiddenException>();
         }
 
         #endregion
 
         #region Edit Tests
 
-        [Fact]
+        [Test]
         public async Task Handle_EditWithExistingProject_UpdatesName()
         {
             var project = new Domain.Models.Project("Original Name");
@@ -225,21 +225,21 @@ namespace Caster.Api.Tests.Unit.Handlers
 
             var result = await handler.Handle(command, CancellationToken.None);
 
-            Assert.Equal("Updated Name", result.Name);
-            Assert.Equal(project.Id, result.Id);
+            await Assert.That(result.Name).IsEqualTo("Updated Name");
+            await Assert.That(result.Id).IsEqualTo(project.Id);
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_EditWithNonExistentProject_ThrowsEntityNotFoundException()
         {
             var handler = new Edit.Handler(_authService, _mapper, _dbContext);
             var command = new Edit.Command { Id = Guid.NewGuid(), Name = "Updated" };
 
-            await Assert.ThrowsAsync<EntityNotFoundException<Features.Projects.Project>>(() =>
-                handler.Handle(command, CancellationToken.None));
+            await Assert.That(async () => await handler.Handle(command, CancellationToken.None))
+                .ThrowsExactly<EntityNotFoundException<Features.Projects.Project>>();
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_EditWithExistingProject_PersistsChangesToDatabase()
         {
             var project = new Domain.Models.Project("Original");
@@ -252,14 +252,14 @@ namespace Caster.Api.Tests.Unit.Handlers
             await handler.Handle(command, CancellationToken.None);
 
             var dbProject = await _dbContext.Projects.FindAsync(project.Id);
-            Assert.Equal("Persisted Update", dbProject.Name);
+            await Assert.That(dbProject.Name).IsEqualTo("Persisted Update");
         }
 
         #endregion
 
         #region Delete Tests
 
-        [Fact]
+        [Test]
         public async Task Handle_DeleteWithExistingProject_RemovesFromDatabase()
         {
             var project = new Domain.Models.Project("To Delete");
@@ -272,20 +272,20 @@ namespace Caster.Api.Tests.Unit.Handlers
             await handler.Handle(command, CancellationToken.None);
 
             var dbProject = await _dbContext.Projects.FindAsync(project.Id);
-            Assert.Null(dbProject);
+            await Assert.That(dbProject).IsNull();
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_DeleteWithNonExistentProject_ThrowsEntityNotFoundException()
         {
             var handler = new Delete.Handler(_authService, _telemetryService, _dbContext);
             var command = new Delete.Command { Id = Guid.NewGuid() };
 
-            await Assert.ThrowsAsync<EntityNotFoundException<Features.Projects.Project>>(() =>
-                handler.Handle(command, CancellationToken.None));
+            await Assert.That(async () => await handler.Handle(command, CancellationToken.None))
+                .ThrowsExactly<EntityNotFoundException<Features.Projects.Project>>();
         }
 
-        [Fact]
+        [Test]
         public async Task Handle_DeleteWhenNotAuthorized_ThrowsForbiddenException()
         {
             A.CallTo(() => _authService.Authorize<Domain.Models.Project>(A<Guid?>._, A<SystemPermission[]>._, A<ProjectPermission[]>._, A<CancellationToken>._))
@@ -294,8 +294,8 @@ namespace Caster.Api.Tests.Unit.Handlers
             var handler = new Delete.Handler(_authService, _telemetryService, _dbContext);
             var command = new Delete.Command { Id = Guid.NewGuid() };
 
-            await Assert.ThrowsAsync<ForbiddenException>(() =>
-                handler.Handle(command, CancellationToken.None));
+            await Assert.That(async () => await handler.Handle(command, CancellationToken.None))
+                .ThrowsExactly<ForbiddenException>();
         }
 
         #endregion

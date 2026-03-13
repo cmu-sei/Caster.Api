@@ -3,64 +3,69 @@
 
 using System;
 using Caster.Api.Domain.Models;
-using Xunit;
+using Directory = Caster.Api.Domain.Models.Directory;
+using File = Caster.Api.Domain.Models.File;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
 
 namespace Caster.Api.Tests.Unit.Models
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "Vlan")]
+    [Category("Unit")]
+    [Category("Vlan")]
     public class VlanTests
     {
-        [Fact]
-        public void Reserved_WhenReservedEditable_CanBeSet()
+        [Test]
+        public async Task Reserved_WhenReservedEditable_CanBeSet()
         {
             var vlan = new Vlan { ReservedEditable = true };
 
             vlan.Reserved = true;
 
-            Assert.True(vlan.Reserved);
+            await Assert.That(vlan.Reserved).IsTrue();
         }
 
-        [Fact]
-        public void Reserved_WhenReservedEditable_CanBeCleared()
+        [Test]
+        public async Task Reserved_WhenReservedEditable_CanBeCleared()
         {
             var vlan = new Vlan { ReservedEditable = true, Reserved = true };
 
             vlan.Reserved = false;
 
-            Assert.False(vlan.Reserved);
+            await Assert.That(vlan.Reserved).IsFalse();
         }
 
-        [Fact]
-        public void Reserved_WhenNotEditableAndValueChanges_ThrowsArgumentException()
+        [Test]
+        public async Task Reserved_WhenNotEditableAndValueChanges_ThrowsArgumentException()
         {
             var vlan = new Vlan { ReservedEditable = true, Reserved = true };
             vlan.ReservedEditable = false;
 
-            Assert.Throws<ArgumentException>(() => vlan.Reserved = false);
+            await Assert.That(() => vlan.Reserved = false)
+                .ThrowsExactly<ArgumentException>();
         }
 
-        [Fact]
-        public void Reserved_WhenNotEditableAndValueSame_DoesNotThrow()
+        [Test]
+        public async Task Reserved_WhenNotEditableAndValueSame_DoesNotThrow()
         {
             var vlan = new Vlan { ReservedEditable = true, Reserved = true };
             vlan.ReservedEditable = false;
 
             vlan.Reserved = true; // Same value, should not throw
 
-            Assert.True(vlan.Reserved);
+            await Assert.That(vlan.Reserved).IsTrue();
         }
 
-        [Fact]
-        public void DefaultValues_AreCorrect()
+        [Test]
+        public async Task DefaultValues_AreCorrect()
         {
             var vlan = new Vlan();
 
-            Assert.False(vlan.InUse);
-            Assert.False(vlan.Reserved);
-            Assert.True(vlan.ReservedEditable);
-            Assert.Null(vlan.Tag);
-            Assert.Null(vlan.PartitionId);
+            await Assert.That(vlan.InUse).IsFalse();
+            await Assert.That(vlan.Reserved).IsFalse();
+            await Assert.That(vlan.ReservedEditable).IsTrue();
+            await Assert.That(vlan.Tag).IsNull();
+            await Assert.That(vlan.PartitionId).IsNull();
         }
     }
 }

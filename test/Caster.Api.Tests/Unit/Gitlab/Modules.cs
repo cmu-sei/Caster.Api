@@ -5,40 +5,40 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using Caster.Api.Domain.Models;
+using Directory = Caster.Api.Domain.Models.Directory;
+using File = Caster.Api.Domain.Models.File;
 using Caster.Api.Infrastructure.Serialization;
-using Xunit;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
 
 namespace Caster.Api.Tests.Unit
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "GitlabModules")]
-    public class GitlabModulesUnitTest : IClassFixture<ModulesFixture>
+    [Category("Unit")]
+    [Category("GitlabModules")]
+    [ClassDataSource<ModulesFixture>(Shared = SharedType.PerTestSession)]
+    public class GitlabModulesUnitTest(ModulesFixture modulesFixture)
     {
-        private readonly ModulesFixture _modulesFixture;
+        private readonly ModulesFixture _modulesFixture = modulesFixture;
 
-        public GitlabModulesUnitTest(ModulesFixture modulesFixture)
-        {
-            _modulesFixture = modulesFixture;
-        }
-
-        [Fact]
-        public void Test_Get_Modules()
+        [Test]
+        public async Task Test_Get_Modules()
         {
             var modules = System.Text.Json.JsonSerializer
                 .Deserialize<GitlabModule[]>(
                     _modulesFixture.RawModules,
                     DefaultJsonSettings.Settings);
 
-            Assert.Equal(6, modules.Count());
+            await Assert.That(modules.Count()).IsEqualTo(6);
         }
 
-        [Fact]
-        public void Test_Get_Variables()
+        [Test]
+        public async Task Test_Get_Variables()
         {
             var variables = GitlabModuleVariableResponse
                 .GetModuleVariables(Encoding.UTF8.GetBytes(_modulesFixture.Variables));
 
-            Assert.Equal(7, variables.Count());
+            await Assert.That(variables.Count()).IsEqualTo(7);
         }
     }
 

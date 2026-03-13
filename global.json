@@ -3,5 +3,10 @@
     "version": "10.0.0",
     "allowPrerelease": false,
     "rollForward": "latestMinor"
+  },
+  "tools": {
+    "dotnet-test": {
+      "commandId": "Microsoft.Testing.Platform"
+    }
   }
 }

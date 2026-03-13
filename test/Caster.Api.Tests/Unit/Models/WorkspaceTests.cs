@@ -3,61 +3,64 @@
 
 using System;
 using Caster.Api.Domain.Models;
-using Xunit;
 using Directory = Caster.Api.Domain.Models.Directory;
+using File = Caster.Api.Domain.Models.File;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
 
 namespace Caster.Api.Tests.Unit.Models
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "Workspace")]
+    [Category("Unit")]
+    [Category("Workspace")]
     public class WorkspaceTests
     {
-        [Fact]
-        public void IsDefault_WhenNameIsDefault_ReturnsTrue()
+        [Test]
+        public async Task IsDefault_WhenNameIsDefault_ReturnsTrue()
         {
             var workspace = new Workspace { Name = "default" };
 
-            Assert.True(workspace.IsDefault);
+            await Assert.That(workspace.IsDefault).IsTrue();
         }
 
-        [Fact]
-        public void IsDefault_WhenNameIsDefaultUpperCase_ReturnsTrue()
+        [Test]
+        public async Task IsDefault_WhenNameIsDefaultUpperCase_ReturnsTrue()
         {
             var workspace = new Workspace { Name = "Default" };
 
-            Assert.True(workspace.IsDefault);
+            await Assert.That(workspace.IsDefault).IsTrue();
         }
 
-        [Fact]
-        public void IsDefault_WhenNameIsNotDefault_ReturnsFalse()
+        [Test]
+        public async Task IsDefault_WhenNameIsNotDefault_ReturnsFalse()
         {
             var workspace = new Workspace { Name = "staging" };
 
-            Assert.False(workspace.IsDefault);
+            await Assert.That(workspace.IsDefault).IsFalse();
         }
 
-        [Fact]
-        public void GetState_WhenStateIsNull_ReturnsEmptyState()
+        [Test]
+        public async Task GetState_WhenStateIsNull_ReturnsEmptyState()
         {
             var workspace = new Workspace { State = null };
 
             var state = workspace.GetState();
 
-            Assert.NotNull(state);
+            await Assert.That(state).IsNotNull();
         }
 
-        [Fact]
-        public void GetStateBackup_WhenStateBackupIsNull_ReturnsEmptyState()
+        [Test]
+        public async Task GetStateBackup_WhenStateBackupIsNull_ReturnsEmptyState()
         {
             var workspace = new Workspace { StateBackup = null };
 
             var stateBackup = workspace.GetStateBackup();
 
-            Assert.NotNull(stateBackup);
+            await Assert.That(stateBackup).IsNotNull();
         }
 
-        [Fact]
-        public void GetPath_ReturnsCorrectPath()
+        [Test]
+        public async Task GetPath_ReturnsCorrectPath()
         {
             var id = Guid.NewGuid();
             var workspace = new Workspace { Id = id };
@@ -65,81 +68,81 @@ namespace Caster.Api.Tests.Unit.Models
 
             var path = workspace.GetPath(basePath);
 
-            Assert.Equal(System.IO.Path.Combine(basePath, id.ToString()), path);
+            await Assert.That(path).IsEqualTo(System.IO.Path.Combine(basePath, id.ToString()));
         }
 
-        [Fact]
-        public void GetStatePath_DefaultWorkspace_ReturnsBaseStatePath()
+        [Test]
+        public async Task GetStatePath_DefaultWorkspace_ReturnsBaseStatePath()
         {
             var workspace = new Workspace { Name = "default" };
             var basePath = "/tmp/terraform";
 
             var path = workspace.GetStatePath(basePath, backupState: false);
 
-            Assert.Equal(System.IO.Path.Combine(basePath, "terraform.tfstate"), path);
+            await Assert.That(path).IsEqualTo(System.IO.Path.Combine(basePath, "terraform.tfstate"));
         }
 
-        [Fact]
-        public void GetStatePath_DefaultWorkspaceBackup_ReturnsBackupPath()
+        [Test]
+        public async Task GetStatePath_DefaultWorkspaceBackup_ReturnsBackupPath()
         {
             var workspace = new Workspace { Name = "default" };
             var basePath = "/tmp/terraform";
 
             var path = workspace.GetStatePath(basePath, backupState: true);
 
-            Assert.Equal(System.IO.Path.Combine(basePath, "terraform.tfstate.backup"), path);
+            await Assert.That(path).IsEqualTo(System.IO.Path.Combine(basePath, "terraform.tfstate.backup"));
         }
 
-        [Fact]
-        public void GetStatePath_NonDefaultWorkspace_ReturnsNamespacedPath()
+        [Test]
+        public async Task GetStatePath_NonDefaultWorkspace_ReturnsNamespacedPath()
         {
             var workspace = new Workspace { Name = "staging" };
             var basePath = "/tmp/terraform";
 
             var path = workspace.GetStatePath(basePath, backupState: false);
 
-            Assert.Equal(System.IO.Path.Combine(basePath, "terraform.tfstate.d", "staging", "terraform.tfstate"), path);
+            await Assert.That(path).IsEqualTo(System.IO.Path.Combine(basePath, "terraform.tfstate.d", "staging", "terraform.tfstate"));
         }
 
-        [Fact]
-        public void GetStatePath_NonDefaultWorkspaceBackup_ReturnsNamespacedBackupPath()
+        [Test]
+        public async Task GetStatePath_NonDefaultWorkspaceBackup_ReturnsNamespacedBackupPath()
         {
             var workspace = new Workspace { Name = "staging" };
             var basePath = "/tmp/terraform";
 
             var path = workspace.GetStatePath(basePath, backupState: true);
 
-            Assert.Equal(System.IO.Path.Combine(basePath, "terraform.tfstate.d", "staging", "terraform.tfstate.backup"), path);
+            await Assert.That(path).IsEqualTo(System.IO.Path.Combine(basePath, "terraform.tfstate.d", "staging", "terraform.tfstate.backup"));
         }
 
-        [Fact]
-        public void Constructor_WithDirectoryParam_SetsDirectoryAndId()
+        [Test]
+        public async Task Constructor_WithDirectoryParam_SetsDirectoryAndId()
         {
             var directory = new Directory { Id = Guid.NewGuid(), Name = "TestDir" };
 
             var workspace = new Workspace("test-workspace", directory);
 
-            Assert.Equal("test-workspace", workspace.Name);
-            Assert.Equal(directory.Id, workspace.DirectoryId);
-            Assert.Equal(directory, workspace.Directory);
+            await Assert.That(workspace.Name).IsEqualTo("test-workspace");
+            await Assert.That(workspace.DirectoryId).IsEqualTo(directory.Id);
+            await Assert.That(workspace.Directory).IsEqualTo(directory);
         }
 
-        [Fact]
-        public void Constructor_WithNullDirectory_DoesNotThrow()
+        [Test]
+        public async Task Constructor_WithNullDirectory_DoesNotThrow()
         {
             var workspace = new Workspace("test-workspace", null);
 
-            Assert.Equal("test-workspace", workspace.Name);
+            await Assert.That(workspace.Name).IsEqualTo("test-workspace");
         }
 
-        [Fact]
-        public void GetRemovedResources_WhenBothStatesNull_ReturnsEmpty()
+        [Test]
+        public async Task GetRemovedResources_WhenBothStatesNull_ReturnsEmpty()
         {
             var workspace = new Workspace { State = null, StateBackup = null };
 
             var removed = workspace.GetRemovedResources();
 
-            Assert.Empty(removed);
+            await Assert.That(removed).IsEmpty();
         }
     }
 }

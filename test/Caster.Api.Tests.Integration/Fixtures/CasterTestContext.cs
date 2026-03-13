@@ -12,10 +12,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.PostgreSql;
+using TUnit.Core;
+using TUnit.Core.Interfaces;
 
 namespace Caster.Api.Tests.Integration.Fixtures;
 
-public class CasterTestContext : WebApplicationFactory<Program>, IAsyncLifetime
+public class CasterTestContext : WebApplicationFactory<Program>, IAsyncInitializer, IAsyncDisposable
 {
     private PostgreSqlContainer? _container;
 
@@ -55,7 +57,7 @@ public class CasterTestContext : WebApplicationFactory<Program>, IAsyncLifetime
         await _container.StartAsync();
     }
 
-    public new async Task DisposeAsync()
+    public new async ValueTask DisposeAsync()
     {
         if (_container is not null)
             await _container.DisposeAsync();

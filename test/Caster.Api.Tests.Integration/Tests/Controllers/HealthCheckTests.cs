@@ -6,25 +6,19 @@ using Caster.Api.Tests.Integration.Fixtures;
 
 namespace Caster.Api.Tests.Integration.Tests.Controllers;
 
-[Trait("Category", "Integration")]
-public class HealthCheckTests : IClassFixture<CasterTestContext>
+[Category("Integration")]
+[ClassDataSource<CasterTestContext>(Shared = SharedType.PerTestSession)]
+public class HealthCheckTests(CasterTestContext context)
 {
-    private readonly CasterTestContext _context;
+    private readonly CasterTestContext _context = context;
 
-    public HealthCheckTests(CasterTestContext context)
-    {
-        _context = context;
-    }
-
-    [Fact]
+    [Test]
     public async Task GetHealth_WhenCalled_ReturnsSuccessStatusCode()
     {
         var client = _context.CreateClient();
         var response = await client.GetAsync("/api/health");
 
-        Assert.True(
-            response.StatusCode == HttpStatusCode.OK ||
-            response.StatusCode == HttpStatusCode.ServiceUnavailable,
-            $"Health check returned unexpected status: {response.StatusCode}");
+        await Assert.That(response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            .IsTrue();
     }
 }

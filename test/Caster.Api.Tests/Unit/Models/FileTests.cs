@@ -4,12 +4,16 @@
 using System;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Exceptions;
-using Xunit;
+using TUnit.Core;
+using TUnit.Assertions;
+using TUnit.Assertions.Extensions;
+using Directory = Caster.Api.Domain.Models.Directory;
+using File = Caster.Api.Domain.Models.File;
 
 namespace Caster.Api.Tests.Unit.Models
 {
-    [Trait("Category", "Unit")]
-    [Trait("Category", "File")]
+    [Category("Unit")]
+    [Category("File")]
     public class FileTests
     {
         private readonly Guid _userId = Guid.NewGuid();
@@ -23,145 +27,152 @@ namespace Caster.Api.Tests.Unit.Models
 
         #region Lock Tests
 
-        [Fact]
-        public void Lock_WhenUnlocked_SetsLockedById()
+        [Test]
+        public async Task Lock_WhenUnlocked_SetsLockedById()
         {
             var file = CreateFile();
 
             file.Lock(_userId, canLock: false);
 
-            Assert.Equal(_userId, file.LockedById);
+            await Assert.That(file.LockedById).IsEqualTo(_userId);
         }
 
-        [Fact]
-        public void Lock_WhenLockedBySameUser_Succeeds()
+        [Test]
+        public async Task Lock_WhenLockedBySameUser_Succeeds()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
 
             file.Lock(_userId, canLock: false);
 
-            Assert.Equal(_userId, file.LockedById);
+            await Assert.That(file.LockedById).IsEqualTo(_userId);
         }
 
-        [Fact]
-        public void Lock_WhenLockedByOtherUser_ThrowsFileConflictException()
+        [Test]
+        public async Task Lock_WhenLockedByOtherUser_ThrowsFileConflictException()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
 
-            Assert.Throws<FileConflictException>(() => file.Lock(_otherUserId, canLock: false));
+            await Assert.That(() => file.Lock(_otherUserId, canLock: false))
+                .ThrowsExactly<FileConflictException>();
         }
 
-        [Fact]
-        public void Lock_WhenAdminLockedAndNoCanLock_ThrowsFileAdminLockedException()
+        [Test]
+        public async Task Lock_WhenAdminLockedAndNoCanLock_ThrowsFileAdminLockedException()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
 
-            Assert.Throws<FileAdminLockedException>(() => file.Lock(_userId, canLock: false));
+            await Assert.That(() => file.Lock(_userId, canLock: false))
+                .ThrowsExactly<FileAdminLockedException>();
         }
 
-        [Fact]
-        public void Lock_WhenAdminLockedAndCanLock_Succeeds()
+        [Test]
+        public async Task Lock_WhenAdminLockedAndCanLock_Succeeds()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
 
             file.Lock(_userId, canLock: true);
 
-            Assert.Equal(_userId, file.LockedById);
+            await Assert.That(file.LockedById).IsEqualTo(_userId);
         }
 
         #endregion
 
         #region Unlock Tests
 
-        [Fact]
-        public void Unlock_WhenLockedBySameUser_ClearsLock()
+        [Test]
+        public async Task Unlock_WhenLockedBySameUser_ClearsLock()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
 
             file.Unlock(_userId);
 
-            Assert.Null(file.LockedById);
+            await Assert.That(file.LockedById).IsNull();
         }
 
-        [Fact]
-        public void Unlock_WhenLockedByOtherUser_ThrowsFileConflictException()
+        [Test]
+        public async Task Unlock_WhenLockedByOtherUser_ThrowsFileConflictException()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
 
-            Assert.Throws<FileConflictException>(() => file.Unlock(_otherUserId));
+            await Assert.That(() => file.Unlock(_otherUserId))
+                .ThrowsExactly<FileConflictException>();
         }
 
-        [Fact]
-        public void Unlock_WhenNotLocked_ThrowsFileConflictException()
+        [Test]
+        public async Task Unlock_WhenNotLocked_ThrowsFileConflictException()
         {
             var file = CreateFile();
 
-            Assert.Throws<FileConflictException>(() => file.Unlock(_userId));
+            await Assert.That(() => file.Unlock(_userId))
+                .ThrowsExactly<FileConflictException>();
         }
 
         #endregion
 
         #region Save Tests
 
-        [Fact]
-        public void Save_WhenLockedBySameUser_UpdatesModifiedFields()
+        [Test]
+        public async Task Save_WhenLockedBySameUser_UpdatesModifiedFields()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
 
             file.Save(_userId, canLock: false);
 
-            Assert.Equal(_userId, file.ModifiedById);
-            Assert.NotNull(file.DateSaved);
-            Assert.Single(file.FileVersions);
+            await Assert.That(file.ModifiedById).IsEqualTo(_userId);
+            await Assert.That(file.DateSaved).IsNotNull();
+            await Assert.That(file.FileVersions).HasSingleItem();
         }
 
-        [Fact]
-        public void Save_WhenLockedByOtherUser_ThrowsFileConflictException()
+        [Test]
+        public async Task Save_WhenLockedByOtherUser_ThrowsFileConflictException()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
 
-            Assert.Throws<FileConflictException>(() => file.Save(_otherUserId, canLock: false));
+            await Assert.That(() => file.Save(_otherUserId, canLock: false))
+                .ThrowsExactly<FileConflictException>();
         }
 
-        [Fact]
-        public void Save_WhenNotLocked_ThrowsFileConflictException()
+        [Test]
+        public async Task Save_WhenNotLocked_ThrowsFileConflictException()
         {
             var file = CreateFile();
 
-            Assert.Throws<FileConflictException>(() => file.Save(_userId, canLock: false));
+            await Assert.That(() => file.Save(_userId, canLock: false))
+                .ThrowsExactly<FileConflictException>();
         }
 
-        [Fact]
-        public void Save_WithBypassLock_SucceedsEvenWhenNotLocked()
+        [Test]
+        public async Task Save_WithBypassLock_SucceedsEvenWhenNotLocked()
         {
             var file = CreateFile();
 
             file.Save(_userId, canLock: false, bypassLock: true);
 
-            Assert.Equal(_userId, file.ModifiedById);
-            Assert.NotNull(file.DateSaved);
+            await Assert.That(file.ModifiedById).IsEqualTo(_userId);
+            await Assert.That(file.DateSaved).IsNotNull();
         }
 
-        [Fact]
-        public void Save_WhenAdminLockedAndNoCanLock_ThrowsFileAdminLockedException()
+        [Test]
+        public async Task Save_WhenAdminLockedAndNoCanLock_ThrowsFileAdminLockedException()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
             file.Lock(_userId, canLock: true);
 
-            Assert.Throws<FileAdminLockedException>(() => file.Save(_userId, canLock: false));
+            await Assert.That(() => file.Save(_userId, canLock: false))
+                .ThrowsExactly<FileAdminLockedException>();
         }
 
-        [Fact]
-        public void Save_CreatesFileVersionOnEachSave()
+        [Test]
+        public async Task Save_CreatesFileVersionOnEachSave()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
@@ -169,139 +180,142 @@ namespace Caster.Api.Tests.Unit.Models
             file.Save(_userId, canLock: false);
             file.Save(_userId, canLock: false);
 
-            Assert.Equal(2, file.FileVersions.Count);
+            await Assert.That(file.FileVersions.Count).IsEqualTo(2);
         }
 
         #endregion
 
         #region Delete Tests
 
-        [Fact]
-        public void Delete_SetsIsDeleted()
+        [Test]
+        public async Task Delete_SetsIsDeleted()
         {
             var file = CreateFile();
 
             file.Delete(canLock: false);
 
-            Assert.True(file.IsDeleted);
+            await Assert.That(file.IsDeleted).IsTrue();
         }
 
-        [Fact]
-        public void Delete_WhenAdminLockedAndNoCanLock_ThrowsFileAdminLockedException()
+        [Test]
+        public async Task Delete_WhenAdminLockedAndNoCanLock_ThrowsFileAdminLockedException()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
 
-            Assert.Throws<FileAdminLockedException>(() => file.Delete(canLock: false));
+            await Assert.That(() => file.Delete(canLock: false))
+                .ThrowsExactly<FileAdminLockedException>();
         }
 
-        [Fact]
-        public void Delete_WhenAdminLockedAndCanLock_Succeeds()
+        [Test]
+        public async Task Delete_WhenAdminLockedAndCanLock_Succeeds()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
 
             file.Delete(canLock: true);
 
-            Assert.True(file.IsDeleted);
+            await Assert.That(file.IsDeleted).IsTrue();
         }
 
         #endregion
 
         #region Administrative Lock Tests
 
-        [Fact]
-        public void AdministrativelyLock_WithCanLock_SetsAdminLocked()
+        [Test]
+        public async Task AdministrativelyLock_WithCanLock_SetsAdminLocked()
         {
             var file = CreateFile();
 
             file.AdministrativelyLock(canLock: true);
 
-            Assert.True(file.AdministrativelyLocked);
+            await Assert.That(file.AdministrativelyLocked).IsTrue();
         }
 
-        [Fact]
-        public void AdministrativelyLock_WithoutCanLock_ThrowsFileInsufficientPrivilegesException()
+        [Test]
+        public async Task AdministrativelyLock_WithoutCanLock_ThrowsFileInsufficientPrivilegesException()
         {
             var file = CreateFile();
 
-            Assert.Throws<FileInsufficientPrivilegesException>(() => file.AdministrativelyLock(canLock: false));
+            await Assert.That(() => file.AdministrativelyLock(canLock: false))
+                .ThrowsExactly<FileInsufficientPrivilegesException>();
         }
 
-        [Fact]
-        public void AdministrativelyUnlock_WithCanLock_ClearsAdminLock()
+        [Test]
+        public async Task AdministrativelyUnlock_WithCanLock_ClearsAdminLock()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
 
             file.AdministrativelyUnlock(canLock: true);
 
-            Assert.False(file.AdministrativelyLocked);
+            await Assert.That(file.AdministrativelyLocked).IsFalse();
         }
 
-        [Fact]
-        public void AdministrativelyUnlock_WithoutCanLock_ThrowsFileInsufficientPrivilegesException()
+        [Test]
+        public async Task AdministrativelyUnlock_WithoutCanLock_ThrowsFileInsufficientPrivilegesException()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
 
-            Assert.Throws<FileInsufficientPrivilegesException>(() => file.AdministrativelyUnlock(canLock: false));
+            await Assert.That(() => file.AdministrativelyUnlock(canLock: false))
+                .ThrowsExactly<FileInsufficientPrivilegesException>();
         }
 
         #endregion
 
         #region CanLock Tests
 
-        [Fact]
-        public void CanLock_WhenUnlocked_ReturnsTrue()
+        [Test]
+        public async Task CanLock_WhenUnlocked_ReturnsTrue()
         {
             var file = CreateFile();
 
-            Assert.True(file.CanLock(_userId, canLock: false));
+            await Assert.That(file.CanLock(_userId, canLock: false)).IsTrue();
         }
 
-        [Fact]
-        public void CanLock_WhenLockedBySameUser_ReturnsTrue()
+        [Test]
+        public async Task CanLock_WhenLockedBySameUser_ReturnsTrue()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
 
-            Assert.True(file.CanLock(_userId, canLock: false));
+            await Assert.That(file.CanLock(_userId, canLock: false)).IsTrue();
         }
 
-        [Fact]
-        public void CanLock_WhenLockedByOtherUser_ReturnsFalse()
+        [Test]
+        public async Task CanLock_WhenLockedByOtherUser_ReturnsFalse()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
 
-            Assert.False(file.CanLock(_otherUserId, canLock: false));
+            await Assert.That(file.CanLock(_otherUserId, canLock: false)).IsFalse();
         }
 
-        [Fact]
-        public void CanLock_WhenAdminLockedAndNoCanLock_ReturnsFalse()
+        [Test]
+        public async Task CanLock_WhenAdminLockedAndNoCanLock_ReturnsFalse()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
 
-            Assert.False(file.CanLock(_userId, canLock: false));
+            await Assert.That(file.CanLock(_userId, canLock: false)).IsFalse();
         }
 
-        [Fact]
-        public void CanLock_WhenAdminLockedAndCanLock_ReturnsTrue()
+        [Test]
+        public async Task CanLock_WhenAdminLockedAndCanLock_ReturnsTrue()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
 
-            Assert.True(file.CanLock(_userId, canLock: true));
+            await Assert.That(file.CanLock(_userId, canLock: true)).IsTrue();
         }
 
         #endregion
 
         #region Tag Tests
 
-        [Fact]
-        public void Tag_CreatesFileVersionWithTag()
+        [Test]
+        public async Task Tag_CreatesFileVersionWithTag()
         {
             var file = CreateFile();
             var tag = "v1.0";
@@ -309,7 +323,7 @@ namespace Caster.Api.Tests.Unit.Models
 
             file.Tag(tag, _userId, dateTagged);
 
-            Assert.Single(file.FileVersions);
+            await Assert.That(file.FileVersions).HasSingleItem();
         }
 
         #endregion
