@@ -39,4 +39,8 @@
     <PackageReference Include="KubernetesClient" Version="18.0.13" />
     <PackageReference Include="Crucible.Common.ServiceDefaults" Version="0.0.2"/>
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Caster.Api.Tests.Unit" />
+    <InternalsVisibleTo Include="Caster.Api.Tests.Integration" />
+  </ItemGroup>
 </Project>
