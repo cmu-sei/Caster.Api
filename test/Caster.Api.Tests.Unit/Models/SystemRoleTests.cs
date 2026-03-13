@@ -8,29 +8,31 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Models
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "SystemRole")]
     public class SystemRoleTests
     {
-        [Fact]
-        public void SystemRoleDefaults_AdministratorRoleId_IsExpectedGuid()
+        [Theory]
+        [InlineData("f35e8fff-f996-4cba-b303-3ba515ad8d2f")]
+        public void AdministratorRoleId_WhenAccessed_ReturnsExpectedGuid(string expectedGuid)
         {
-            Assert.Equal(new Guid("f35e8fff-f996-4cba-b303-3ba515ad8d2f"), SystemRoleDefaults.AdministratorRoleId);
+            Assert.Equal(new Guid(expectedGuid), SystemRoleDefaults.AdministratorRoleId);
+        }
+
+        [Theory]
+        [InlineData("d80b73c3-95d7-4468-8650-c62bbd082507")]
+        public void ContentDeveloperRoleId_WhenAccessed_ReturnsExpectedGuid(string expectedGuid)
+        {
+            Assert.Equal(new Guid(expectedGuid), SystemRoleDefaults.ContentDeveloperRoleId);
+        }
+
+        [Theory]
+        [InlineData("1da3027e-725d-4753-9455-a836ed9bdb1e")]
+        public void ObserverRoleId_WhenAccessed_ReturnsExpectedGuid(string expectedGuid)
+        {
+            Assert.Equal(new Guid(expectedGuid), SystemRoleDefaults.ObserverRoleId);
         }
 
         [Fact]
-        public void SystemRoleDefaults_ContentDeveloperRoleId_IsExpectedGuid()
-        {
-            Assert.Equal(new Guid("d80b73c3-95d7-4468-8650-c62bbd082507"), SystemRoleDefaults.ContentDeveloperRoleId);
-        }
-
-        [Fact]
-        public void SystemRoleDefaults_ObserverRoleId_IsExpectedGuid()
-        {
-            Assert.Equal(new Guid("1da3027e-725d-4753-9455-a836ed9bdb1e"), SystemRoleDefaults.ObserverRoleId);
-        }
-
-        [Fact]
-        public void SystemPermission_ContainsAllExpectedValues()
+        public void GetValues_WhenCalledForSystemPermission_ContainsAllExpectedValues()
         {
             var permissions = Enum.GetValues<SystemPermission>();
 
@@ -48,7 +50,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void ProjectPermission_ContainsAllExpectedValues()
+        public void GetValues_WhenCalledForProjectPermission_ContainsAllExpectedValues()
         {
             var permissions = Enum.GetValues<ProjectPermission>();
 
@@ -60,7 +62,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void ProjectRoleDefaults_RoleIds_AreDefined()
+        public void ProjectRoleDefaults_WhenAccessed_AllRoleIdsAreDefined()
         {
             Assert.NotEqual(Guid.Empty, ProjectRoleDefaults.ProjectCreatorRoleId);
             Assert.NotEqual(Guid.Empty, ProjectRoleDefaults.ProjectReadOnlyRoleId);

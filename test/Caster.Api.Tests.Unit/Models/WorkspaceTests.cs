@@ -8,31 +8,17 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Models
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "Workspace")]
     public class WorkspaceTests
     {
-        [Fact]
-        public void IsDefault_WhenNameIsDefault_ReturnsTrue()
+        [Theory]
+        [InlineData("default", true)]
+        [InlineData("Default", true)]
+        [InlineData("staging", false)]
+        public void IsDefault_WithVariousNames_ReturnsExpectedResult(string name, bool expectedIsDefault)
         {
-            var workspace = new Workspace { Name = "default" };
+            var workspace = new Workspace { Name = name };
 
-            Assert.True(workspace.IsDefault);
-        }
-
-        [Fact]
-        public void IsDefault_WhenNameIsDefaultUpperCase_ReturnsTrue()
-        {
-            var workspace = new Workspace { Name = "Default" };
-
-            Assert.True(workspace.IsDefault);
-        }
-
-        [Fact]
-        public void IsDefault_WhenNameIsNotDefault_ReturnsFalse()
-        {
-            var workspace = new Workspace { Name = "staging" };
-
-            Assert.False(workspace.IsDefault);
+            Assert.Equal(expectedIsDefault, workspace.IsDefault);
         }
 
         [Fact]
@@ -56,7 +42,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void GetPath_ReturnsCorrectPath()
+        public void GetPath_WithBasePath_ReturnsCorrectPath()
         {
             var id = Guid.NewGuid();
             var workspace = new Workspace { Id = id };
@@ -67,52 +53,34 @@ namespace Caster.Api.Tests.Unit.Models
             Assert.Equal(System.IO.Path.Combine(basePath, id.ToString()), path);
         }
 
-        [Fact]
-        public void GetStatePath_DefaultWorkspace_ReturnsBaseStatePath()
+        [Theory]
+        [InlineData("default", false, "terraform.tfstate")]
+        [InlineData("default", true, "terraform.tfstate.backup")]
+        public void GetStatePath_WithDefaultWorkspace_ReturnsExpectedPath(string workspaceName, bool backupState, string expectedFileName)
         {
-            var workspace = new Workspace { Name = "default" };
+            var workspace = new Workspace { Name = workspaceName };
             var basePath = "/tmp/terraform";
 
-            var path = workspace.GetStatePath(basePath, backupState: false);
+            var path = workspace.GetStatePath(basePath, backupState: backupState);
 
-            Assert.Equal(System.IO.Path.Combine(basePath, "terraform.tfstate"), path);
+            Assert.Equal(System.IO.Path.Combine(basePath, expectedFileName), path);
+        }
+
+        [Theory]
+        [InlineData("staging", false, "terraform.tfstate")]
+        [InlineData("staging", true, "terraform.tfstate.backup")]
+        public void GetStatePath_WithNonDefaultWorkspace_ReturnsNamespacedPath(string workspaceName, bool backupState, string expectedFileName)
+        {
+            var workspace = new Workspace { Name = workspaceName };
+            var basePath = "/tmp/terraform";
+
+            var path = workspace.GetStatePath(basePath, backupState: backupState);
+
+            Assert.Equal(System.IO.Path.Combine(basePath, "terraform.tfstate.d", workspaceName, expectedFileName), path);
         }
 
         [Fact]
-        public void GetStatePath_DefaultWorkspaceBackup_ReturnsBackupPath()
-        {
-            var workspace = new Workspace { Name = "default" };
-            var basePath = "/tmp/terraform";
-
-            var path = workspace.GetStatePath(basePath, backupState: true);
-
-            Assert.Equal(System.IO.Path.Combine(basePath, "terraform.tfstate.backup"), path);
-        }
-
-        [Fact]
-        public void GetStatePath_NonDefaultWorkspace_ReturnsNamespacedPath()
-        {
-            var workspace = new Workspace { Name = "staging" };
-            var basePath = "/tmp/terraform";
-
-            var path = workspace.GetStatePath(basePath, backupState: false);
-
-            Assert.Equal(System.IO.Path.Combine(basePath, "terraform.tfstate.d", "staging", "terraform.tfstate"), path);
-        }
-
-        [Fact]
-        public void GetStatePath_NonDefaultWorkspaceBackup_ReturnsNamespacedBackupPath()
-        {
-            var workspace = new Workspace { Name = "staging" };
-            var basePath = "/tmp/terraform";
-
-            var path = workspace.GetStatePath(basePath, backupState: true);
-
-            Assert.Equal(System.IO.Path.Combine(basePath, "terraform.tfstate.d", "staging", "terraform.tfstate.backup"), path);
-        }
-
-        [Fact]
-        public void Constructor_WithDirectoryParam_SetsDirectoryAndId()
+        public void Constructor_WithDirectoryParameter_SetsDirectoryAndId()
         {
             var directory = new Directory { Id = Guid.NewGuid(), Name = "TestDir" };
 
@@ -132,7 +100,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void GetRemovedResources_WhenBothStatesNull_ReturnsEmpty()
+        public void GetRemovedResources_WhenBothStatesNull_ReturnsEmptyCollection()
         {
             var workspace = new Workspace { State = null, StateBackup = null };
 

@@ -9,7 +9,6 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Models
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "File")]
     public class FileTests
     {
         private readonly Guid _userId = Guid.NewGuid();
@@ -24,7 +23,7 @@ namespace Caster.Api.Tests.Unit.Models
         #region Lock Tests
 
         [Fact]
-        public void Lock_WhenUnlocked_SetsLockedById()
+        public void Lock_WhenFileUnlocked_SetsLockedById()
         {
             var file = CreateFile();
 
@@ -45,7 +44,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Lock_WhenLockedByOtherUser_ThrowsFileConflictException()
+        public void Lock_WhenLockedByDifferentUser_ThrowsFileConflictException()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
@@ -54,7 +53,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Lock_WhenAdminLockedAndNoCanLock_ThrowsFileAdminLockedException()
+        public void Lock_WhenAdminLockedAndUserCannotLock_ThrowsFileAdminLockedException()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
@@ -63,7 +62,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Lock_WhenAdminLockedAndCanLock_Succeeds()
+        public void Lock_WhenAdminLockedAndUserCanLock_Succeeds()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
@@ -89,7 +88,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Unlock_WhenLockedByOtherUser_ThrowsFileConflictException()
+        public void Unlock_WhenLockedByDifferentUser_ThrowsFileConflictException()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
@@ -98,7 +97,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Unlock_WhenNotLocked_ThrowsFileConflictException()
+        public void Unlock_WhenFileNotLocked_ThrowsFileConflictException()
         {
             var file = CreateFile();
 
@@ -123,7 +122,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Save_WhenLockedByOtherUser_ThrowsFileConflictException()
+        public void Save_WhenLockedByDifferentUser_ThrowsFileConflictException()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
@@ -132,7 +131,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Save_WhenNotLocked_ThrowsFileConflictException()
+        public void Save_WhenFileNotLocked_ThrowsFileConflictException()
         {
             var file = CreateFile();
 
@@ -140,7 +139,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Save_WithBypassLock_SucceedsEvenWhenNotLocked()
+        public void Save_WhenBypassLockTrue_SucceedsEvenWhenNotLocked()
         {
             var file = CreateFile();
 
@@ -151,7 +150,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Save_WhenAdminLockedAndNoCanLock_ThrowsFileAdminLockedException()
+        public void Save_WhenAdminLockedAndUserCannotLock_ThrowsFileAdminLockedException()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
@@ -161,7 +160,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Save_CreatesFileVersionOnEachSave()
+        public void Save_WhenCalledMultipleTimes_CreatesFileVersionOnEachSave()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
@@ -177,7 +176,7 @@ namespace Caster.Api.Tests.Unit.Models
         #region Delete Tests
 
         [Fact]
-        public void Delete_SetsIsDeleted()
+        public void Delete_WhenCalled_SetsIsDeleted()
         {
             var file = CreateFile();
 
@@ -187,7 +186,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Delete_WhenAdminLockedAndNoCanLock_ThrowsFileAdminLockedException()
+        public void Delete_WhenAdminLockedAndUserCannotLock_ThrowsFileAdminLockedException()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
@@ -196,7 +195,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Delete_WhenAdminLockedAndCanLock_Succeeds()
+        public void Delete_WhenAdminLockedAndUserCanLock_Succeeds()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
@@ -211,7 +210,7 @@ namespace Caster.Api.Tests.Unit.Models
         #region Administrative Lock Tests
 
         [Fact]
-        public void AdministrativelyLock_WithCanLock_SetsAdminLocked()
+        public void AdministrativelyLock_WhenUserCanLock_SetsAdminLocked()
         {
             var file = CreateFile();
 
@@ -221,7 +220,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void AdministrativelyLock_WithoutCanLock_ThrowsFileInsufficientPrivilegesException()
+        public void AdministrativelyLock_WhenUserCannotLock_ThrowsFileInsufficientPrivilegesException()
         {
             var file = CreateFile();
 
@@ -229,7 +228,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void AdministrativelyUnlock_WithCanLock_ClearsAdminLock()
+        public void AdministrativelyUnlock_WhenUserCanLock_ClearsAdminLock()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
@@ -240,7 +239,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void AdministrativelyUnlock_WithoutCanLock_ThrowsFileInsufficientPrivilegesException()
+        public void AdministrativelyUnlock_WhenUserCannotLock_ThrowsFileInsufficientPrivilegesException()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
@@ -253,7 +252,7 @@ namespace Caster.Api.Tests.Unit.Models
         #region CanLock Tests
 
         [Fact]
-        public void CanLock_WhenUnlocked_ReturnsTrue()
+        public void CanLock_WhenFileUnlocked_ReturnsTrue()
         {
             var file = CreateFile();
 
@@ -270,7 +269,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void CanLock_WhenLockedByOtherUser_ReturnsFalse()
+        public void CanLock_WhenLockedByDifferentUser_ReturnsFalse()
         {
             var file = CreateFile();
             file.Lock(_userId, canLock: false);
@@ -279,7 +278,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void CanLock_WhenAdminLockedAndNoCanLock_ReturnsFalse()
+        public void CanLock_WhenAdminLockedAndUserCannotLock_ReturnsFalse()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
@@ -288,7 +287,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void CanLock_WhenAdminLockedAndCanLock_ReturnsTrue()
+        public void CanLock_WhenAdminLockedAndUserCanLock_ReturnsTrue()
         {
             var file = CreateFile();
             file.AdministrativelyLock(canLock: true);
@@ -301,7 +300,7 @@ namespace Caster.Api.Tests.Unit.Models
         #region Tag Tests
 
         [Fact]
-        public void Tag_CreatesFileVersionWithTag()
+        public void Tag_WithTagName_CreatesFileVersionWithTag()
         {
             var file = CreateFile();
             var tag = "v1.0";

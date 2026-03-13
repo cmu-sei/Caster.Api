@@ -8,11 +8,10 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Models
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "Run")]
     public class RunTests
     {
         [Fact]
-        public void DefaultStatus_IsQueued()
+        public void Constructor_WhenCreatingNewRun_SetsDefaultStatusToQueued()
         {
             var run = new Run();
 
@@ -20,7 +19,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void CreatedAt_IsSetOnConstruction()
+        public void Constructor_WhenCreatingNewRun_SetsCreatedAtToCurrentTime()
         {
             var before = DateTime.UtcNow;
             var run = new Run();
@@ -30,7 +29,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Modify_UpdatesModifiedAtAndModifiedById()
+        public void Modify_WhenCalled_UpdatesModifiedAtAndModifiedById()
         {
             var run = new Run();
             var userId = Guid.NewGuid();
@@ -44,7 +43,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void GetActiveStatuses_ContainsExpectedStatuses()
+        public void GetActiveStatuses_WhenCalled_ContainsExpectedStatuses()
         {
             var activeStatuses = RunHelpers.GetActiveStatuses();
 
@@ -54,7 +53,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void GetActiveStatuses_DoesNotContainTerminalStatuses()
+        public void GetActiveStatuses_WhenCalled_DoesNotContainTerminalStatuses()
         {
             var activeStatuses = RunHelpers.GetActiveStatuses();
 
@@ -65,7 +64,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void GetActiveStatuses_HasExactly3Statuses()
+        public void GetActiveStatuses_WhenCalled_ReturnsExactly3Statuses()
         {
             var activeStatuses = RunHelpers.GetActiveStatuses();
 

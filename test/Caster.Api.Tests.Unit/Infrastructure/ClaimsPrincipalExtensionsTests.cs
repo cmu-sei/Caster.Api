@@ -10,7 +10,6 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Infrastructure
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "ClaimsPrincipal")]
     public class ClaimsPrincipalExtensionsTests
     {
         [Fact]
@@ -38,7 +37,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void GetId_WithNullPrincipal_ReturnsEmptyGuid()
+        public void GetId_WhenPrincipalIsNull_ReturnsEmptyGuid()
         {
             ClaimsPrincipal principal = null;
 
@@ -48,7 +47,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void NormalizeScopeClaims_WithSpaceSeparatedScopes_SplitsThem()
+        public void NormalizeScopeClaims_WithSpaceSeparatedScopes_SplitsIntoMultipleClaims()
         {
             var claims = new[] { new Claim("scope", "openid profile email") };
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));

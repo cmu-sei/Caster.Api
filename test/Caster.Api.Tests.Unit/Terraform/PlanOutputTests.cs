@@ -11,7 +11,6 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Terraform
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "TerraformPlanOutput")]
     public class PlanOutputTests : IClassFixture<PlanFixture>
     {
         private readonly PlanFixture _planFixture;
@@ -24,13 +23,13 @@ namespace Caster.Api.Tests.Unit.Terraform
         }
 
         [Fact]
-        public void Test_Resource_Count()
+        public void ResourceChanges_WhenDeserialized_ReturnsExpectedCount()
         {
             Assert.Equal(10, _planOutput.ResourceChanges.Count());
         }
 
         [Fact]
-        public void Test_New_Vm_Count()
+        public void GetAddedMachines_WhenCalled_ReturnsExpectedCount()
         {
             Assert.Equal(7, _planFixture.GetPlanOutput().GetAddedMachines().Count());
         }

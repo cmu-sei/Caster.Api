@@ -23,7 +23,7 @@ public class ProjectsControllerTests : IClassFixture<CasterTestContext>
     }
 
     [Fact]
-    public async Task GetAll_ReturnsSuccessStatusCode()
+    public async Task GetAll_WhenCalled_ReturnsSuccessStatusCode()
     {
         var response = await _client.GetAsync("/api/projects");
 
@@ -100,7 +100,7 @@ public class ProjectsControllerTests : IClassFixture<CasterTestContext>
     }
 
     [Fact]
-    public async Task Delete_WithExistingProject_ReturnsNoContent()
+    public async Task Delete_WithExistingProject_RemovesProjectSuccessfully()
     {
         // Create
         var createCommand = new { Name = "Delete Test Project" };

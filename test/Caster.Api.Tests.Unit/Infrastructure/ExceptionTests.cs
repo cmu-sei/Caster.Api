@@ -8,11 +8,10 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Infrastructure
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "Exceptions")]
     public class ExceptionTests
     {
         [Fact]
-        public void ForbiddenException_HasCorrectStatusCode()
+        public void GetStatusCode_WhenForbiddenException_ReturnsForbidden()
         {
             var exception = new ForbiddenException();
 
@@ -20,7 +19,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void ForbiddenException_HasDefaultMessage()
+        public void Constructor_WhenForbiddenExceptionWithNoMessage_HasDefaultMessage()
         {
             var exception = new ForbiddenException();
 
@@ -28,7 +27,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void ForbiddenException_WithCustomMessage_UsesCustomMessage()
+        public void Constructor_WhenForbiddenExceptionWithCustomMessage_UsesCustomMessage()
         {
             var exception = new ForbiddenException("Custom forbidden message");
 
@@ -36,7 +35,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void EntityNotFoundException_HasCorrectStatusCode()
+        public void GetStatusCode_WhenEntityNotFoundException_ReturnsNotFound()
         {
             var exception = new EntityNotFoundException<Caster.Api.Features.Projects.Project>();
 
@@ -44,7 +43,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void EntityNotFoundException_HasFormattedMessage()
+        public void Constructor_WhenEntityNotFoundExceptionWithNoMessage_HasFormattedMessage()
         {
             var exception = new EntityNotFoundException<Caster.Api.Features.Projects.Project>();
 
@@ -53,7 +52,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void EntityNotFoundException_WithCustomMessage_UsesCustomMessage()
+        public void Constructor_WhenEntityNotFoundExceptionWithCustomMessage_UsesCustomMessage()
         {
             var exception = new EntityNotFoundException<Caster.Api.Features.Projects.Project>("Custom not found");
 
@@ -61,7 +60,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void EntityNotFoundException_WithCamelCaseType_InsertsSpaces()
+        public void Constructor_WhenEntityNotFoundExceptionWithCamelCaseType_InsertsSpaces()
         {
             var exception = new EntityNotFoundException<Domain.Models.ProjectMembership>();
 
@@ -71,7 +70,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void FileConflictException_HasDefaultMessage()
+        public void Constructor_WhenFileConflictException_HasDefaultMessage()
         {
             var exception = new FileConflictException();
 
@@ -79,7 +78,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void FileConflictException_HasConflictStatusCode()
+        public void GetStatusCode_WhenFileConflictException_ReturnsConflict()
         {
             var exception = new FileConflictException();
 
@@ -87,7 +86,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void FileAdminLockedException_HasCorrectMessage()
+        public void Constructor_WhenFileAdminLockedException_HasCorrectMessage()
         {
             var exception = new FileAdminLockedException();
 
@@ -95,7 +94,7 @@ namespace Caster.Api.Tests.Unit.Infrastructure
         }
 
         [Fact]
-        public void FileInsufficientPrivilegesException_HasCorrectMessage()
+        public void Constructor_WhenFileInsufficientPrivilegesException_HasCorrectMessage()
         {
             var exception = new FileInsufficientPrivilegesException();
 

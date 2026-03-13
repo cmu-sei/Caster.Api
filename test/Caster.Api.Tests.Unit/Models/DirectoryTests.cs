@@ -8,11 +8,10 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Models
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "Directory")]
     public class DirectoryTests
     {
         [Fact]
-        public void Test_Directory_Path_To_List()
+        public void PathIds_WithNestedHierarchy_ReturnsAllIds()
         {
             var greatGrandparentId = Guid.NewGuid();
             var grandparentId = Guid.NewGuid();
@@ -34,29 +33,18 @@ namespace Caster.Api.Tests.Unit.Models
             Assert.Equal(expectedPathIds, pathIds);
         }
 
-        [Fact]
-        public void Test_Directory_Set_Import_Name()
+        [Theory]
+        [InlineData("DirectoryWithId__b7ef25e6-555e-41c9-88d7-22078d3a13c1", "DirectoryWithId", "b7ef25e6-555e-41c9-88d7-22078d3a13c1")]
+        [InlineData("Directory", "Directory", "00000000-0000-0000-0000-000000000000")]
+        [InlineData("DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1", "DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1", "00000000-0000-0000-0000-000000000000")]
+        public void SetImportName_WithVariousFormats_ParsesNameAndIdCorrectly(string importName, string expectedName, string expectedGuid)
         {
-            string nameWithGuid = "DirectoryWithId__b7ef25e6-555e-41c9-88d7-22078d3a13c1";
-            string nameWithoutGuid = "Directory";
-            string nameWithInvalidGuid = "DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1";
+            var directory = new Directory();
 
-            Directory dir1 = new Directory();
-            Directory dir2 = new Directory();
-            Directory dir3 = new Directory();
+            directory.SetImportName(importName);
 
-            dir1.SetImportName(nameWithGuid);
-            dir2.SetImportName(nameWithoutGuid);
-            dir3.SetImportName(nameWithInvalidGuid);
-
-            Assert.Equal("DirectoryWithId", dir1.Name);
-            Assert.Equal(new Guid("b7ef25e6-555e-41c9-88d7-22078d3a13c1"), dir1.Id);
-
-            Assert.Equal("Directory", dir2.Name);
-            Assert.Equal(Guid.Empty, dir2.Id);
-
-            Assert.Equal("DirectoryWithInvalidId__b7ef25e6-555e-41c9-88d7822078d3a13c1", dir3.Name);
-            Assert.Equal(Guid.Empty, dir3.Id);
+            Assert.Equal(expectedName, directory.Name);
+            Assert.Equal(new Guid(expectedGuid), directory.Id);
         }
 
         [Fact]
@@ -82,25 +70,18 @@ namespace Caster.Api.Tests.Unit.Models
             Assert.Equal($"{parentId}/{id}/", directory.Path);
         }
 
-        [Fact]
-        public void GetExportName_WithIncludeId_ReturnsNameAndId()
+        [Theory]
+        [InlineData(true, "TestDir__{0}")]
+        [InlineData(false, "TestDir")]
+        public void GetExportName_WithIncludeIdOption_ReturnsExpectedFormat(bool includeId, string expectedFormat)
         {
             var id = Guid.NewGuid();
             var directory = new Directory { Id = id, Name = "TestDir" };
 
-            var exportName = directory.GetExportName(includeId: true);
+            var exportName = directory.GetExportName(includeId: includeId);
 
-            Assert.Equal($"TestDir__{id}", exportName);
-        }
-
-        [Fact]
-        public void GetExportName_WithoutIncludeId_ReturnsNameOnly()
-        {
-            var directory = new Directory { Name = "TestDir" };
-
-            var exportName = directory.GetExportName(includeId: false);
-
-            Assert.Equal("TestDir", exportName);
+            var expected = includeId ? string.Format(expectedFormat, id) : expectedFormat;
+            Assert.Equal(expected, exportName);
         }
 
         [Fact]
@@ -137,7 +118,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Constructor_WithParent_SetsProjectIdFromParent()
+        public void Constructor_WithParentDirectory_SetsProjectIdFromParent()
         {
             var projectId = Guid.NewGuid();
             var parent = new Directory { Id = Guid.NewGuid(), Name = "Parent", ProjectId = projectId };
@@ -150,7 +131,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Constructor_WithoutParent_SetsPathFromOwnId()
+        public void Constructor_WithoutParentDirectory_SetsPathFromOwnId()
         {
             var id = Guid.NewGuid();
 
@@ -162,41 +143,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void SetImportName_WithValidGuid_SetsIdAndName()
-        {
-            var directory = new Directory();
-            var guid = Guid.NewGuid();
-
-            directory.SetImportName($"MyDir__{guid}");
-
-            Assert.Equal("MyDir", directory.Name);
-            Assert.Equal(guid, directory.Id);
-        }
-
-        [Fact]
-        public void SetImportName_WithoutGuid_SetsNameOnly()
-        {
-            var directory = new Directory();
-
-            directory.SetImportName("SimpleDir");
-
-            Assert.Equal("SimpleDir", directory.Name);
-            Assert.Equal(Guid.Empty, directory.Id);
-        }
-
-        [Fact]
-        public void SetImportName_WithDoubleUnderscore_InMiddleButInvalidGuid_KeepsFullName()
-        {
-            var directory = new Directory();
-
-            directory.SetImportName("MyDir__not-a-guid");
-
-            Assert.Equal("MyDir__not-a-guid", directory.Name);
-            Assert.Equal(Guid.Empty, directory.Id);
-        }
-
-        [Fact]
-        public void PathIds_ReturnsCorrectGuidArray()
+        public void PathIds_WithMultipleLevels_ReturnsCorrectGuidArray()
         {
             var id1 = Guid.NewGuid();
             var id2 = Guid.NewGuid();

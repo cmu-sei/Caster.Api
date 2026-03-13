@@ -11,7 +11,6 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Terraform
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "TerraformState")]
     public class StateTests : IClassFixture<StateFixture>
     {
         private readonly StateFixture _stateFixture;
@@ -22,7 +21,7 @@ namespace Caster.Api.Tests.Unit.Terraform
         }
 
         [Fact]
-        public void Test_Resource_Count()
+        public void GetResources_WhenCalled_ReturnsExpectedCount()
         {
             Assert.Equal(13, _stateFixture.GetResources().Length);
         }
@@ -30,7 +29,7 @@ namespace Caster.Api.Tests.Unit.Terraform
         #region Networks
 
         [Fact]
-        public void Test_vSphere_Host_Port_Groups()
+        public void GetResources_WhenFilteredByPortGroups_ReturnsExpectedPortGroups()
         {
             this.VerifyHostPortGroup("course-ext-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-ext-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course-ext");
             this.VerifyHostPortGroup("course-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "tf-HostPortGroup:host-87:course-4c2eb68c-a77f-45aa-990a-6b837ee59d71", "course");
@@ -50,7 +49,7 @@ namespace Caster.Api.Tests.Unit.Terraform
         #endregion
 
         [Fact]
-        public void Test_vSphere_Virtual_Switches()
+        public void GetResources_WhenFilteredByVirtualSwitch_ReturnsExpectedSwitch()
         {
             var vSwitch = _stateFixture.GetResources().Where(r => r.Id == "tf-HostVirtualSwitch:host-87:vSwitch-4c2eb68c-a77f-45aa-990a").FirstOrDefault();
             Assert.NotNull(vSwitch);
@@ -62,7 +61,7 @@ namespace Caster.Api.Tests.Unit.Terraform
 
         #region vSphere_Virtual_Machines
         [Fact]
-        public void Test_vSphere_Virtual_Machines()
+        public void GetResources_WhenFilteredByVirtualMachines_ReturnsExpectedMachines()
         {
             this.VerifyVirtualMachine(
                 "course.centos6.student.1.4c2eb68c-a77f-45aa-990a-6b837ee59d71",
@@ -140,7 +139,7 @@ namespace Caster.Api.Tests.Unit.Terraform
         }
 
         [Fact]
-        public void Test_Resource_Searchable()
+        public void SearchableAttributes_WhenAccessed_ReturnsSerializableData()
         {
             var resources = _stateFixture.GetResources();
 

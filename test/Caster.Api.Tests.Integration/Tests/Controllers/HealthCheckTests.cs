@@ -6,6 +6,7 @@ using Caster.Api.Tests.Integration.Fixtures;
 
 namespace Caster.Api.Tests.Integration.Tests.Controllers;
 
+[Trait("Category", "Integration")]
 public class HealthCheckTests : IClassFixture<CasterTestContext>
 {
     private readonly CasterTestContext _context;
@@ -16,7 +17,7 @@ public class HealthCheckTests : IClassFixture<CasterTestContext>
     }
 
     [Fact]
-    public async Task HealthCheck_ShouldReturnSuccessStatusCode()
+    public async Task GetHealth_WhenCalled_ReturnsSuccessStatusCode()
     {
         var client = _context.CreateClient();
         var response = await client.GetAsync("/api/health");

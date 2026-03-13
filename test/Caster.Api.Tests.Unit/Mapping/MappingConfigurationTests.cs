@@ -12,7 +12,7 @@ namespace Caster.Api.Tests.Unit.Mapping
     public class MappingConfigurationTests
     {
         [Fact]
-        public void ProjectMappingProfile_CanBeCreated()
+        public void CreateMapper_WithProjectProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Projects.MappingProfile>());
@@ -22,7 +22,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void ProjectMapping_CreateCommand_MapsToProject()
+        public void Map_CreateCommandToProject_ShouldMapNameCorrectly()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Projects.MappingProfile>());
@@ -35,7 +35,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void ProjectMapping_DomainToDto_MapsCorrectly()
+        public void Map_ProjectDomainToDto_ShouldMapAllFieldsCorrectly()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Projects.MappingProfile>());
@@ -49,7 +49,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void ProjectMapping_EditCommand_MapsToExistingProject()
+        public void Map_EditCommandToProject_ShouldUpdateExistingProject()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Projects.MappingProfile>());
@@ -63,7 +63,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void DirectoryMappingProfile_CanBeCreated()
+        public void CreateMapper_WithDirectoryProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Directories.MappingProfile>());
@@ -73,7 +73,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void WorkspaceMappingProfile_CanBeCreated()
+        public void CreateMapper_WithWorkspaceProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Workspaces.MappingProfile>());
@@ -83,7 +83,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void RunMappingProfile_CanBeCreated()
+        public void CreateMapper_WithRunProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Runs.MappingProfile>());
@@ -93,7 +93,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void PlanMappingProfile_CanBeCreated()
+        public void CreateMapper_WithPlanProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Plans.MappingProfile>());
@@ -103,7 +103,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void ApplyMappingProfile_CanBeCreated()
+        public void CreateMapper_WithApplyProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Applies.MappingProfile>());
@@ -113,7 +113,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void FileMappingProfile_CanBeCreated()
+        public void CreateMapper_WithFileProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Files.MappingProfile>());
@@ -123,7 +123,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void UserMappingProfile_CanBeCreated()
+        public void CreateMapper_WithUserProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Users.MappingProfile>());
@@ -133,7 +133,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void HostMappingProfile_CanBeCreated()
+        public void CreateMapper_WithHostProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Hosts.MappingProfile>());
@@ -143,7 +143,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void ModuleMappingProfile_CanBeCreated()
+        public void CreateMapper_WithModuleProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Modules.MappingProfile>());
@@ -153,7 +153,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void DesignMappingProfile_CanBeCreated()
+        public void CreateMapper_WithDesignProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Designs.MappingProfile>());
@@ -163,7 +163,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void DesignModuleMappingProfile_CanBeCreated()
+        public void CreateMapper_WithDesignModuleProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.DesignModules.MappingProfile>());
@@ -173,7 +173,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void VariableMappingProfile_CanBeCreated()
+        public void CreateMapper_WithVariableProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Variables.MappingProfile>());
@@ -183,7 +183,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void GroupMappingProfile_CanBeCreated()
+        public void CreateMapper_WithGroupProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Groups.MappingProfile>());
@@ -193,7 +193,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void SystemRoleMappingProfile_CanBeCreated()
+        public void CreateMapper_WithSystemRoleProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.SystemRoles.MappingProfile>());
@@ -203,7 +203,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void ProjectRoleMappingProfile_CanBeCreated()
+        public void CreateMapper_WithProjectRoleProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.ProjectRoles.MappingProfile>());
@@ -213,7 +213,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void VlanMappingProfile_CanBeCreated()
+        public void CreateMapper_WithVlanProfile_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
                 cfg.AddProfile<Features.Vlan.MappingProfile>());
@@ -223,7 +223,7 @@ namespace Caster.Api.Tests.Unit.Mapping
         }
 
         [Fact]
-        public void AllMappingProfiles_CanBeLoadedTogether()
+        public void CreateMapper_WithAllProfiles_ShouldSucceed()
         {
             var config = new MapperConfiguration(cfg =>
             {

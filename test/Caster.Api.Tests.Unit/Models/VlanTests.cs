@@ -8,11 +8,10 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Models
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "Vlan")]
     public class VlanTests
     {
         [Fact]
-        public void Reserved_WhenReservedEditable_CanBeSet()
+        public void SetReserved_WhenReservedEditableTrue_CanBeSetToTrue()
         {
             var vlan = new Vlan { ReservedEditable = true };
 
@@ -22,7 +21,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Reserved_WhenReservedEditable_CanBeCleared()
+        public void SetReserved_WhenReservedEditableTrue_CanBeSetToFalse()
         {
             var vlan = new Vlan { ReservedEditable = true, Reserved = true };
 
@@ -32,7 +31,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Reserved_WhenNotEditableAndValueChanges_ThrowsArgumentException()
+        public void SetReserved_WhenNotEditableAndValueChanges_ThrowsArgumentException()
         {
             var vlan = new Vlan { ReservedEditable = true, Reserved = true };
             vlan.ReservedEditable = false;
@@ -41,7 +40,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void Reserved_WhenNotEditableAndValueSame_DoesNotThrow()
+        public void SetReserved_WhenNotEditableAndValueUnchanged_DoesNotThrow()
         {
             var vlan = new Vlan { ReservedEditable = true, Reserved = true };
             vlan.ReservedEditable = false;
@@ -52,7 +51,7 @@ namespace Caster.Api.Tests.Unit.Models
         }
 
         [Fact]
-        public void DefaultValues_AreCorrect()
+        public void Constructor_WhenCreatingNewVlan_SetsDefaultValuesCorrectly()
         {
             var vlan = new Vlan();
 

@@ -22,7 +22,6 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Handlers
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "ProjectHandlers")]
     public class ProjectHandlerTests : IDisposable
     {
         private readonly CasterContext _dbContext;
@@ -69,7 +68,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         #region Create Tests
 
         [Fact]
-        public async Task Create_WithValidCommand_ReturnsProject()
+        public async Task Handle_CreateWithValidCommand_ReturnsProject()
         {
             var handler = new Create.Handler(_authService, _mapper, _dbContext, _telemetryService, _identityResolver);
             var command = new Create.Command { Name = "Test Project" };
@@ -82,7 +81,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task Create_PersistsProjectToDatabase()
+        public async Task Handle_CreateWithValidCommand_PersistsProjectToDatabase()
         {
             var handler = new Create.Handler(_authService, _mapper, _dbContext, _telemetryService, _identityResolver);
             var command = new Create.Command { Name = "Persisted Project" };
@@ -95,7 +94,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task Create_CreatesProjectMembership()
+        public async Task Handle_CreateWithValidCommand_CreatesProjectMembership()
         {
             var handler = new Create.Handler(_authService, _mapper, _dbContext, _telemetryService, _identityResolver);
             var command = new Create.Command { Name = "Project With Membership" };
@@ -109,7 +108,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task Create_WhenNotAuthorized_ThrowsForbiddenException()
+        public async Task Handle_CreateWhenNotAuthorized_ThrowsForbiddenException()
         {
             A.CallTo(() => _authService.Authorize(A<SystemPermission[]>._, A<CancellationToken>._))
                 .Returns(false);
@@ -126,7 +125,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         #region Get Tests
 
         [Fact]
-        public async Task Get_WithExistingProject_ReturnsProject()
+        public async Task Handle_GetWithExistingProject_ReturnsProject()
         {
             var project = new Domain.Models.Project("Existing Project");
             _dbContext.Projects.Add(project);
@@ -143,7 +142,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task Get_WithNonExistentProject_ThrowsEntityNotFoundException()
+        public async Task Handle_GetWithNonExistentProject_ThrowsEntityNotFoundException()
         {
             var handler = new Get.Handler(_authService, _mapper, _dbContext);
             var query = new Get.Query { Id = Guid.NewGuid() };
@@ -153,7 +152,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task Get_WhenNotAuthorized_ThrowsForbiddenException()
+        public async Task Handle_GetWhenNotAuthorized_ThrowsForbiddenException()
         {
             A.CallTo(() => _authService.Authorize<Domain.Models.Project>(A<Guid?>._, A<SystemPermission[]>._, A<ProjectPermission[]>._, A<CancellationToken>._))
                 .Returns(false);
@@ -170,7 +169,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         #region GetAll Tests
 
         [Fact]
-        public async Task GetAll_ReturnsAllProjects()
+        public async Task Handle_GetAllWithMultipleProjects_ReturnsAllProjects()
         {
             _dbContext.Projects.Add(new Domain.Models.Project("Project 1"));
             _dbContext.Projects.Add(new Domain.Models.Project("Project 2"));
@@ -185,7 +184,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task GetAll_WhenOnlyMineTrue_AlwaysAuthorizes()
+        public async Task Handle_GetAllWhenOnlyMineTrue_FiltersToUserProjects()
         {
             var handler = new GetAll.Handler(_authService, _mapper, _dbContext);
             var query = new GetAll.Query { OnlyMine = true };
@@ -198,7 +197,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task GetAll_WhenOnlyMineFalseAndUnauthorized_ThrowsForbiddenException()
+        public async Task Handle_GetAllWhenUnauthorized_ThrowsForbiddenException()
         {
             A.CallTo(() => _authService.Authorize(A<SystemPermission[]>._, A<CancellationToken>._))
                 .Returns(false);
@@ -215,7 +214,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         #region Edit Tests
 
         [Fact]
-        public async Task Edit_WithExistingProject_UpdatesName()
+        public async Task Handle_EditWithExistingProject_UpdatesName()
         {
             var project = new Domain.Models.Project("Original Name");
             _dbContext.Projects.Add(project);
@@ -231,7 +230,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task Edit_WithNonExistentProject_ThrowsEntityNotFoundException()
+        public async Task Handle_EditWithNonExistentProject_ThrowsEntityNotFoundException()
         {
             var handler = new Edit.Handler(_authService, _mapper, _dbContext);
             var command = new Edit.Command { Id = Guid.NewGuid(), Name = "Updated" };
@@ -241,7 +240,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task Edit_PersistsChangesToDatabase()
+        public async Task Handle_EditWithExistingProject_PersistsChangesToDatabase()
         {
             var project = new Domain.Models.Project("Original");
             _dbContext.Projects.Add(project);
@@ -261,7 +260,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         #region Delete Tests
 
         [Fact]
-        public async Task Delete_WithExistingProject_RemovesFromDatabase()
+        public async Task Handle_DeleteWithExistingProject_RemovesFromDatabase()
         {
             var project = new Domain.Models.Project("To Delete");
             _dbContext.Projects.Add(project);
@@ -277,7 +276,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task Delete_WithNonExistentProject_ThrowsEntityNotFoundException()
+        public async Task Handle_DeleteWithNonExistentProject_ThrowsEntityNotFoundException()
         {
             var handler = new Delete.Handler(_authService, _telemetryService, _dbContext);
             var command = new Delete.Command { Id = Guid.NewGuid() };
@@ -287,7 +286,7 @@ namespace Caster.Api.Tests.Unit.Handlers
         }
 
         [Fact]
-        public async Task Delete_WhenNotAuthorized_ThrowsForbiddenException()
+        public async Task Handle_DeleteWhenNotAuthorized_ThrowsForbiddenException()
         {
             A.CallTo(() => _authService.Authorize<Domain.Models.Project>(A<Guid?>._, A<SystemPermission[]>._, A<ProjectPermission[]>._, A<CancellationToken>._))
                 .Returns(false);

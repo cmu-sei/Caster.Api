@@ -11,7 +11,6 @@ using Xunit;
 namespace Caster.Api.Tests.Unit.Gitlab
 {
     [Trait("Category", "Unit")]
-    [Trait("Category", "GitlabModules")]
     public class ModulesTests : IClassFixture<ModulesFixture>
     {
         private readonly ModulesFixture _modulesFixture;
@@ -22,7 +21,7 @@ namespace Caster.Api.Tests.Unit.Gitlab
         }
 
         [Fact]
-        public void Test_Get_Modules()
+        public void Deserialize_GitlabModulesJson_ReturnsExpectedCount()
         {
             var modules = System.Text.Json.JsonSerializer
                 .Deserialize<GitlabModule[]>(
@@ -33,7 +32,7 @@ namespace Caster.Api.Tests.Unit.Gitlab
         }
 
         [Fact]
-        public void Test_Get_Variables()
+        public void GetModuleVariables_FromJsonBytes_ReturnsExpectedCount()
         {
             var variables = GitlabModuleVariableResponse
                 .GetModuleVariables(Encoding.UTF8.GetBytes(_modulesFixture.Variables));
