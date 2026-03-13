@@ -28,18 +28,15 @@ End-to-end integration testing of Caster API controllers and database operations
   - Authorization and permission checks
 
 ### Configuration
-- **GlobalUsings.cs** - Global using directives for xUnit
-- **xunit.runner.json** - xUnit test runner configuration for parallel execution
+- **GlobalUsings.cs** - Global using directives for TUnit
 
 ## Dependencies
 
-- **xUnit** 2.9.3 - Test framework
+- **TUnit** 1.19.22 - Test framework
 - **Microsoft.AspNetCore.Mvc.Testing** 10.0.1 - WebApplicationFactory for integration testing
 - **Testcontainers.PostgreSql** 4.0.0 - Docker-based PostgreSQL for isolated test database
 - **AutoFixture** 4.18.1 - Test data generation
-- **AutoFixture.Xunit2** 4.18.1 - AutoFixture integration with xUnit
 - **FakeItEasy** 8.3.0 - Mocking library for external service dependencies
-- **Shouldly** 4.2.1 - Fluent assertion library
 - **Npgsql.EntityFrameworkCore.PostgreSQL** 10.0.0 - PostgreSQL EF Core provider
 - **Microsoft.EntityFrameworkCore** 10.0.1 - Entity Framework Core
 - **coverlet.collector** 6.0.2 - Code coverage collector
@@ -98,11 +95,12 @@ public class CasterTestContext : WebApplicationFactory<Program>
 ### Controller Testing
 
 ```csharp
-public class ProjectsControllerTests : IClassFixture<CasterTestContext>
+[ClassDataSource<CasterTestContext>(Shared = SharedType.PerTestSession)]
+public class ProjectsControllerTests
 {
     private readonly HttpClient _client;
 
-    [Fact]
+    [Test]
     public async Task GetProjects_ReturnsOk()
     {
         // Arrange
@@ -113,9 +111,9 @@ public class ProjectsControllerTests : IClassFixture<CasterTestContext>
         var response = await _client.GetAsync("/api/projects");
 
         // Assert
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         var projects = await response.Content.ReadAsAsync<List<ProjectDto>>();
-        projects.ShouldContain(p => p.Id == project.Id);
+        await Assert.That(projects).Contains(p => p.Id == project.Id);
     }
 }
 ```
@@ -136,7 +134,7 @@ private async Task SeedDatabase(params object[] entities)
 ### Authentication Testing
 
 ```csharp
-[Fact]
+[Test]
 public async Task CreateProject_WithoutPermission_ReturnsForbidden()
 {
     // Arrange
@@ -147,13 +145,13 @@ public async Task CreateProject_WithoutPermission_ReturnsForbidden()
     var response = await _client.PostAsJsonAsync("/api/projects", newProject);
 
     // Assert
-    response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.Forbidden);
 }
 ```
 
 ## Test Isolation
 
-- Each test class gets a fresh PostgreSQL container via `IClassFixture<CasterTestContext>`
+- Each test class gets a fresh PostgreSQL container via `[ClassDataSource<CasterTestContext>(Shared = SharedType.PerTestSession)]`
 - Database is automatically migrated before tests run
 - Tests can seed data independently without affecting other tests
 - Testcontainers automatically cleans up containers after tests complete
@@ -162,8 +160,8 @@ public async Task CreateProject_WithoutPermission_ReturnsForbidden()
 
 - Container startup adds overhead (~5-10 seconds per test class)
 - Tests within a class share the same container for performance
-- Use `IClassFixture` for shared setup across tests in a class
-- Use `ICollectionFixture` for shared setup across multiple test classes
+- Use `[ClassDataSource<T>(Shared = SharedType.PerTestSession)]` for shared setup across tests in a class
+- Use `[ClassDataSource<T>(Shared = SharedType.Globally)]` for shared setup across multiple test classes
 
 ## Testcontainers Configuration
 

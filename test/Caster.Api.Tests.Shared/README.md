@@ -6,7 +6,7 @@ Shared test fixtures and utilities for Caster API test projects.
 
 ## Purpose
 
-Provides common AutoFixture customizations and test data for both unit and integration tests. Prevents code duplication across test projects and ensures consistent test data generation for Caster's extensive entity model.
+Provides common AutoFixture customizations and test data for both unit and integration tests. Prevents code duplication across test projects and ensures consistent test data generation for Caster's extensive entity model. Used with TUnit test framework.
 
 ## Files
 

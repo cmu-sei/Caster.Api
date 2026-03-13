@@ -37,7 +37,6 @@ Comprehensive unit test suite covering Caster's CQRS/MediatR handlers, domain mo
 
 ### Configuration
 - **GlobalUsings.cs** - Global using directives for Caster domain models (Directory, File)
-- **xunit.runner.json** - xUnit test runner configuration
 
 ### Test Data
 - **Data/terraform.tfstate** - Sample Terraform state file for state parsing tests
@@ -46,7 +45,7 @@ Comprehensive unit test suite covering Caster's CQRS/MediatR handlers, domain mo
 
 ## Dependencies
 
-- **xUnit** 2.9.3 - Test framework
+- **TUnit** 1.19.22 - Test framework
 - **FakeItEasy** 8.3.0 - Mocking library (migrated from NSubstitute)
 - **Microsoft.EntityFrameworkCore.InMemory** 10.0.1 - In-memory database for EF Core tests
 - **Microsoft.NET.Test.Sdk** 18.0.1 - Test SDK
@@ -80,7 +79,7 @@ Caster uses the CQRS pattern with MediatR handlers instead of traditional servic
 // Example handler test structure
 public class GetProjectHandler_Tests
 {
-    [Fact]
+    [Test]
     public async Task Handle_ValidId_ReturnsProject()
     {
         // Arrange: Create handler with mocked dependencies
@@ -92,7 +91,7 @@ public class GetProjectHandler_Tests
         var result = await handler.Handle(query, CancellationToken.None);
 
         // Assert: Verify behavior
-        Assert.NotNull(result);
+        await Assert.That(result).IsNotNull();
     }
 }
 ```
@@ -101,12 +100,12 @@ public class GetProjectHandler_Tests
 Domain model tests verify business logic, validation, and computed properties:
 
 ```csharp
-[Fact]
-public void Directory_SetPath_CalculatesCorrectPath()
+[Test]
+public async Task Directory_SetPath_CalculatesCorrectPath()
 {
     var directory = new Directory { Name = "test", Parent = rootDir };
     directory.SetPath();
-    Assert.Equal("/root/test", directory.Path);
+    await Assert.That(directory.Path).IsEqualTo("/root/test");
 }
 ```
 
@@ -114,12 +113,12 @@ public void Directory_SetPath_CalculatesCorrectPath()
 Tests parse real Terraform JSON output to ensure compatibility:
 
 ```csharp
-[Fact]
-public void ParsePlanOutput_ValidJson_ExtractsResourceChanges()
+[Test]
+public async Task ParsePlanOutput_ValidJson_ExtractsResourceChanges()
 {
     var json = File.ReadAllText("Data/plan.json");
     var plan = TerraformPlanParser.Parse(json);
-    Assert.Equal(5, plan.ResourceChanges.Count);
+    await Assert.That(plan.ResourceChanges.Count).IsEqualTo(5);
 }
 ```
 
@@ -127,7 +126,7 @@ public void ParsePlanOutput_ValidJson_ExtractsResourceChanges()
 Ensures all AutoMapper profiles are correctly configured:
 
 ```csharp
-[Fact]
+[Test]
 public void AutoMapper_Configuration_IsValid()
 {
     var config = new MapperConfiguration(cfg =>

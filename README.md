@@ -11,6 +11,31 @@ In order to avoid this, a System Administrator should follow these steps in the 
 - Disable Workspace Operations by clicking the toggle button
 - Wait until all Active Runs are completed
 
+## Testing
+
+This project uses [TUnit](https://tunit.dev/) as its test framework with FakeItEasy for mocking.
+
+### Test Projects
+
+| Project | Description |
+|---------|-------------|
+| `Caster.Api.Tests.Unit` | Unit tests for CQRS handlers and domain models |
+| `Caster.Api.Tests.Integration` | Integration tests with WebApplicationFactory and Testcontainers PostgreSQL |
+| `Caster.Api.Tests.Shared` | Shared AutoFixture customizations for Caster entity types |
+
+### Running Tests
+
+```bash
+# Run all tests
+dotnet test
+
+# Run unit tests only
+dotnet test test/Caster.Api.Tests.Unit
+
+# Run integration tests (requires Docker)
+dotnet test test/Caster.Api.Tests.Integration
+```
+
 ## Reporting bugs and requesting features
 
 Think you found a bug? Please report all Crucible bugs - including bugs for the individual Crucible apps - in the [cmu-sei/crucible issue tracker](https://github.com/cmu-sei/crucible/issues). 
