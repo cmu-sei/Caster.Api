@@ -40,3 +40,6 @@ msbuild.wrn
 **/appsettings.[Ss]taging.json
 **/appsettings.[Pp]roduction.json
 omnisharp.json
+
+# Claude Code artifacts
+.claude/
