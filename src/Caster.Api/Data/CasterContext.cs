@@ -13,6 +13,7 @@ using Crucible.Common.EntityEvents.Abstractions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Caster.Api.Data;
 
@@ -63,14 +64,23 @@ public partial class CasterContext : EventPublishingDbContext
         }
     }
 
-    protected override async Task PublishEventsAsync(CancellationToken cancellationToken)
+    public override async Task PublishEventsAsync(IReadOnlyList<IEntityEvent> events, CancellationToken cancellationToken)
     {
-        if (EntityEvents.Count > 0 && ServiceProvider is not null)
+        if (ServiceProvider is not null)
         {
             var mediator = ServiceProvider.GetRequiredService<IMediator>();
-            foreach (var evt in EntityEvents.Cast<INotification>())
+            var logger = ServiceProvider.GetRequiredService<ILogger<CasterContext>>();
+
+            foreach (var evt in events.Cast<INotification>())
             {
-                await mediator.Publish(evt, cancellationToken);
+                try
+                {
+                    await mediator.Publish(evt, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error publishing entity event {EventType}", evt.GetType().Name);
+                }
             }
         }
     }
