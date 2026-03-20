@@ -120,7 +120,7 @@ public class KubernetesTerraformService : BaseTerraformService
             try
             {
                 job = await client.BatchV1.CreateNamespacedJobAsync(jobRequest, _options.KubernetesJobs.Namespace);
-                Console.WriteLine($"Job {jobName} created successfully.");
+                _logger.LogInformation("Job {jobName} created successfully.", jobName);
             }
             catch (Exception ex)
             {
