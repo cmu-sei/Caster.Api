@@ -57,45 +57,10 @@ public class KubernetesTerraformService : BaseTerraformService
         IKubernetes client = _k8sClient;
 
         // Check for existing Job
-        V1Job job = null;
+        V1Job job;
         var existingJob = await _k8sClient.BatchV1.ListNamespacedJobAsync(_options.KubernetesJobs.Namespace, labelSelector: $"{_appLabel}={_appName},{_workspaceIdLabel}={workspace.Id}");
 
-        if (existingJob.Items.Count > 0)
-        {
-            var existingItem = existingJob.Items.First();
-
-            if (existingItem.Metadata.DeletionTimestamp != null)
-            {
-                // Background delete already in progress — just wait, don't re-delete
-                await WaitForJobDeletion(existingItem);
-            }
-            else if (existingItem.Status?.Succeeded > 0 || existingItem.Status?.Failed > 0)
-            {
-                // Completed but delete hasn't started yet — delete and wait
-                await EnsureJobDeleted(existingItem.Metadata.Name, existingItem.Metadata.NamespaceProperty);
-            }
-            else
-            {
-                // Job is actively running — check for arg conflicts
-                job = existingItem;
-
-                var container = job.Spec?.Template?.Spec?.Containers?.SingleOrDefault()
-                    ?? throw new InvalidOperationException("Job does not contain exactly one container.");
-
-                var jobArg = container.Args?.FirstOrDefault();
-                var expectedArg = argumentList?.FirstOrDefault();
-
-                if (jobArg is not null && expectedArg is not null)
-                {
-                    if (!string.Equals(jobArg, expectedArg, StringComparison.Ordinal))
-                    {
-                        throw new TerraformCommandConflictException(jobArg);
-                    }
-                }
-            }
-        }
-
-        if (job == null)
+        if (existingJob.Items.Count == 0)
         {
             if (resume)
             {
@@ -129,6 +94,25 @@ public class KubernetesTerraformService : BaseTerraformService
                 };
             }
         }
+        else
+        {
+            job = existingJob.Items.SingleOrDefault()
+                ?? throw new InvalidOperationException("No job found.");
+
+            var container = job.Spec?.Template?.Spec?.Containers?.SingleOrDefault()
+                ?? throw new InvalidOperationException("Job does not contain exactly one container.");
+
+            var jobArg = container.Args?.FirstOrDefault();
+            var expectedArg = argumentList?.FirstOrDefault();
+
+            if (jobArg is not null && expectedArg is not null)
+            {
+                if (!string.Equals(jobArg, expectedArg, StringComparison.Ordinal))
+                {
+                    throw new TerraformCommandConflictException(jobArg);
+                }
+            }
+        }
 
         try
         {
@@ -136,7 +120,7 @@ public class KubernetesTerraformService : BaseTerraformService
 
             if (pod == null)
             {
-                await DeleteJob(job.Metadata.Name, job.Metadata.NamespaceProperty);
+                await EnsureJobDeleted(job.Metadata.Name, job.Metadata.NamespaceProperty);
                 var message = failureReason ?? "Job no longer exists";
                 outputHandler?.Invoke(message);
                 return new TerraformResult { ExitCode = -1, Output = message };
@@ -173,9 +157,9 @@ public class KubernetesTerraformService : BaseTerraformService
                 exitCode = await GetExitCode(pod);
             }
 
-            await DeleteJob(job.Metadata.Name, job.Metadata.NamespaceProperty);
+            await EnsureJobDeleted(job.Metadata.Name, job.Metadata.NamespaceProperty);
 
-            _logger.LogInformation("Job delete requested - {jobName}", jobName);
+            _logger.LogInformation("Job confirmed deleted - {jobName}", jobName);
         }
         catch (Exception ex)
         {
@@ -532,49 +516,6 @@ public class KubernetesTerraformService : BaseTerraformService
         return exitCode;
     }
 
-    private async Task DeleteJob(string jobName, string jobNamespace)
-    {
-        try
-        {
-            await _k8sClient.BatchV1.DeleteNamespacedJobAsync(
-                jobName, jobNamespace,
-                new V1DeleteOptions { PropagationPolicy = "Background" });
-            _logger.LogDebug("Job delete request sent for {jobName}", jobName);
-        }
-        catch (HttpOperationException ex) when (ex.Response.StatusCode == HttpStatusCode.NotFound)
-        {
-            _logger.LogDebug("Job {jobName} already deleted", jobName);
-        }
-    }
-
-    private async Task WaitForJobDeletion(V1Job job)
-    {
-        _logger.LogDebug("Waiting for job {jobName} to finish deleting", job.Metadata.Name);
-
-        if (!await JobExists(job.Metadata.Name, job.Metadata.NamespaceProperty))
-            return;
-
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        try
-        {
-            await foreach (var (type, _) in _k8sClient.BatchV1.WatchListNamespacedJobAsync(
-                job.Metadata.NamespaceProperty,
-                fieldSelector: $"metadata.name={job.Metadata.Name}",
-                resourceVersion: job.Metadata.ResourceVersion,
-                cancellationToken: cts.Token))
-            {
-                if (type == WatchEventType.Deleted)
-                    break;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("Timed out waiting for job {jobName} deletion", job.Metadata.Name);
-        }
-
-        _logger.LogDebug("Job {jobName} deleted", job.Metadata.Name);
-    }
-
     private async Task EnsureJobDeleted(string jobName, string jobNamespace)
     {
         V1Job job;
@@ -599,7 +540,26 @@ public class KubernetesTerraformService : BaseTerraformService
             }
         }
 
-        await WaitForJobDeletion(job);
+        // Watch for deletion using resourceVersion from the read
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            await foreach (var (type, _) in _k8sClient.BatchV1.WatchListNamespacedJobAsync(
+                jobNamespace,
+                fieldSelector: $"metadata.name={jobName}",
+                resourceVersion: job.Metadata.ResourceVersion,
+                cancellationToken: cts.Token))
+            {
+                if (type == WatchEventType.Deleted)
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Timed out waiting for job {jobName} deletion", jobName);
+        }
+
+        _logger.LogDebug("Job {jobName} confirmed deleted", jobName);
     }
 
     private async Task<bool> JobExists(string jobName, string jobNamespace)
