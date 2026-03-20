@@ -51,7 +51,17 @@ public class KubernetesJobOptions
 
     public ConfigMap[] ConfigMaps { get; set; } = [];
 
-    public string AffinityYaml { get; set; }
+    /// <summary>
+    /// Path to a YAML file defining a V1Job template. Takes precedence over JobTemplateYaml.
+    /// Caster uses this as a base and overrides only the properties it needs to control.
+    /// </summary>
+    public string JobTemplateFile { get; set; }
+
+    /// <summary>
+    /// Inline YAML string defining a V1Job template. Caster uses this as a base
+    /// and overrides only the properties it needs to control.
+    /// </summary>
+    public string JobTemplateYaml { get; set; }
 
     /// <summary>
     /// Maximum seconds to wait for a pod to become ready. 0 = no timeout. Default: 120.

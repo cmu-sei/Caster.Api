@@ -83,50 +83,8 @@ public class KubernetesTerraformService : BaseTerraformService
             var securityContext = await GetSecurityContext();
             var (volumes, volumeMounts) = GetVolumes();
             var envVars = GetEnvironmentVariables();
-            var affinity = GetAffinity();
 
-            var jobRequest = new V1Job
-            {
-                Metadata = new V1ObjectMeta
-                {
-                    Name = jobName,
-                    Annotations = new Dictionary<string, string>
-                    {
-                        { "cancellable", "true"}
-                    },
-                    Labels = new Dictionary<string, string>
-                    {
-                        { _appLabel, _appName},
-                        { _workspaceIdLabel, workspace.Id.ToString() },
-                        { _workspaceNameLabel, workspace.Name}
-                    }
-                },
-                Spec = new V1JobSpec
-                {
-                    Template = new V1PodTemplateSpec
-                    {
-                        Spec = new V1PodSpec
-                        {
-                            Containers =
-                            [
-                                new V1Container
-                                {
-                                    Name = jobName,
-                                    Image = GetImage(workspace),
-                                    Args = argumentList?.ToArray(),
-                                    WorkingDir = $"{_options.KubernetesJobs.RootWorkingDirectory}/{workspace.Id}",
-                                    VolumeMounts = volumeMounts,
-                                    Env = envVars
-                                }
-                            ],
-                            Volumes = volumes,
-                            SecurityContext = securityContext,
-                            Affinity = affinity,
-                            RestartPolicy = "Never"
-                        }
-                    },
-                }
-            };
+            var jobRequest = BuildJobRequest(jobName, workspace, argumentList, securityContext, volumes, volumeMounts, envVars);
 
             try
             {
@@ -777,23 +735,66 @@ public class KubernetesTerraformService : BaseTerraformService
 
     private string GetJobName(Workspace workspace) => $"{_appName}-{workspace.Id}";
 
-    private V1Affinity GetAffinity()
+    private V1Job GetJobTemplate()
     {
-        if (string.IsNullOrWhiteSpace(_options.KubernetesJobs.AffinityYaml))
-        {
-            return null;
-        }
+        string yaml = null;
 
-        try
-        {
-            var affinity = KubernetesYaml.Deserialize<V1Affinity>(_options.KubernetesJobs.AffinityYaml);
-            _logger.LogDebug("Successfully loaded Affinity configuration from YAML");
-            return affinity;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to parse Affinity YAML configuration");
-            return null;
-        }
+        if (!string.IsNullOrWhiteSpace(_options.KubernetesJobs.JobTemplateFile))
+            yaml = System.IO.File.ReadAllText(_options.KubernetesJobs.JobTemplateFile);
+        else if (!string.IsNullOrWhiteSpace(_options.KubernetesJobs.JobTemplateYaml))
+            yaml = _options.KubernetesJobs.JobTemplateYaml;
+
+        if (yaml == null) return null;
+
+        return KubernetesYaml.Deserialize<V1Job>(yaml);
+    }
+
+    private V1Job BuildJobRequest(
+        string jobName,
+        Workspace workspace,
+        IEnumerable<string> argumentList,
+        V1PodSecurityContext securityContext,
+        V1Volume[] volumes,
+        V1VolumeMount[] volumeMounts,
+        V1EnvVar[] envVars)
+    {
+        var job = GetJobTemplate() ?? new V1Job();
+
+        // Ensure structural scaffolding exists
+        job.Metadata ??= new V1ObjectMeta();
+        job.Spec ??= new V1JobSpec();
+        job.Spec.Template ??= new V1PodTemplateSpec();
+        job.Spec.Template.Spec ??= new V1PodSpec();
+        job.Spec.Template.Spec.Containers ??= [];
+
+        if (job.Spec.Template.Spec.Containers.Count == 0)
+            job.Spec.Template.Spec.Containers.Add(new V1Container());
+
+        // Override metadata
+        job.Metadata.Name = jobName;
+
+        job.Metadata.Labels ??= new Dictionary<string, string>();
+        job.Metadata.Labels[_appLabel] = _appName;
+        job.Metadata.Labels[_workspaceIdLabel] = workspace.Id.ToString();
+        job.Metadata.Labels[_workspaceNameLabel] = workspace.Name;
+
+        job.Metadata.Annotations ??= new Dictionary<string, string>();
+        job.Metadata.Annotations["cancellable"] = "true";
+
+        // Override the primary container (index 0)
+        var container = job.Spec.Template.Spec.Containers[0];
+        container.Name = jobName;
+        container.Image = GetImage(workspace);
+        container.Args = argumentList?.ToArray();
+        container.WorkingDir = $"{_options.KubernetesJobs.RootWorkingDirectory}/{workspace.Id}";
+        container.VolumeMounts = volumeMounts.ToList();
+        container.Env = envVars.ToList();
+
+        // Override pod spec
+        job.Spec.Template.Spec.Volumes = volumes.ToList();
+        job.Spec.Template.Spec.SecurityContext = securityContext;
+        job.Spec.Template.Spec.RestartPolicy ??= "Never";
+
+        return job;
     }
 }
