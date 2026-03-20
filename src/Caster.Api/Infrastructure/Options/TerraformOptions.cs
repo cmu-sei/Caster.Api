@@ -58,11 +58,6 @@ public class KubernetesJobOptions
     /// </summary>
     public int PodReadyTimeoutSeconds { get; set; } = 120;
 
-    /// <summary>
-    /// Seconds to wait after detecting an Unschedulable condition before failing.
-    /// Allows transient scheduling issues to resolve. Default: 15.
-    /// </summary>
-    public int UnschedulableGracePeriodSeconds { get; set; } = 15;
 }
 
 public class EnvironmentVariableOptions

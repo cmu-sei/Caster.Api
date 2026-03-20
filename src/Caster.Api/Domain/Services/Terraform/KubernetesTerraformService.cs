@@ -296,7 +296,6 @@ public class KubernetesTerraformService : BaseTerraformService
         _backoffTracker.Reset();
         V1Pod pod = null;
         V1Pod lastPodState = null;
-        DateTime? unschedulableDetectedAt = null;
 
         var timeoutSeconds = _options.KubernetesJobs.PodReadyTimeoutSeconds;
         using var timeoutCts = timeoutSeconds > 0
@@ -319,32 +318,6 @@ public class KubernetesTerraformService : BaseTerraformService
                     {
                         pod = p;
                         break;
-                    }
-
-                    if (p.Status?.Phase == "Pending")
-                    {
-                        var unschedulable = p.Status?.Conditions?.FirstOrDefault(c =>
-                            c.Type == "PodScheduled" &&
-                            c.Status == "False" &&
-                            c.Reason == "Unschedulable");
-
-                        if (unschedulable != null)
-                        {
-                            unschedulableDetectedAt ??= DateTime.UtcNow;
-
-                            if ((DateTime.UtcNow - unschedulableDetectedAt.Value).TotalSeconds >= _options.KubernetesJobs.UnschedulableGracePeriodSeconds)
-                            {
-                                _logger.LogError("Pod for job {jobName} is unschedulable after grace period: {message}",
-                                    job.Metadata.Name, unschedulable.Message);
-                                pod = p;
-                                break;
-                            }
-                            else
-                            {
-                                _logger.LogWarning("Pod for job {jobName} is unschedulable, waiting for grace period: {message}",
-                                    job.Metadata.Name, unschedulable.Message);
-                            }
-                        }
                     }
                 }
             }
@@ -373,16 +346,6 @@ public class KubernetesTerraformService : BaseTerraformService
                     return (null, null);
                 }
             }
-        }
-
-        if (pod.Status?.Phase == "Pending")
-        {
-            var unschedulableCondition = pod.Status?.Conditions?.FirstOrDefault(c =>
-                c.Type == "PodScheduled" && c.Status == "False" && c.Reason == "Unschedulable");
-
-            var message = $"Pod unschedulable: {unschedulableCondition?.Message ?? "unknown reason"}";
-            _logger.LogError("{message}", message);
-            return (null, message);
         }
 
         _logger.LogDebug("Pod {podName} ready for logs", pod.Metadata.Name);
