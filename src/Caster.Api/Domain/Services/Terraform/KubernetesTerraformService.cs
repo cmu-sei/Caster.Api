@@ -294,26 +294,16 @@ public class KubernetesTerraformService : BaseTerraformService
         {
             try
             {
-                var tcs = new TaskCompletionSource<V1Pod>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-                using (var podResp = await _k8sClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(
+                await foreach (var (type, p) in _k8sClient.CoreV1.WatchListNamespacedPodAsync(
                     job.Metadata.NamespaceProperty,
-                    labelSelector: $"job-name={job.Metadata.Name}",
-                    watch: true))
+                    labelSelector: $"job-name={job.Metadata.Name}"))
                 {
-                    using var watcher = podResp.Watch<V1Pod, V1PodList>(
-                        onEvent: (type, p) =>
-                        {
-                            if (type == WatchEventType.Deleted ||
-                                p.Status?.Phase is "Running" or "Succeeded" or "Failed")
-                            {
-                                tcs.TrySetResult(p);
-                            }
-                        },
-                        onError: e => tcs.TrySetException(e),
-                        onClosed: () => tcs.TrySetCanceled());
-
-                    pod = await tcs.Task;
+                    if (type == WatchEventType.Deleted ||
+                        p.Status?.Phase is "Running" or "Succeeded" or "Failed")
+                    {
+                        pod = p;
+                        break;
+                    }
                 }
             }
             catch (Exception ex)
@@ -354,26 +344,20 @@ public class KubernetesTerraformService : BaseTerraformService
 
                 using var reader = new StreamReader(logStream);
                 string line;
-                while (!reader.EndOfStream)
+                while ((line = await reader.ReadLineAsync()) != null)
                 {
-                    line = await reader.ReadLineAsync();
-                    if (line != null)
-                    {
-                        outputHandler?.Invoke(line);
-                        lastTimestamp = DateTime.UtcNow;
-                    }
+                    outputHandler?.Invoke(line);
+                    lastTimestamp = DateTime.UtcNow;
                 }
 
                 // Wait for job to finish
                 // If no events by cancellation token timeout, job was probably already deleted, so re-check status
                 var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var listJobTask = _k8sClient.BatchV1.ListNamespacedJobWithHttpMessagesAsync(
+
+                await foreach (var (type, item) in _k8sClient.BatchV1.WatchListNamespacedJobAsync(
                     job.Metadata.NamespaceProperty,
                     fieldSelector: $"metadata.name={job.Metadata.Name}",
-                    watch: true,
-                    cancellationToken: cts.Token);
-
-                await foreach (var (type, item) in listJobTask.WatchAsync<V1Job, V1JobList>(cancellationToken: cts.Token))
+                    cancellationToken: cts.Token))
                 {
                     if (item.Status?.Succeeded > 0)
                     {
