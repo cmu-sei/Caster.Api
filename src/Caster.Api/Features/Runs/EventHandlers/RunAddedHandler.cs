@@ -144,9 +144,12 @@ namespace Caster.Api.Features.Runs.EventHandlers
                 await _db.SaveChangesAsync();
             }
 
-            _timer = new System.Timers.Timer(_options.OutputSaveInterval);
-            _timer.Elapsed += OnTimedEvent;
-            _timer.Start();
+            if (_terraformService.EnableOutputTimer)
+            {
+                _timer = new System.Timers.Timer(_options.OutputSaveInterval);
+                _timer.Elapsed += OnTimedEvent;
+                _timer.Start();
+            }
 
             bool isError = false;
             string initOutput = string.Empty;
@@ -168,6 +171,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
             else
             {
                 initOutput = _plan.Output;
+                _output.SetContent(_plan.Output ?? string.Empty);
             }
 
             if (!isError)
@@ -198,7 +202,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
             lock (_plan)
             {
                 _timerComplete = true;
-                _timer.Stop();
+                _timer?.Stop();
             }
 
             if (dynamicHost)

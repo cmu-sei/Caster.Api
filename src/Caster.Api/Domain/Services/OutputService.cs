@@ -81,6 +81,15 @@ namespace Caster.Api.Domain.Services
 
         private List<AsyncAutoResetEvent> ResetEvents { get; set; } = new List<AsyncAutoResetEvent>();
 
+        public void SetContent(string content)
+        {
+            lock (_lock)
+            {
+                _content.Clear();
+                _content.Append(content);
+            }
+        }
+
         public void AddLine(string output)
         {
             lock (_lock)

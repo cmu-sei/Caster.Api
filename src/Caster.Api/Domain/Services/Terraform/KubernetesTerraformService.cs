@@ -27,6 +27,8 @@ public class KubernetesTerraformService : BaseTerraformService
     private readonly IImageTagService _imageTagService;
     private readonly BackoffTracker _backoffTracker = new(60);
 
+    public override bool EnableOutputTimer => false;
+
     private const string _appName = "caster";
     private const string _appLabel = "app";
     private const string _workspaceIdLabel = "workspaceId";
@@ -125,6 +127,7 @@ public class KubernetesTerraformService : BaseTerraformService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Job Error");
+                outputHandler?.Invoke("Failed to create job");
 
                 return new TerraformResult()
                 {
@@ -155,11 +158,14 @@ public class KubernetesTerraformService : BaseTerraformService
 
         try
         {
-            var pod = await WaitForPodReady(job);
+            var (pod, failureReason) = await WaitForPodReady(job);
 
             if (pod == null)
             {
-                return new TerraformResult { ExitCode = -1, Output = "Job no longer exists" };
+                await EnsureJobDeleted(job.Metadata.Name, job.Metadata.NamespaceProperty);
+                var message = failureReason ?? "Job no longer exists";
+                outputHandler?.Invoke(message);
+                return new TerraformResult { ExitCode = -1, Output = message };
             }
 
             await StreamJobLogs(pod, job, outputHandler);
@@ -285,10 +291,17 @@ public class KubernetesTerraformService : BaseTerraformService
 
     protected override string GetBasePath(Workspace workspace) => workspace.GetPath(_options.KubernetesJobs.RootWorkingDirectory);
 
-    private async Task<V1Pod> WaitForPodReady(V1Job job)
+    private async Task<(V1Pod Pod, string FailureReason)> WaitForPodReady(V1Job job)
     {
         _backoffTracker.Reset();
         V1Pod pod = null;
+        V1Pod lastPodState = null;
+        DateTime? unschedulableDetectedAt = null;
+
+        var timeoutSeconds = _options.KubernetesJobs.PodReadyTimeoutSeconds;
+        using var timeoutCts = timeoutSeconds > 0
+            ? new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds))
+            : new CancellationTokenSource();
 
         while (pod == null)
         {
@@ -296,32 +309,107 @@ public class KubernetesTerraformService : BaseTerraformService
             {
                 await foreach (var (type, p) in _k8sClient.CoreV1.WatchListNamespacedPodAsync(
                     job.Metadata.NamespaceProperty,
-                    labelSelector: $"job-name={job.Metadata.Name}"))
+                    labelSelector: $"job-name={job.Metadata.Name}",
+                    cancellationToken: timeoutCts.Token))
                 {
+                    lastPodState = p;
+
                     if (type == WatchEventType.Deleted ||
                         p.Status?.Phase is "Running" or "Succeeded" or "Failed")
                     {
                         pod = p;
                         break;
                     }
+
+                    if (p.Status?.Phase == "Pending")
+                    {
+                        var unschedulable = p.Status?.Conditions?.FirstOrDefault(c =>
+                            c.Type == "PodScheduled" &&
+                            c.Status == "False" &&
+                            c.Reason == "Unschedulable");
+
+                        if (unschedulable != null)
+                        {
+                            unschedulableDetectedAt ??= DateTime.UtcNow;
+
+                            if ((DateTime.UtcNow - unschedulableDetectedAt.Value).TotalSeconds >= _options.KubernetesJobs.UnschedulableGracePeriodSeconds)
+                            {
+                                _logger.LogError("Pod for job {jobName} is unschedulable after grace period: {message}",
+                                    job.Metadata.Name, unschedulable.Message);
+                                pod = p;
+                                break;
+                            }
+                            else
+                            {
+                                _logger.LogWarning("Pod for job {jobName} is unschedulable, waiting for grace period: {message}",
+                                    job.Metadata.Name, unschedulable.Message);
+                            }
+                        }
+                    }
                 }
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            {
+                var events = await GetPodEvents(lastPodState);
+                var message = $"Timed out after {timeoutSeconds}s waiting for pod to become ready";
+
+                if (!string.IsNullOrEmpty(events))
+                {
+                    message += $"\nPod events:\n{events}";
+                }
+
+                _logger.LogError("{message}", message);
+                return (null, message);
             }
             catch (Exception ex)
             {
                 if (await JobExists(job.Metadata.Name, job.Metadata.NamespaceProperty))
                 {
                     _logger.LogWarning(ex, "Error watching for pod, retrying...");
-                    await _backoffTracker.WaitAsync();
+                    await _backoffTracker.WaitAsync(timeoutCts.Token);
                 }
                 else
                 {
-                    return null;
+                    return (null, null);
                 }
             }
         }
 
+        if (pod.Status?.Phase == "Pending")
+        {
+            var unschedulableCondition = pod.Status?.Conditions?.FirstOrDefault(c =>
+                c.Type == "PodScheduled" && c.Status == "False" && c.Reason == "Unschedulable");
+
+            var message = $"Pod unschedulable: {unschedulableCondition?.Message ?? "unknown reason"}";
+            _logger.LogError("{message}", message);
+            return (null, message);
+        }
+
         _logger.LogDebug("Pod {podName} ready for logs", pod.Metadata.Name);
-        return pod;
+        return (pod, null);
+    }
+
+    private async Task<string> GetPodEvents(V1Pod pod)
+    {
+        if (pod?.Metadata?.Name == null) return string.Empty;
+
+        try
+        {
+            var events = await _k8sClient.CoreV1.ListNamespacedEventAsync(
+                pod.Metadata.NamespaceProperty,
+                fieldSelector: $"involvedObject.name={pod.Metadata.Name},involvedObject.kind=Pod");
+
+            return string.Join("\n", events.Items
+                .Where(e => e.Type == "Warning")
+                .OrderByDescending(e => e.LastTimestamp)
+                .Take(5)
+                .Select(e => $"[{e.Reason}] {e.Message}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to retrieve pod events");
+            return string.Empty;
+        }
     }
 
     private async Task StreamJobLogs(V1Pod pod, V1Job job, Action<string> outputHandler)

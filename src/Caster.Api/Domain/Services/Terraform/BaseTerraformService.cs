@@ -250,6 +250,8 @@ public abstract class BaseTerraformService : ITerraformService
         return envVars;
     }
 
+    public abstract bool EnableOutputTimer { get; }
+
     protected abstract string GetBasePath(Workspace workspace);
 
     public abstract bool IsValidVersion(string version);
