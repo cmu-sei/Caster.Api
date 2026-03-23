@@ -76,9 +76,12 @@ namespace Caster.Api.Features.Applies.EventHandlers
 
                 workingDir = _apply.Run.Workspace.GetPath(_options.RootWorkingDirectory);
 
-                _timer = new System.Timers.Timer(_options.OutputSaveInterval);
-                _timer.Elapsed += OnTimedEvent;
-                _timer.Start();
+                if (_terraformService.EnableOutputTimer)
+                {
+                    _timer = new System.Timers.Timer(_options.OutputSaveInterval);
+                    _timer.Elapsed += OnTimedEvent;
+                    _timer.Start();
+                }
 
             }
             catch (Exception ex)
@@ -114,7 +117,7 @@ namespace Caster.Api.Features.Applies.EventHandlers
                     lock (_apply)
                     {
                         _timerComplete = true;
-                        _timer.Stop();
+                        _timer?.Stop();
                     }
 
                     _apply.Output = result.Output;

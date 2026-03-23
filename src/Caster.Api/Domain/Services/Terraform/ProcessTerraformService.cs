@@ -19,6 +19,8 @@ namespace Caster.Api.Domain.Services.Terraform;
 
 public class ProcessTerraformService : BaseTerraformService
 {
+    public override bool EnableOutputTimer => true;
+
     private const string _binaryName = "terraform";
     private readonly ILogger<ProcessTerraformService> _logger;
     private readonly StringBuilder _outputBuilder = new StringBuilder();
@@ -60,7 +62,7 @@ public class ProcessTerraformService : BaseTerraformService
             RedirectStandardError = redirectStandardError
         };
 
-        var envVars = this.GetEnvironmentVariables();
+        var envVars = this.GetEnvironmentVariables(workspace);
         startInfo.EnvironmentVariables.Clear();
 
         foreach (var kvp in envVars)

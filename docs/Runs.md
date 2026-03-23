@@ -95,6 +95,19 @@ These settings are defined in `appsettings.json`.
   * **Name** – Name of the ConfigMap in the cluster
   * **MountPath** – Path inside the Job where the ConfigMap is mounted
 
+* **JobTemplateFile**
+  Path to a YAML file defining a Kubernetes `V1Job` template. Takes precedence over `JobTemplateYaml`. Caster uses this as a base and overrides only the properties it needs to control (metadata, primary container image/args/workingDir, volumes, env vars, and security context). Template values for volumes, volume mounts, and env vars are merged by name — template‑defined values are preserved unless Caster needs to override them.
+
+  This enables full customization of the pod spec (affinity, tolerations, resource limits, sidecars, init containers, etc.) without requiring Caster code changes.
+
+* **JobTemplateYaml**
+  Inline YAML string defining a `V1Job` template. Same behavior as `JobTemplateFile` but defined directly in configuration. Useful when a separate file is not practical.
+
+* **PodReadyTimeoutSeconds**
+  Maximum seconds to wait for a Job's pod to become ready. Default: `120`. Set to `0` to disable the timeout.
+
+  If the timeout is reached, Caster retrieves recent pod warning events and includes them in the Run output to help users troubleshoot scheduling issues (e.g., insufficient resources, node affinity mismatches).
+
 ---
 
 ### Process (Legacy)
@@ -154,6 +167,14 @@ Environment variables are injected into either:
 
   Values defined here override any inherited variables with the same name.
 
+### SelectWorkspace
+
+Controls how Caster switches Terraform workspaces.
+
+When `false` (the default), Caster sets the `TF_WORKSPACE` environment variable instead of running an explicit `terraform workspace select` command. This eliminates an extra Terraform command per Run, improving performance.
+
+Set to `true` to restore the previous behavior of running `terraform workspace select` explicitly.
+
 ---
 
 ## Migration Notes
@@ -166,6 +187,10 @@ When migrating from **Process mode** to **Kubernetes mode**, be aware that the d
 * `wget` **is** available
 
 You may need to update provisioner scripts accordingly.
+
+### AffinityYaml Removed
+
+The `AffinityYaml` configuration option has been replaced by `JobTemplateFile` and `JobTemplateYaml`. Existing deployments that used `AffinityYaml` should migrate to a full `V1Job` template that includes the desired affinity configuration under `spec.template.spec.affinity`.
 
 ### Custom Images
 

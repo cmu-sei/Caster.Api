@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Exceptions;
+using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Utilities;
 using k8s;
@@ -26,6 +27,8 @@ public class KubernetesTerraformService : BaseTerraformService
     private readonly IKubernetes _k8sClient;
     private readonly IImageTagService _imageTagService;
     private readonly BackoffTracker _backoffTracker = new(60);
+
+    public override bool EnableOutputTimer => false;
 
     private const string _appName = "caster";
     private const string _appLabel = "app";
@@ -71,60 +74,19 @@ public class KubernetesTerraformService : BaseTerraformService
 
             var securityContext = await GetSecurityContext();
             var (volumes, volumeMounts) = GetVolumes();
-            var envVars = GetEnvironmentVariables();
-            var affinity = GetAffinity();
+            var envVars = GetEnvironmentVariables(workspace);
 
-            var jobRequest = new V1Job
-            {
-                Metadata = new V1ObjectMeta
-                {
-                    Name = jobName,
-                    Annotations = new Dictionary<string, string>
-                    {
-                        { "cancellable", "true"}
-                    },
-                    Labels = new Dictionary<string, string>
-                    {
-                        { _appLabel, _appName},
-                        { _workspaceIdLabel, workspace.Id.ToString() },
-                        { _workspaceNameLabel, workspace.Name}
-                    }
-                },
-                Spec = new V1JobSpec
-                {
-                    Template = new V1PodTemplateSpec
-                    {
-                        Spec = new V1PodSpec
-                        {
-                            Containers =
-                            [
-                                new V1Container
-                                {
-                                    Name = jobName,
-                                    Image = GetImage(workspace),
-                                    Args = argumentList?.ToArray(),
-                                    WorkingDir = $"{_options.KubernetesJobs.RootWorkingDirectory}/{workspace.Id}",
-                                    VolumeMounts = volumeMounts,
-                                    Env = envVars
-                                }
-                            ],
-                            Volumes = volumes,
-                            SecurityContext = securityContext,
-                            Affinity = affinity,
-                            RestartPolicy = "Never"
-                        }
-                    },
-                }
-            };
+            var jobRequest = BuildJobRequest(jobName, workspace, argumentList, securityContext, volumes, volumeMounts, envVars);
 
             try
             {
                 job = await client.BatchV1.CreateNamespacedJobAsync(jobRequest, _options.KubernetesJobs.Namespace);
-                Console.WriteLine($"Job {jobName} created successfully.");
+                _logger.LogInformation("Job {jobName} created successfully.", jobName);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Job Error");
+                outputHandler?.Invoke("Failed to create job");
 
                 return new TerraformResult()
                 {
@@ -155,16 +117,24 @@ public class KubernetesTerraformService : BaseTerraformService
 
         try
         {
-            var pod = await WaitForPodReady(job);
+            var (pod, failureReason) = await WaitForPodReady(job);
 
             if (pod == null)
             {
-                return new TerraformResult { ExitCode = -1, Output = "Job no longer exists" };
+                await EnsureJobDeleted(job.Metadata.Name, job.Metadata.NamespaceProperty);
+                var message = failureReason ?? "Job no longer exists";
+                outputHandler?.Invoke(message);
+                return new TerraformResult { ExitCode = -1, Output = message };
             }
 
-            await StreamJobLogs(pod, job, outputHandler);
+            bool needsFullReRead = await StreamJobLogs(pod, job, outputHandler, outputBuilder);
 
-            bool podDeleted = await CollectFinalLogs(pod, outputBuilder);
+            bool podDeleted = false;
+            if (needsFullReRead)
+            {
+                outputBuilder.Clear();
+                podDeleted = await CollectFinalLogs(pod, outputBuilder);
+            }
 
             bool finalizerComplete = false;
             _backoffTracker.Reset();
@@ -285,60 +255,100 @@ public class KubernetesTerraformService : BaseTerraformService
 
     protected override string GetBasePath(Workspace workspace) => workspace.GetPath(_options.KubernetesJobs.RootWorkingDirectory);
 
-    private async Task<V1Pod> WaitForPodReady(V1Job job)
+    private async Task<(V1Pod Pod, string FailureReason)> WaitForPodReady(V1Job job)
     {
         _backoffTracker.Reset();
         V1Pod pod = null;
+        V1Pod lastPodState = null;
+
+        var timeoutSeconds = _options.KubernetesJobs.PodReadyTimeoutSeconds;
+        using var timeoutCts = timeoutSeconds > 0
+            ? new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds))
+            : new CancellationTokenSource();
 
         while (pod == null)
         {
             try
             {
-                var tcs = new TaskCompletionSource<V1Pod>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-                using (var podResp = await _k8sClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(
+                await foreach (var (type, p) in _k8sClient.CoreV1.WatchListNamespacedPodAsync(
                     job.Metadata.NamespaceProperty,
                     labelSelector: $"job-name={job.Metadata.Name}",
-                    watch: true))
+                    cancellationToken: timeoutCts.Token))
                 {
-                    using var watcher = podResp.Watch<V1Pod, V1PodList>(
-                        onEvent: (type, p) =>
-                        {
-                            if (type == WatchEventType.Deleted ||
-                                p.Status?.Phase is "Running" or "Succeeded" or "Failed")
-                            {
-                                tcs.TrySetResult(p);
-                            }
-                        },
-                        onError: e => tcs.TrySetException(e),
-                        onClosed: () => tcs.TrySetCanceled());
+                    lastPodState = p;
 
-                    pod = await tcs.Task;
+                    if (type == WatchEventType.Deleted ||
+                        p.Status?.Phase is "Running" or "Succeeded" or "Failed")
+                    {
+                        pod = p;
+                        break;
+                    }
                 }
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            {
+                var events = await GetPodEvents(lastPodState);
+                var message = $"Timed out after {timeoutSeconds}s waiting for pod to become ready";
+
+                if (!string.IsNullOrEmpty(events))
+                {
+                    message += $"\nPod events:\n{events}";
+                }
+
+                _logger.LogError("{message}", message);
+                return (null, message);
             }
             catch (Exception ex)
             {
                 if (await JobExists(job.Metadata.Name, job.Metadata.NamespaceProperty))
                 {
                     _logger.LogWarning(ex, "Error watching for pod, retrying...");
-                    await _backoffTracker.WaitAsync();
+                    await _backoffTracker.WaitAsync(timeoutCts.Token);
                 }
                 else
                 {
-                    return null;
+                    return (null, null);
                 }
             }
         }
 
         _logger.LogDebug("Pod {podName} ready for logs", pod.Metadata.Name);
-        return pod;
+        return (pod, null);
     }
 
-    private async Task StreamJobLogs(V1Pod pod, V1Job job, Action<string> outputHandler)
+    private async Task<string> GetPodEvents(V1Pod pod)
+    {
+        if (pod?.Metadata?.Name == null) return string.Empty;
+
+        try
+        {
+            var events = await _k8sClient.CoreV1.ListNamespacedEventAsync(
+                pod.Metadata.NamespaceProperty,
+                fieldSelector: $"involvedObject.name={pod.Metadata.Name},involvedObject.kind=Pod");
+
+            return string.Join("\n", events.Items
+                .Where(e => e.Type == "Warning")
+                .OrderByDescending(e => e.LastTimestamp)
+                .Take(5)
+                .Select(e => $"[{e.Reason}] {e.Message}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to retrieve pod events");
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Streams job logs to outputHandler and accumulates them in outputBuilder.
+    /// Returns true if a reconnection occurred and a full re-read is needed for complete output.
+    /// </summary>
+    private async Task<bool> StreamJobLogs(V1Pod pod, V1Job job, Action<string> outputHandler, StringBuilder outputBuilder)
     {
         _backoffTracker.Reset();
         var lastTimestamp = DateTime.UtcNow;
         var completed = false;
+        var hadReconnection = false;
 
         while (!completed)
         {
@@ -354,26 +364,32 @@ public class KubernetesTerraformService : BaseTerraformService
 
                 using var reader = new StreamReader(logStream);
                 string line;
-                while (!reader.EndOfStream)
+                while ((line = await reader.ReadLineAsync()) != null)
                 {
-                    line = await reader.ReadLineAsync();
-                    if (line != null)
-                    {
-                        outputHandler?.Invoke(line);
-                        lastTimestamp = DateTime.UtcNow;
-                    }
+                    outputHandler?.Invoke(line);
+                    outputBuilder.AppendLine(line);
+                    lastTimestamp = DateTime.UtcNow;
                 }
 
-                // Wait for job to finish
-                // If no events by cancellation token timeout, job was probably already deleted, so re-check status
+                // Check if job already completed before setting up a watch
+                var currentStatus = await _k8sClient.BatchV1.ReadNamespacedJobStatusAsync(
+                    job.Metadata.Name, job.Metadata.NamespaceProperty);
+
+                if (currentStatus?.Status?.Succeeded > 0 || currentStatus?.Status?.Failed > 0)
+                {
+                    _logger.LogDebug("Job {jobName} already completed", job.Metadata.Name);
+                    completed = true;
+                    break;
+                }
+
+                // Watch from the resourceVersion we just read — no gap possible
                 var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var listJobTask = _k8sClient.BatchV1.ListNamespacedJobWithHttpMessagesAsync(
+
+                await foreach (var (type, item) in _k8sClient.BatchV1.WatchListNamespacedJobAsync(
                     job.Metadata.NamespaceProperty,
                     fieldSelector: $"metadata.name={job.Metadata.Name}",
-                    watch: true,
-                    cancellationToken: cts.Token);
-
-                await foreach (var (type, item) in listJobTask.WatchAsync<V1Job, V1JobList>(cancellationToken: cts.Token))
+                    resourceVersion: currentStatus.Metadata.ResourceVersion,
+                    cancellationToken: cts.Token))
                 {
                     if (item.Status?.Succeeded > 0)
                     {
@@ -397,6 +413,7 @@ public class KubernetesTerraformService : BaseTerraformService
             }
             catch (Exception ex)
             {
+                hadReconnection = true;
                 _logger.LogWarning(ex, "Exception reading logs, checking job status");
 
                 if (!await JobExists(job.Metadata.Name, job.Metadata.NamespaceProperty))
@@ -430,6 +447,7 @@ public class KubernetesTerraformService : BaseTerraformService
         }
 
         _logger.LogInformation("Log reading finished for job {jobName}", job.Metadata.Name);
+        return hadReconnection;
     }
 
     private async Task<bool> CollectFinalLogs(V1Pod pod, StringBuilder outputBuilder)
@@ -501,33 +519,48 @@ public class KubernetesTerraformService : BaseTerraformService
 
     private async Task EnsureJobDeleted(string jobName, string jobNamespace)
     {
+        V1Job job;
+        try { job = await _k8sClient.BatchV1.ReadNamespacedJobAsync(jobName, jobNamespace); }
+        catch (HttpOperationException ex) when (ex.Response.StatusCode == HttpStatusCode.NotFound) { return; }
+
         _backoffTracker.Reset();
-        while (await JobExists(jobName, jobNamespace))
+        while (true)
         {
             try
             {
-                await _k8sClient.BatchV1.DeleteNamespacedJobAsync(
-                    jobName,
-                    jobNamespace,
-                        new V1DeleteOptions
-                        {
-                            PropagationPolicy = "Foreground"
-                        }
-                    );
-                _logger.LogDebug("Job delete request sent");
+                await _k8sClient.BatchV1.DeleteNamespacedJobAsync(jobName, jobNamespace,
+                    new V1DeleteOptions { PropagationPolicy = "Foreground" });
+                _logger.LogDebug("Job delete request sent for {jobName}", jobName);
+                break;
             }
+            catch (HttpOperationException ex) when (ex.Response.StatusCode == HttpStatusCode.NotFound) { return; }
             catch (Exception ex)
             {
-                if (IsNotFound(ex))
-                {
-                    _logger.LogDebug("Job already deleted");
-                    break;
-                }
-                _logger.LogWarning(ex, "Error deleting job, retrying...");
+                _logger.LogWarning(ex, "Error deleting job {jobName}, retrying...", jobName);
+                await _backoffTracker.WaitAsync();
             }
-
-            await _backoffTracker.WaitAsync();
         }
+
+        // Watch for deletion using resourceVersion from the read
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            await foreach (var (type, _) in _k8sClient.BatchV1.WatchListNamespacedJobAsync(
+                jobNamespace,
+                fieldSelector: $"metadata.name={jobName}",
+                resourceVersion: job.Metadata.ResourceVersion,
+                cancellationToken: cts.Token))
+            {
+                if (type == WatchEventType.Deleted)
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Timed out waiting for job {jobName} deletion", jobName);
+        }
+
+        _logger.LogDebug("Job {jobName} confirmed deleted", jobName);
     }
 
     private async Task<bool> JobExists(string jobName, string jobNamespace)
@@ -669,9 +702,9 @@ public class KubernetesTerraformService : BaseTerraformService
         return (volumes.ToArray(), volumeMounts.ToArray());
     }
 
-    private new V1EnvVar[] GetEnvironmentVariables()
+    private new V1EnvVar[] GetEnvironmentVariables(Workspace workspace)
     {
-        return base.GetEnvironmentVariables()
+        return base.GetEnvironmentVariables(workspace)
             .Select(x => new V1EnvVar
             {
                 Name = x.Key,
@@ -682,23 +715,66 @@ public class KubernetesTerraformService : BaseTerraformService
 
     private string GetJobName(Workspace workspace) => $"{_appName}-{workspace.Id}";
 
-    private V1Affinity GetAffinity()
+    private V1Job GetJobTemplate()
     {
-        if (string.IsNullOrWhiteSpace(_options.KubernetesJobs.AffinityYaml))
-        {
-            return null;
-        }
+        string yaml = null;
 
-        try
-        {
-            var affinity = KubernetesYaml.Deserialize<V1Affinity>(_options.KubernetesJobs.AffinityYaml);
-            _logger.LogDebug("Successfully loaded Affinity configuration from YAML");
-            return affinity;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to parse Affinity YAML configuration");
-            return null;
-        }
+        if (!string.IsNullOrWhiteSpace(_options.KubernetesJobs.JobTemplateFile))
+            yaml = System.IO.File.ReadAllText(_options.KubernetesJobs.JobTemplateFile);
+        else if (!string.IsNullOrWhiteSpace(_options.KubernetesJobs.JobTemplateYaml))
+            yaml = _options.KubernetesJobs.JobTemplateYaml;
+
+        if (yaml == null) return null;
+
+        return KubernetesYaml.Deserialize<V1Job>(yaml);
+    }
+
+    private V1Job BuildJobRequest(
+        string jobName,
+        Workspace workspace,
+        IEnumerable<string> argumentList,
+        V1PodSecurityContext securityContext,
+        V1Volume[] volumes,
+        V1VolumeMount[] volumeMounts,
+        V1EnvVar[] envVars)
+    {
+        var job = GetJobTemplate() ?? new V1Job();
+
+        // Ensure structural scaffolding exists
+        job.Metadata ??= new V1ObjectMeta();
+        job.Spec ??= new V1JobSpec();
+        job.Spec.Template ??= new V1PodTemplateSpec();
+        job.Spec.Template.Spec ??= new V1PodSpec();
+        job.Spec.Template.Spec.Containers ??= [];
+
+        // Override metadata
+        job.Metadata.Name = jobName;
+
+        job.Metadata.Labels ??= new Dictionary<string, string>();
+        job.Metadata.Labels[_appLabel] = _appName;
+        job.Metadata.Labels[_workspaceIdLabel] = workspace.Id.ToString();
+        job.Metadata.Labels[_workspaceNameLabel] = workspace.Name;
+
+        job.Metadata.Annotations ??= new Dictionary<string, string>();
+        job.Metadata.Annotations["cancellable"] = "true";
+
+        // Override the primary container (index 0)
+        if (job.Spec.Template.Spec.Containers.Count == 0)
+            job.Spec.Template.Spec.Containers.Add(new V1Container());
+
+        var container = job.Spec.Template.Spec.Containers[0];
+        container.Name = jobName;
+        container.Image = GetImage(workspace);
+        container.Args = argumentList?.ToArray();
+        container.WorkingDir = $"{_options.KubernetesJobs.RootWorkingDirectory}/{workspace.Id}";
+        container.VolumeMounts = container.VolumeMounts.MergeBy(volumeMounts, m => m.Name);
+        container.Env = container.Env.MergeBy(envVars, e => e.Name);
+
+        // Override pod spec
+        job.Spec.Template.Spec.Volumes = job.Spec.Template.Spec.Volumes.MergeBy(volumes, v => v.Name);
+        job.Spec.Template.Spec.SecurityContext = securityContext;
+        job.Spec.Template.Spec.RestartPolicy ??= "Never";
+
+        return job;
     }
 }

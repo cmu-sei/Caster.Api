@@ -17,7 +17,6 @@ public abstract class BaseTerraformService : ITerraformService
 {
     protected readonly TerraformOptions _options;
     protected IRegexService _regexService;
-    protected string _workspaceName = null;
 
     public BaseTerraformService(TerraformOptions options, IRegexService regexService)
     {
@@ -30,9 +29,6 @@ public abstract class BaseTerraformService : ITerraformService
     /// </summary>
     public async Task<TerraformResult> InitializeWorkspace(Workspace workspace, Action<string> outputHandler)
     {
-        // Set TF_WORKSPACE env var for init to workaround bug with an empty configuration
-        // Will need to avoid this for a remote state init
-        _workspaceName = workspace.Name;
         var result = new TerraformResult();
 
         try
@@ -48,16 +44,11 @@ public abstract class BaseTerraformService : ITerraformService
             }
         }
 
-        _workspaceName = null;
-
-        if (!result.IsError)
+        if (_options.SelectWorkspace && !result.IsError && !workspace.IsDefault)
         {
-            if (!workspace.IsDefault)
-            {
-                var workspaceResult = await this.SelectWorkspace(workspace, outputHandler);
-                result.Output += workspaceResult.Output;
-                result.ExitCode = workspaceResult.ExitCode;
-            }
+            var workspaceResult = await this.SelectWorkspace(workspace, outputHandler);
+            result.Output += workspaceResult.Output;
+            result.ExitCode = workspaceResult.ExitCode;
         }
 
         return result;
@@ -198,16 +189,16 @@ public abstract class BaseTerraformService : ITerraformService
         }
     }
 
-    protected Dictionary<string, string> GetEnvironmentVariables()
+    protected Dictionary<string, string> GetEnvironmentVariables(Workspace workspace)
     {
         var envVars = new Dictionary<string, string>
         {
             { "TF_IN_AUTOMATION", "true" }
         };
 
-        if (!string.IsNullOrEmpty(_workspaceName))
+        if (!workspace.IsDefault)
         {
-            envVars.Add("TF_WORKSPACE", _workspaceName);
+            envVars.Add("TF_WORKSPACE", workspace.Name);
         }
 
         var envVarOptions = _options.EnvironmentVariables;
@@ -249,6 +240,8 @@ public abstract class BaseTerraformService : ITerraformService
 
         return envVars;
     }
+
+    public abstract bool EnableOutputTimer { get; }
 
     protected abstract string GetBasePath(Workspace workspace);
 
