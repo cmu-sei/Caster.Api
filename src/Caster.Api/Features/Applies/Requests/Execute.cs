@@ -91,7 +91,7 @@ namespace Caster.Api.Features.Applies
                     await _db.SaveChangesAsync();
                 }
 
-                await _mediator.Publish(new ApplyCreated { ApplyId = apply.Id });
+                await _mediator.Publish(new ApplyCreated { ApplyId = apply.Id, WorkspaceId = workspaceId });
                 await _mediator.Publish(new RunUpdated(apply.RunId));
                 return _mapper.Map<Apply>(apply);
             }

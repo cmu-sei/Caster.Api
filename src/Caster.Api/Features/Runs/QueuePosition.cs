@@ -2,13 +2,13 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using MediatR;
 
-namespace Caster.Api.Domain.Events
+namespace Caster.Api.Features.Runs
 {
-    public class RunAdded : INotification
+    public class QueuePosition
     {
-        public Guid RunId { get; set; }
+        public Guid ItemId { get; set; }
         public Guid WorkspaceId { get; set; }
+        public int Position { get; set; }
     }
 }

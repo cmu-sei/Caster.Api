@@ -21,6 +21,13 @@ public class TerraformOptions
     public int? AzureDestroyFailureThreshhold { get; set; }
     public int MaxParallelism { get; set; }
     public bool SelectWorkspace { get; set; }
+
+    /// <summary>
+    /// Maximum number of simultaneous terraform operations (plans + applies).
+    /// 0 = unlimited. Applies are prioritized over plans when queued.
+    /// </summary>
+    public int MaxConcurrentRuns { get; set; }
+
     public KubernetesJobOptions KubernetesJobs { get; set; } = new();
     public EnvironmentVariableOptions EnvironmentVariables { get; set; } = new();
 }

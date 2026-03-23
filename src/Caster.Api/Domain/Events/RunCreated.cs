@@ -9,5 +9,6 @@ namespace Caster.Api.Domain.Events
     public class RunCreated : INotification, IRunUpdate
     {
         public Guid RunId { get; set; }
+        public Guid WorkspaceId { get; set; }
     }
 }

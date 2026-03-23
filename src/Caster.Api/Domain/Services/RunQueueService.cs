@@ -2,7 +2,6 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,32 +10,53 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Events;
 using Caster.Api.Domain.Models;
+using Caster.Api.Hubs;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Utilities.Synchronization;
 using MediatR;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Caster.Api.Domain.Services
 {
+    public record QueuePosition(Guid ItemId, Guid WorkspaceId, int Position, int Total);
+
     public interface IRunQueueService : IHostedService
     {
         void Add(INotification notification);
+        IReadOnlyList<QueuePosition> GetQueuePositions();
+        QueuePosition GetQueuePosition(Guid runId);
     }
 
     public class RunQueueService : IRunQueueService
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<RunQueueService> _logger;
+        private readonly IHubContext<ProjectHub> _projectHub;
 
-        private readonly BlockingCollection<INotification> _queue = new BlockingCollection<INotification>();
+        private readonly ConcurrentQueue<ApplyAdded> _applyQueue = new();
+        private readonly ConcurrentQueue<RunAdded> _planQueue = new();
+        private readonly SemaphoreSlim _itemAvailable = new(0);
+        private readonly SemaphoreSlim _concurrencyLimiter;
 
-        public RunQueueService(IServiceProvider serviceProvider, ILogger<RunQueueService> logger)
+        public RunQueueService(
+            IServiceProvider serviceProvider,
+            ILogger<RunQueueService> logger,
+            IOptions<TerraformOptions> terraformOptions,
+            IHubContext<ProjectHub> projectHub)
         {
             _serviceProvider = serviceProvider;
             _logger = logger;
+            _projectHub = projectHub;
+            var options = terraformOptions.Value;
+            _concurrencyLimiter = new SemaphoreSlim(
+                options.MaxConcurrentRuns > 0
+                    ? options.MaxConcurrentRuns
+                    : int.MaxValue);
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -49,19 +69,87 @@ namespace Caster.Api.Domain.Services
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
-            return System.Threading.Tasks.Task.CompletedTask;
+            return Task.CompletedTask;
         }
 
         public void Add(INotification notification)
         {
-            _queue.Add(notification);
+            if (notification is ApplyAdded apply)
+                _applyQueue.Enqueue(apply);
+            else if (notification is RunAdded run)
+                _planQueue.Enqueue(run);
+            _itemAvailable.Release();
+        }
+
+        public IReadOnlyList<QueuePosition> GetQueuePositions()
+        {
+            var applies = _applyQueue.ToArray();
+            var plans = _planQueue.ToArray();
+            var total = applies.Length + plans.Length;
+            var positions = new List<QueuePosition>(total);
+            int pos = 1;
+            foreach (var a in applies)
+                positions.Add(new QueuePosition(a.ApplyId, a.WorkspaceId, pos++, total));
+            foreach (var p in plans)
+                positions.Add(new QueuePosition(p.RunId, p.WorkspaceId, pos++, total));
+            return positions;
+        }
+
+        public QueuePosition GetQueuePosition(Guid runId)
+        {
+            return GetQueuePositions().FirstOrDefault(p => p.ItemId == runId);
         }
 
         private async Task ExecuteAsync()
         {
-            foreach (var item in _queue.GetConsumingEnumerable())
+            while (true)
             {
-                _ = this.Handle(item);
+                await _itemAvailable.WaitAsync();
+                var item = DequeueNext();
+                if (item == null) continue;
+                await BroadcastQueuePositions();
+                await _concurrencyLimiter.WaitAsync();
+                _ = HandleWithRelease(item);
+                await BroadcastQueuePositions();
+            }
+        }
+
+        private INotification DequeueNext()
+        {
+            if (_applyQueue.TryDequeue(out var apply)) return apply;
+            if (_planQueue.TryDequeue(out var plan)) return plan;
+
+            _logger.LogWarning("DequeueNext called but both queues empty");
+            return null;
+        }
+
+        private async Task HandleWithRelease(INotification item)
+        {
+            try
+            {
+                await Handle(item);
+            }
+            finally
+            {
+                _concurrencyLimiter.Release();
+            }
+        }
+
+        private async Task BroadcastQueuePositions()
+        {
+            try
+            {
+                var positions = GetQueuePositions();
+                foreach (var pos in positions)
+                {
+                    await _projectHub.Clients
+                        .Group(pos.WorkspaceId.ToString())
+                        .SendAsync("RunQueuePositionUpdated", pos);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error broadcasting queue positions");
             }
         }
 
@@ -87,17 +175,11 @@ namespace Caster.Api.Domain.Services
                 {
                     if (run.Status == RunStatus.Applying)
                     {
-                        _ = Task.Run(async () =>
-                        {
-                            await this.Handle(new ApplyAdded { ApplyId = run.Apply.Id });
-                        });
+                        Add(new ApplyAdded { ApplyId = run.Apply.Id, WorkspaceId = run.WorkspaceId });
                     }
                     else if (run.Status == RunStatus.Planning)
                     {
-                        _ = Task.Run(async () =>
-                        {
-                            await this.Handle(new RunAdded { RunId = run.Id });
-                        });
+                        Add(new RunAdded { RunId = run.Id, WorkspaceId = run.WorkspaceId });
                     }
                 }
 

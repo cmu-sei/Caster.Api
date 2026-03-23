@@ -68,6 +68,31 @@ namespace Caster.Api.Features.Runs
         }
 
         /// <summary>
+        /// Get queue positions for all waiting runs
+        /// </summary>
+        [HttpGet("runs/queue")]
+        [ProducesResponseType(typeof(IEnumerable<QueuePosition>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetRunQueuePositions")]
+        public async Task<IActionResult> GetQueuePositions()
+        {
+            var result = await _mediator.Send(new GetQueuePositions.Query());
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Get queue position for a specific run
+        /// </summary>
+        /// <param name="runId">The Id of the Run</param>
+        [HttpGet("runs/{runId}/queue-position")]
+        [ProducesResponseType(typeof(QueuePosition), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetRunQueuePosition")]
+        public async Task<IActionResult> GetQueuePosition([FromRoute] Guid runId)
+        {
+            var result = await _mediator.Send(new GetQueuePosition.Query { RunId = runId });
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Create a new Run
         /// </summary>
         /// <param name="command">The Create command</param>
