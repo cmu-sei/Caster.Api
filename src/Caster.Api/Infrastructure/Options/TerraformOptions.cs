@@ -20,6 +20,7 @@ public class TerraformOptions
     public int StateRetryIntervalSeconds { get; set; }
     public int? AzureDestroyFailureThreshhold { get; set; }
     public int MaxParallelism { get; set; }
+    public bool SelectWorkspace { get; set; }
     public KubernetesJobOptions KubernetesJobs { get; set; } = new();
     public EnvironmentVariableOptions EnvironmentVariables { get; set; } = new();
 }

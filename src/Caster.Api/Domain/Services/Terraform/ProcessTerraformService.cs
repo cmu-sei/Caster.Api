@@ -62,7 +62,7 @@ public class ProcessTerraformService : BaseTerraformService
             RedirectStandardError = redirectStandardError
         };
 
-        var envVars = this.GetEnvironmentVariables();
+        var envVars = this.GetEnvironmentVariables(workspace);
         startInfo.EnvironmentVariables.Clear();
 
         foreach (var kvp in envVars)

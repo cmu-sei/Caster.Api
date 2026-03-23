@@ -73,7 +73,7 @@ public class KubernetesTerraformService : BaseTerraformService
 
             var securityContext = await GetSecurityContext();
             var (volumes, volumeMounts) = GetVolumes();
-            var envVars = GetEnvironmentVariables();
+            var envVars = GetEnvironmentVariables(workspace);
 
             var jobRequest = BuildJobRequest(jobName, workspace, argumentList, securityContext, volumes, volumeMounts, envVars);
 
@@ -701,9 +701,9 @@ public class KubernetesTerraformService : BaseTerraformService
         return (volumes.ToArray(), volumeMounts.ToArray());
     }
 
-    private new V1EnvVar[] GetEnvironmentVariables()
+    private new V1EnvVar[] GetEnvironmentVariables(Workspace workspace)
     {
-        return base.GetEnvironmentVariables()
+        return base.GetEnvironmentVariables(workspace)
             .Select(x => new V1EnvVar
             {
                 Name = x.Key,
