@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Exceptions;
+using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Utilities;
 using k8s;
@@ -746,9 +747,6 @@ public class KubernetesTerraformService : BaseTerraformService
         job.Spec.Template.Spec ??= new V1PodSpec();
         job.Spec.Template.Spec.Containers ??= [];
 
-        if (job.Spec.Template.Spec.Containers.Count == 0)
-            job.Spec.Template.Spec.Containers.Add(new V1Container());
-
         // Override metadata
         job.Metadata.Name = jobName;
 
@@ -761,16 +759,19 @@ public class KubernetesTerraformService : BaseTerraformService
         job.Metadata.Annotations["cancellable"] = "true";
 
         // Override the primary container (index 0)
+        if (job.Spec.Template.Spec.Containers.Count == 0)
+            job.Spec.Template.Spec.Containers.Add(new V1Container());
+
         var container = job.Spec.Template.Spec.Containers[0];
         container.Name = jobName;
         container.Image = GetImage(workspace);
         container.Args = argumentList?.ToArray();
         container.WorkingDir = $"{_options.KubernetesJobs.RootWorkingDirectory}/{workspace.Id}";
-        container.VolumeMounts = volumeMounts.ToList();
-        container.Env = envVars.ToList();
+        container.VolumeMounts = container.VolumeMounts.MergeBy(volumeMounts, m => m.Name);
+        container.Env = container.Env.MergeBy(envVars, e => e.Name);
 
         // Override pod spec
-        job.Spec.Template.Spec.Volumes = volumes.ToList();
+        job.Spec.Template.Spec.Volumes = job.Spec.Template.Spec.Volumes.MergeBy(volumes, v => v.Name);
         job.Spec.Template.Spec.SecurityContext = securityContext;
         job.Spec.Template.Spec.RestartPolicy ??= "Never";
 
