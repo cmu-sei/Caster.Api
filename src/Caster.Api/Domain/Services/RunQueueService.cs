@@ -44,6 +44,7 @@ namespace Caster.Api.Domain.Services
         private readonly ConcurrentDictionary<Guid, bool> _cancelledRunIds = new();
         private readonly SemaphoreSlim _itemAvailable = new(0);
         private readonly SemaphoreSlim _concurrencyLimiter;
+        private readonly CancellationTokenSource _cts = new();
 
         public RunQueueService(
             IServiceProvider serviceProvider,
@@ -71,6 +72,7 @@ namespace Caster.Api.Domain.Services
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
+            _cts.Cancel();
             return Task.CompletedTask;
         }
 
@@ -109,15 +111,22 @@ namespace Caster.Api.Domain.Services
 
         private async Task ExecuteAsync()
         {
-            while (true)
+            try
             {
-                await _itemAvailable.WaitAsync();
-                await BroadcastQueuePositions();
-                await _concurrencyLimiter.WaitAsync();
-                var item = DequeueNext();
-                if (item == null) { _concurrencyLimiter.Release(); continue; }
-                _ = HandleWithRelease(item);
-                await BroadcastQueuePositions();
+                while (!_cts.Token.IsCancellationRequested)
+                {
+                    await _itemAvailable.WaitAsync(_cts.Token);
+                    await BroadcastQueuePositions(_cts.Token);
+                    await _concurrencyLimiter.WaitAsync(_cts.Token);
+                    var item = DequeueNext();
+                    if (item == null) { _concurrencyLimiter.Release(); continue; }
+                    _ = Handle(item);
+                    await BroadcastQueuePositions(_cts.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("RunQueueService stopping");
             }
         }
 
@@ -141,29 +150,30 @@ namespace Caster.Api.Domain.Services
             return null;
         }
 
-        private async Task HandleWithRelease(INotification item)
+        private async Task Handle(INotification item)
         {
             try
             {
-                await Handle(item);
+                await Publish(item);
             }
             finally
             {
                 _concurrencyLimiter.Release();
+
+                if (item is IRunUpdate runUpdate)
+                    _cancelledRunIds.TryRemove(runUpdate.RunId, out _);
             }
         }
 
-        private async Task BroadcastQueuePositions()
+        private async Task BroadcastQueuePositions(CancellationToken cancellationToken)
         {
             try
             {
                 var positions = GetQueuePositions();
-                foreach (var pos in positions)
-                {
-                    await _projectHub.Clients
+                await Task.WhenAll(positions.Select(pos =>
+                    _projectHub.Clients
                         .Group(pos.WorkspaceId.ToString())
-                        .SendAsync("RunQueuePositionUpdated", pos);
-                }
+                        .SendAsync("RunQueuePositionUpdated", pos, cancellationToken)));
             }
             catch (Exception ex)
             {
@@ -195,7 +205,7 @@ namespace Caster.Api.Domain.Services
                     {
                         Add(new ApplyAdded { ApplyId = run.Apply.Id, RunId = run.Id, WorkspaceId = run.WorkspaceId });
                     }
-                    else if (run.Status == RunStatus.Planning)
+                    else if (run.Status == RunStatus.Planning || run.Status == RunStatus.Queued)
                     {
                         Add(new RunAdded { RunId = run.Id, WorkspaceId = run.WorkspaceId });
                     }
@@ -274,7 +284,7 @@ namespace Caster.Api.Domain.Services
             }
         }
 
-        private async Task Handle(INotification notification)
+        private async Task Publish(INotification notification)
         {
             using (var scope = _serviceProvider.CreateScope())
             {
