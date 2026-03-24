@@ -89,7 +89,7 @@ namespace Caster.Api.Domain.Services
             var positions = new List<QueuePosition>(total);
             int pos = 1;
             foreach (var a in applies)
-                positions.Add(new QueuePosition(a.ApplyId, a.WorkspaceId, pos++, total));
+                positions.Add(new QueuePosition(a.RunId, a.WorkspaceId, pos++, total));
             foreach (var p in plans)
                 positions.Add(new QueuePosition(p.RunId, p.WorkspaceId, pos++, total));
             return positions;
@@ -105,10 +105,10 @@ namespace Caster.Api.Domain.Services
             while (true)
             {
                 await _itemAvailable.WaitAsync();
-                var item = DequeueNext();
-                if (item == null) continue;
                 await BroadcastQueuePositions();
                 await _concurrencyLimiter.WaitAsync();
+                var item = DequeueNext();
+                if (item == null) { _concurrencyLimiter.Release(); continue; }
                 _ = HandleWithRelease(item);
                 await BroadcastQueuePositions();
             }
@@ -173,9 +173,9 @@ namespace Caster.Api.Domain.Services
 
                 foreach (var run in inProgressRuns)
                 {
-                    if (run.Status == RunStatus.Applying)
+                    if (run.Status == RunStatus.Applying || run.Status == RunStatus.ApplyQueued)
                     {
-                        Add(new ApplyAdded { ApplyId = run.Apply.Id, WorkspaceId = run.WorkspaceId });
+                        Add(new ApplyAdded { ApplyId = run.Apply.Id, RunId = run.Id, WorkspaceId = run.WorkspaceId });
                     }
                     else if (run.Status == RunStatus.Planning)
                     {
