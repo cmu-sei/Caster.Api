@@ -28,6 +28,7 @@ namespace Caster.Api.Domain.Services
     public interface IRunQueueService : IHostedService
     {
         void Add(INotification notification);
+        bool Cancel(Guid runId);
         IReadOnlyList<QueuePosition> GetQueuePositions();
         QueuePosition GetQueuePosition(Guid runId);
     }
@@ -40,6 +41,7 @@ namespace Caster.Api.Domain.Services
 
         private readonly ConcurrentQueue<ApplyAdded> _applyQueue = new();
         private readonly ConcurrentQueue<RunAdded> _planQueue = new();
+        private readonly ConcurrentDictionary<Guid, bool> _cancelledRunIds = new();
         private readonly SemaphoreSlim _itemAvailable = new(0);
         private readonly SemaphoreSlim _concurrencyLimiter;
 
@@ -81,10 +83,15 @@ namespace Caster.Api.Domain.Services
             _itemAvailable.Release();
         }
 
+        public bool Cancel(Guid runId)
+        {
+            return _cancelledRunIds.TryAdd(runId, true);
+        }
+
         public IReadOnlyList<QueuePosition> GetQueuePositions()
         {
-            var applies = _applyQueue.ToArray();
-            var plans = _planQueue.ToArray();
+            var applies = _applyQueue.ToArray().Where(a => !_cancelledRunIds.ContainsKey(a.RunId)).ToArray();
+            var plans = _planQueue.ToArray().Where(p => !_cancelledRunIds.ContainsKey(p.RunId)).ToArray();
             var total = applies.Length + plans.Length;
             var positions = new List<QueuePosition>(total);
             int pos = 1;
@@ -116,8 +123,19 @@ namespace Caster.Api.Domain.Services
 
         private INotification DequeueNext()
         {
-            if (_applyQueue.TryDequeue(out var apply)) return apply;
-            if (_planQueue.TryDequeue(out var plan)) return plan;
+            while (_applyQueue.TryDequeue(out var apply))
+            {
+                if (_cancelledRunIds.TryRemove(apply.RunId, out _))
+                    continue;
+                return apply;
+            }
+
+            while (_planQueue.TryDequeue(out var plan))
+            {
+                if (_cancelledRunIds.TryRemove(plan.RunId, out _))
+                    continue;
+                return plan;
+            }
 
             _logger.LogWarning("DequeueNext called but both queues empty");
             return null;
