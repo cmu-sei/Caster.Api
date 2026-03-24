@@ -24,6 +24,14 @@ namespace Caster.Api.Infrastructure.Extensions
 
                 try
                 {
+                    var logger = services.GetRequiredService<ILogger<Program>>();
+
+                    if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SKIP_DB_INIT")))
+                    {
+                        logger.LogInformation("Skipping database initialization");
+                        return webHost;
+                    }
+
                     var context = serviceScope.ServiceProvider.GetRequiredService<CasterContext>();
                     context.Database.Migrate();
 
@@ -32,8 +40,6 @@ namespace Caster.Api.Infrastructure.Extensions
 
                     if (errors.Any())
                     {
-                        var logger = services.GetRequiredService<ILogger<Program>>();
-
                         foreach (var errorString in errors)
                         {
                             logger.LogError(errorString);
