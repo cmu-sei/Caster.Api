@@ -1,5 +1,5 @@
 {
-    "runtime": "Net60",
+    "runtime": "Net100",
     "swaggerGenerator":{
       "fromSwagger":{
         "json":"swagger.json"

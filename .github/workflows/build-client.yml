@@ -13,9 +13,9 @@ jobs:
 
     steps:
       - name: Setup dotnet
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "6.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Setup Package Name
         id: package_name
@@ -24,7 +24,7 @@ jobs:
           echo ::set-output name=dll_name::Caster.Api
           echo ::set-output name=directory::src/Caster.Api
 
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
 
       - name: Build Package
         run: |
@@ -41,7 +41,7 @@ jobs:
         run: |
           cd src/${{ steps.package_name.outputs.name }}
           npm install
-          ./node_modules/.bin/nswag run /runtime:Net60
+          ./node_modules/.bin/nswag run /runtime:Net100
 
       - name: Create NuGet Package
         run: |
@@ -60,7 +60,6 @@ jobs:
           sed -i '/<\/version>/a \    <license type="expression">MIT<\/license>' ${{ steps.package_name.outputs.name }}.nuspec
           sed -i '/<\/version>/a \    <licenseUrl>https:\/\/licenses.nuget.org\/MIT<\/licenseUrl>' ${{ steps.package_name.outputs.name }}.nuspec
           sed -i '/<\/version>/a \    <projectUrl>https:\/\/github.com\/cmu-sei\/crucible<\/projectUrl>' ${{ steps.package_name.outputs.name }}.nuspec
-          sed -i '/<\/version>/a \    <repository type="git" url="https:\/\/github.com\/cmu-sei\/crucible.git" \/>' ${{ steps.package_name.outputs.name }}.nuspec
           zip -r ../${{ steps.package_name.outputs.name }}.${{ github.event.inputs.clientVersion }}.nupkg *
 
       - name: Publish to Nuget.org as Unlisted

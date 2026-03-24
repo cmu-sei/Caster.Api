@@ -55,12 +55,11 @@ namespace Caster.Api
         private readonly AuthorizationOptions _authOptions = new AuthorizationOptions();
         private readonly ClientOptions _clientOptions = new ClientOptions();
         private readonly TerraformOptions _terraformOptions = new TerraformOptions();
-        private readonly ILoggerFactory _loggerFactory;
         private readonly IWebHostEnvironment _env;
         private string _pathbase;
         private const string _routePrefix = "api";
 
-        public Startup(IConfiguration configuration, ILoggerFactory loggerFactory, IWebHostEnvironment env)
+        public Startup(IConfiguration configuration, IWebHostEnvironment env)
         {
             _env = env;
             Configuration = configuration;
@@ -68,8 +67,6 @@ namespace Caster.Api
             Configuration.GetSection("Client").Bind(_clientOptions);
             Configuration.GetSection("Terraform").Bind(_terraformOptions);
             _pathbase = Configuration["PathBase"] ?? "";
-
-            _loggerFactory = loggerFactory;
         }
 
         // This method gets called by the runtime. Use this method to add services to the container.
@@ -210,7 +207,7 @@ namespace Caster.Api
 
             services.AddAuthorizationPolicy(_authOptions);
 
-            services.AddApiClients(_clientOptions, _terraformOptions, _loggerFactory);
+            services.AddApiClients(_clientOptions, _terraformOptions);
             services.AddTerraformServices(_terraformOptions);
 
             services.AddScoped<IClaimsTransformation, AuthorizationClaimsTransformer>();
