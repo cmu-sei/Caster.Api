@@ -4,7 +4,7 @@
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Options;
-using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -16,7 +16,7 @@ namespace Caster.Api.Infrastructure.Extensions
 {
     public static class DatabaseExtensions
     {
-        public static IWebHost InitializeDatabase(this IWebHost webHost)
+        public static IHost InitializeDatabase(this IHost webHost)
         {
             using (var serviceScope = webHost.Services.CreateScope())
             {
@@ -24,14 +24,6 @@ namespace Caster.Api.Infrastructure.Extensions
 
                 try
                 {
-                    var logger = services.GetRequiredService<ILogger<Program>>();
-
-                    if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SKIP_DB_INIT")))
-                    {
-                        logger.LogInformation("Skipping database initialization");
-                        return webHost;
-                    }
-
                     var context = serviceScope.ServiceProvider.GetRequiredService<CasterContext>();
                     context.Database.Migrate();
 
@@ -40,6 +32,8 @@ namespace Caster.Api.Infrastructure.Extensions
 
                     if (errors.Any())
                     {
+                        var logger = services.GetRequiredService<ILogger<Program>>();
+
                         foreach (var errorString in errors)
                         {
                             logger.LogError(errorString);

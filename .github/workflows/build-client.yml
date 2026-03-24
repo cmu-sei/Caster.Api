@@ -33,8 +33,6 @@ jobs:
           dotnet build -c Release /p:version=${{ github.event.inputs.clientVersion }}
 
       - name: Run Swagger
-        env:
-          SKIP_DB_INIT: "true"
         run: |
           cd ${{ steps.package_name.outputs.directory }}
           dotnet swagger tofile --output ../${{ steps.package_name.outputs.name }}/swagger.json bin/Release/*/${{ steps.package_name.outputs.dll_name }}.dll v1
