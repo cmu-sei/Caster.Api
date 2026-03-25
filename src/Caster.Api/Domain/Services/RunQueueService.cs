@@ -194,7 +194,7 @@ namespace Caster.Api.Domain.Services
                 var activeWorkspaceIds = await terraformService.GetActiveWorkspaces();
 
                 var inProgressRuns = await db.Runs
-                    .Where(x => RunHelpers.GetActiveStatuses().Contains(x.Status))
+                    .Where(x => RunHelpers.ActiveStatuses.Contains(x.Status))
                     .OrderBy(x => x.CreatedAt)
                     .Include(x => x.Apply)
                     .Include(x => x.Plan)

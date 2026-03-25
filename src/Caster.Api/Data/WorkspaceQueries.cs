@@ -67,7 +67,7 @@ namespace Caster.Api.Data
             return await this.Runs
                .Where(r =>
                    r.WorkspaceId == workspaceId &&
-                   r.Status != RunStatus.Applied && r.Status != RunStatus.Failed && r.Status != RunStatus.Rejected)
+                   !RunHelpers.TerminalStatuses.Contains(r.Status))
                .AnyAsync();
         }
     }

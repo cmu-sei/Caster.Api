@@ -48,7 +48,7 @@ namespace Caster.Api.Features.Runs
 
                 if (request.ActiveOnly)
                 {
-                    query = query.Where(x => RunHelpers.GetActiveStatuses().Contains(x.Status));
+                    query = query.Where(x => RunHelpers.ActiveStatuses.Contains(x.Status));
                 }
 
                 return await query.ToArrayAsync(cancellationToken);

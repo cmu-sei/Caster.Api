@@ -46,12 +46,6 @@ namespace Caster.Api.Features.Runs
             ITerraformService terraformService,
             IRunQueueService runQueueService) : BaseHandler<Command, Run>
         {
-            private static readonly RunStatus[] CancelableStatuses =
-            [
-                RunStatus.Planning, RunStatus.Applying,
-                RunStatus.Queued, RunStatus.ApplyQueued
-            ];
-
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Run>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
@@ -64,7 +58,7 @@ namespace Caster.Api.Features.Runs
 
                 ValidateRun(run);
 
-                if (run.Status == RunStatus.Queued || run.Status == RunStatus.ApplyQueued)
+                if (RunHelpers.QueuedStatuses.Contains(run.Status))
                 {
                     runQueueService.Cancel(run.Id);
                     run.Status = RunStatus.Rejected;
@@ -85,7 +79,7 @@ namespace Caster.Api.Features.Runs
                 if (run == null)
                     throw new EntityNotFoundException<Run>();
 
-                if (!CancelableStatuses.Contains(run.Status))
+                if (!RunHelpers.ActiveStatuses.Contains(run.Status))
                 {
                     throw new InvalidOperationException("Cannot cancel a Run that is not queued or in progress");
                 }
