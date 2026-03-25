@@ -89,7 +89,7 @@ namespace Caster.Api.Features.Runs
                     run = await this.DoWork(request, identityResolver.GetClaimsPrincipal().GetId(), cancellationToken);
                 }
 
-                await mediator.Publish(new RunCreated { RunId = run.Id });
+                await mediator.Publish(new RunCreated { RunId = run.Id, WorkspaceId = request.WorkspaceId });
 
                 return await dbContext.Runs
                     .ProjectTo<Run>(mapper.ConfigurationProvider)

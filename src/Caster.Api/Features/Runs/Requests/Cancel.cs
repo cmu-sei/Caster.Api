@@ -43,7 +43,8 @@ namespace Caster.Api.Features.Runs
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
             CasterContext dbContext,
-            ITerraformService terraformService) : BaseHandler<Command, Run>
+            ITerraformService terraformService,
+            IRunQueueService runQueueService) : BaseHandler<Command, Run>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Run>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -57,21 +58,30 @@ namespace Caster.Api.Features.Runs
 
                 ValidateRun(run);
 
-                await terraformService.CancelRun(run.Workspace, request.Force);
+                if (RunHelpers.QueuedStatuses.Contains(run.Status))
+                {
+                    runQueueService.Cancel(run.Id);
+                    run.Status = RunStatus.Rejected;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+                else
+                {
+                    await terraformService.CancelRun(run.Workspace, request.Force);
+                }
 
                 return await dbContext.Runs
                     .ProjectTo<Run>(mapper.ConfigurationProvider)
                     .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken);
             }
 
-            private void ValidateRun(Domain.Models.Run run)
+            private static void ValidateRun(Domain.Models.Run run)
             {
                 if (run == null)
                     throw new EntityNotFoundException<Run>();
 
-                if (run.Status != RunStatus.Applying && run.Status != RunStatus.Planning)
+                if (!RunHelpers.ActiveStatuses.Contains(run.Status))
                 {
-                    throw new InvalidOperationException("Cannot cancel a Run without a Plan or Apply in progress");
+                    throw new InvalidOperationException("Cannot cancel a Run that is not queued or in progress");
                 }
             }
         }

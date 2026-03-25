@@ -61,22 +61,33 @@ namespace Caster.Api.Domain.Models
         Applied_StateError = 7,
 
         [EnumMember(Value = "Failed - State Error")]
-        Failed_StateError = 8
+        Failed_StateError = 8,
+
+        ApplyQueued = 9
     }
 
     public static class RunHelpers
     {
-        private static readonly RunStatus[] ActiveStatuses =
+        public static IReadOnlyList<RunStatus> ActiveStatuses { get; } =
         [
             RunStatus.Queued,
             RunStatus.Planning,
             RunStatus.Applying,
+            RunStatus.ApplyQueued,
         ];
 
-        public static IReadOnlyList<RunStatus> GetActiveStatuses()
-        {
-            return ActiveStatuses;
-        }
+        public static IReadOnlyList<RunStatus> QueuedStatuses { get; } =
+        [
+            RunStatus.Queued,
+            RunStatus.ApplyQueued,
+        ];
+
+        public static IReadOnlyList<RunStatus> TerminalStatuses { get; } =
+        [
+            RunStatus.Applied,
+            RunStatus.Failed,
+            RunStatus.Rejected,
+        ];
     }
 
     public class RunConfiguration : IEntityTypeConfiguration<Run>

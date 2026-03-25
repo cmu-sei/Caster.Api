@@ -19,6 +19,7 @@ namespace Caster.Api.Features.Runs
                 .ForMember(m => m.CreatedBy, opt => opt.MapFrom(src => src.CreatedBy.Name))
                 .ForMember(m => m.ModifiedBy, opt => opt.MapFrom(src => src.ModifiedBy.Name));
             CreateMap<Create.Command, Domain.Models.Run>();
+            CreateMap<Domain.Services.QueuePosition, QueuePosition>();
         }
     }
 }

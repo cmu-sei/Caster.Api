@@ -87,11 +87,12 @@ namespace Caster.Api.Features.Applies
                     };
 
                     await _db.Applies.AddAsync(apply);
+                    run.Status = RunStatus.ApplyQueued;
                     run.Modify(_user.GetId());
                     await _db.SaveChangesAsync();
                 }
 
-                await _mediator.Publish(new ApplyCreated { ApplyId = apply.Id });
+                await _mediator.Publish(new ApplyCreated { ApplyId = apply.Id, RunId = apply.RunId, WorkspaceId = workspaceId });
                 await _mediator.Publish(new RunUpdated(apply.RunId));
                 return _mapper.Map<Apply>(apply);
             }

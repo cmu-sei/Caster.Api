@@ -6,8 +6,10 @@ using MediatR;
 
 namespace Caster.Api.Domain.Events
 {
-    public class ApplyCreated : INotification 
+    public class ApplyCreated : INotification
     {
         public Guid ApplyId { get; set; }
+        public Guid RunId { get; set; }
+        public Guid WorkspaceId { get; set; }
     }
 }

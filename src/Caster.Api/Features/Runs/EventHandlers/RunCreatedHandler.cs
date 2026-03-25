@@ -20,7 +20,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
 
         public async Task Handle(RunCreated notification, CancellationToken cancellationToken)
         {
-            _runQueueService.Add(new RunAdded { RunId = notification.RunId });
+            _runQueueService.Add(new RunAdded { RunId = notification.RunId, WorkspaceId = notification.WorkspaceId });
         }
     }
 }

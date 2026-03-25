@@ -2,7 +2,6 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,32 +10,56 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Events;
 using Caster.Api.Domain.Models;
+using Caster.Api.Hubs;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Utilities.Synchronization;
 using MediatR;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Caster.Api.Domain.Services
 {
+    public record QueuePosition(Guid RunId, Guid WorkspaceId, int Position, int Total);
+
     public interface IRunQueueService : IHostedService
     {
         void Add(INotification notification);
+        bool Cancel(Guid runId);
+        IReadOnlyList<QueuePosition> GetQueuePositions();
+        QueuePosition GetQueuePosition(Guid runId);
     }
 
     public class RunQueueService : IRunQueueService
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<RunQueueService> _logger;
+        private readonly IHubContext<ProjectHub> _projectHub;
 
-        private readonly BlockingCollection<INotification> _queue = new BlockingCollection<INotification>();
+        private readonly ConcurrentQueue<ApplyAdded> _applyQueue = new();
+        private readonly ConcurrentQueue<RunAdded> _planQueue = new();
+        private readonly ConcurrentDictionary<Guid, bool> _cancelledRunIds = new();
+        private readonly SemaphoreSlim _itemAvailable = new(0);
+        private readonly SemaphoreSlim _concurrencyLimiter;
+        private readonly CancellationTokenSource _cts = new();
 
-        public RunQueueService(IServiceProvider serviceProvider, ILogger<RunQueueService> logger)
+        public RunQueueService(
+            IServiceProvider serviceProvider,
+            ILogger<RunQueueService> logger,
+            IOptions<TerraformOptions> terraformOptions,
+            IHubContext<ProjectHub> projectHub)
         {
             _serviceProvider = serviceProvider;
             _logger = logger;
+            _projectHub = projectHub;
+            var options = terraformOptions.Value;
+            _concurrencyLimiter = new SemaphoreSlim(
+                options.MaxConcurrentRuns > 0
+                    ? options.MaxConcurrentRuns
+                    : int.MaxValue);
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -44,24 +67,120 @@ namespace Caster.Api.Domain.Services
             _logger.LogInformation("RunQueueService starting...");
             var lockResults = await StartRecoverWorkspaces();
             _ = RecoverWorkspaces(lockResults);
-            _ = Task.Run(() => ExecuteAsync());
+            _ = ExecuteAsync();
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
         {
-            return System.Threading.Tasks.Task.CompletedTask;
+            _cts.Cancel();
+            return Task.CompletedTask;
         }
 
         public void Add(INotification notification)
         {
-            _queue.Add(notification);
+            if (notification is ApplyAdded apply)
+                _applyQueue.Enqueue(apply);
+            else if (notification is RunAdded run)
+                _planQueue.Enqueue(run);
+            else
+                throw new ArgumentException($"Unsupported notification type: {notification.GetType().Name}", nameof(notification));
+
+            _itemAvailable.Release();
+        }
+
+        public bool Cancel(Guid runId)
+        {
+            return _cancelledRunIds.TryAdd(runId, true);
+        }
+
+        public IReadOnlyList<QueuePosition> GetQueuePositions()
+        {
+            var applies = _applyQueue.ToArray().Where(a => !_cancelledRunIds.ContainsKey(a.RunId)).ToArray();
+            var plans = _planQueue.ToArray().Where(p => !_cancelledRunIds.ContainsKey(p.RunId)).ToArray();
+            var total = applies.Length + plans.Length;
+            var positions = new List<QueuePosition>(total);
+            int pos = 1;
+            foreach (var a in applies)
+                positions.Add(new QueuePosition(a.RunId, a.WorkspaceId, pos++, total));
+            foreach (var p in plans)
+                positions.Add(new QueuePosition(p.RunId, p.WorkspaceId, pos++, total));
+            return positions;
+        }
+
+        public QueuePosition GetQueuePosition(Guid runId)
+        {
+            return GetQueuePositions().FirstOrDefault(p => p.RunId == runId);
         }
 
         private async Task ExecuteAsync()
         {
-            foreach (var item in _queue.GetConsumingEnumerable())
+            try
             {
-                _ = this.Handle(item);
+                while (!_cts.Token.IsCancellationRequested)
+                {
+                    await _itemAvailable.WaitAsync(_cts.Token);
+                    await BroadcastQueuePositions(_cts.Token);
+                    await _concurrencyLimiter.WaitAsync(_cts.Token);
+                    var item = DequeueNext();
+                    if (item == null) { _concurrencyLimiter.Release(); continue; }
+                    _ = Handle(item);
+                    await BroadcastQueuePositions(_cts.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("RunQueueService stopping");
+            }
+        }
+
+        private INotification DequeueNext()
+        {
+            return (INotification)TryDequeueValid(_applyQueue)
+                ?? TryDequeueValid(_planQueue);
+        }
+
+        private T TryDequeueValid<T>(ConcurrentQueue<T> queue) where T : class, IRunUpdate
+        {
+            while (queue.TryDequeue(out var item))
+            {
+                if (_cancelledRunIds.TryRemove(item.RunId, out _))
+                {
+                    _itemAvailable.Release();
+                    continue;
+                }
+                return item;
+            }
+            return null;
+        }
+
+        private async Task Handle(INotification item)
+        {
+            try
+            {
+                await Publish(item);
+            }
+            finally
+            {
+                _concurrencyLimiter.Release();
+
+                if (item is IRunUpdate runUpdate)
+                    _cancelledRunIds.TryRemove(runUpdate.RunId, out _);
+            }
+        }
+
+        private async Task BroadcastQueuePositions(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var positions = GetQueuePositions();
+                await Task.WhenAll(positions.Select(pos =>
+                    _projectHub.Clients
+                        .Group(pos.WorkspaceId.ToString())
+                        .SendAsync("RunQueuePositionUpdated", pos, cancellationToken)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error broadcasting queue positions");
             }
         }
 
@@ -75,7 +194,8 @@ namespace Caster.Api.Domain.Services
                 var activeWorkspaceIds = await terraformService.GetActiveWorkspaces();
 
                 var inProgressRuns = await db.Runs
-                    .Where(x => RunHelpers.GetActiveStatuses().Contains(x.Status))
+                    .Where(x => RunHelpers.ActiveStatuses.Contains(x.Status))
+                    .OrderBy(x => x.CreatedAt)
                     .Include(x => x.Apply)
                     .Include(x => x.Plan)
                     .ToListAsync();
@@ -85,19 +205,13 @@ namespace Caster.Api.Domain.Services
 
                 foreach (var run in inProgressRuns)
                 {
-                    if (run.Status == RunStatus.Applying)
+                    if (run.Status == RunStatus.Applying || run.Status == RunStatus.ApplyQueued)
                     {
-                        _ = Task.Run(async () =>
-                        {
-                            await this.Handle(new ApplyAdded { ApplyId = run.Apply.Id });
-                        });
+                        Add(new ApplyAdded { ApplyId = run.Apply.Id, RunId = run.Id, WorkspaceId = run.WorkspaceId });
                     }
-                    else if (run.Status == RunStatus.Planning)
+                    else if (run.Status == RunStatus.Planning || run.Status == RunStatus.Queued)
                     {
-                        _ = Task.Run(async () =>
-                        {
-                            await this.Handle(new RunAdded { RunId = run.Id });
-                        });
+                        Add(new RunAdded { RunId = run.Id, WorkspaceId = run.WorkspaceId });
                     }
                 }
 
@@ -174,7 +288,7 @@ namespace Caster.Api.Domain.Services
             }
         }
 
-        private async Task Handle(INotification notification)
+        private async Task Publish(INotification notification)
         {
             using (var scope = _serviceProvider.CreateScope())
             {

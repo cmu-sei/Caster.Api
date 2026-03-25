@@ -167,6 +167,14 @@ Environment variables are injected into either:
 
   Values defined here override any inherited variables with the same name.
 
+### MaxConcurrentRuns
+
+Limits the number of simultaneous terraform operations (plans and applies). When the limit is reached, new Runs are queued and executed in order as slots become available. Applies are prioritized over plans in the queue.
+
+Set to `0` for unlimited concurrency.
+
+In **Kubernetes mode**, each Run creates a pod. Most Kubernetes clusters enforce a default limit of **110 pods per node** (`--max-pods` kubelet setting). When sizing `MaxConcurrentRuns`, account for this limit along with other pods running on your nodes to avoid pod scheduling failures.
+
 ### SelectWorkspace
 
 Controls how Caster switches Terraform workspaces.

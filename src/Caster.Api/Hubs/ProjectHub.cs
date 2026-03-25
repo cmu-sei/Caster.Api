@@ -152,7 +152,11 @@ public class ProjectHub : Hub
         {
             string dbOutput = await this.GetDbOutput(id, type, cancellationToken);
 
-            yield return dbOutput;
+            if (dbOutput != null)
+            {
+                yield return dbOutput;
+            }
+
             yield break;
         }
 
