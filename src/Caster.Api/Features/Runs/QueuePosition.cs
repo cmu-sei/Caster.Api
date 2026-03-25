@@ -7,7 +7,7 @@ namespace Caster.Api.Features.Runs
 {
     public class QueuePosition
     {
-        public Guid ItemId { get; set; }
+        public Guid RunId { get; set; }
         public Guid WorkspaceId { get; set; }
         public int Position { get; set; }
     }

@@ -23,7 +23,7 @@ using Microsoft.Extensions.Options;
 
 namespace Caster.Api.Domain.Services
 {
-    public record QueuePosition(Guid ItemId, Guid WorkspaceId, int Position, int Total);
+    public record QueuePosition(Guid RunId, Guid WorkspaceId, int Position, int Total);
 
     public interface IRunQueueService : IHostedService
     {
@@ -109,7 +109,7 @@ namespace Caster.Api.Domain.Services
 
         public QueuePosition GetQueuePosition(Guid runId)
         {
-            return GetQueuePositions().FirstOrDefault(p => p.ItemId == runId);
+            return GetQueuePositions().FirstOrDefault(p => p.RunId == runId);
         }
 
         private async Task ExecuteAsync()

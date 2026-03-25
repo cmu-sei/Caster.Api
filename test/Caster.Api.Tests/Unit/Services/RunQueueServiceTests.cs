@@ -42,7 +42,7 @@ namespace Caster.Api.Tests.Unit.Services
 
             var positions = _sut.GetQueuePositions();
             Assert.Single(positions);
-            Assert.Equal(runId, positions[0].ItemId);
+            Assert.Equal(runId, positions[0].RunId);
             Assert.Equal(workspaceId, positions[0].WorkspaceId);
             Assert.Equal(1, positions[0].Position);
             Assert.Equal(1, positions[0].Total);
@@ -59,7 +59,7 @@ namespace Caster.Api.Tests.Unit.Services
 
             var positions = _sut.GetQueuePositions();
             Assert.Single(positions);
-            Assert.Equal(runId, positions[0].ItemId);
+            Assert.Equal(runId, positions[0].RunId);
             Assert.Equal(workspaceId, positions[0].WorkspaceId);
         }
 
@@ -89,9 +89,9 @@ namespace Caster.Api.Tests.Unit.Services
 
             var positions = _sut.GetQueuePositions();
             Assert.Equal(2, positions.Count);
-            Assert.Equal(applyRunId, positions[0].ItemId);
+            Assert.Equal(applyRunId, positions[0].RunId);
             Assert.Equal(1, positions[0].Position);
-            Assert.Equal(planId, positions[1].ItemId);
+            Assert.Equal(planId, positions[1].RunId);
             Assert.Equal(2, positions[1].Position);
         }
 
@@ -107,7 +107,7 @@ namespace Caster.Api.Tests.Unit.Services
 
             var position = _sut.GetQueuePosition(runId);
             Assert.NotNull(position);
-            Assert.Equal(runId, position.ItemId);
+            Assert.Equal(runId, position.RunId);
             Assert.Equal(1, position.Position);
         }
 
@@ -137,7 +137,7 @@ namespace Caster.Api.Tests.Unit.Services
 
             var positions = _sut.GetQueuePositions();
             Assert.Single(positions);
-            Assert.Equal(runId2, positions[0].ItemId);
+            Assert.Equal(runId2, positions[0].RunId);
             Assert.Equal(1, positions[0].Position);
         }
 
@@ -151,7 +151,7 @@ namespace Caster.Api.Tests.Unit.Services
 
             var positions = _sut.GetQueuePositions();
             Assert.Single(positions);
-            Assert.Equal(runId, positions[0].ItemId);
+            Assert.Equal(runId, positions[0].RunId);
         }
 
         [Fact]
@@ -182,7 +182,7 @@ namespace Caster.Api.Tests.Unit.Services
 
             var positions = _sut.GetQueuePositions();
             Assert.Single(positions);
-            Assert.Equal(planRunId, positions[0].ItemId);
+            Assert.Equal(planRunId, positions[0].RunId);
         }
 
         #endregion
