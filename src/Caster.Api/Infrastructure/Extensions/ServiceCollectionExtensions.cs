@@ -32,18 +32,20 @@ namespace Caster.Api.Infrastructure.Extensions
     {
         #region Api Clients
 
-        public static void AddApiClients(this IServiceCollection services, ClientOptions clientOptions, TerraformOptions terraformOptions, ILoggerFactory loggerFactory)
+        public static void AddApiClients(this IServiceCollection services, ClientOptions clientOptions, TerraformOptions terraformOptions)
         {
-            services.AddPlayerClient(clientOptions, loggerFactory);
-            services.AddIdentityClient(clientOptions, loggerFactory);
-            services.AddGitlabClient(clientOptions, terraformOptions, loggerFactory);
+            services.AddPlayerClient(clientOptions);
+            services.AddIdentityClient(clientOptions);
+            services.AddGitlabClient(clientOptions, terraformOptions);
 
             services.AddTransient<AuthenticatingHandler>();
         }
 
-        private static IAsyncPolicy<HttpResponseMessage> GetPolicy(int maxRetryDelaySeconds, string serviceName, ILoggerFactory loggerFactory)
+        private static IAsyncPolicy<HttpResponseMessage> GetPolicy(IServiceProvider serviceProvider, int maxRetryDelaySeconds, string serviceName)
         {
-            var retryPolicy = HttpPolicyExtensions
+            var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+
+            return HttpPolicyExtensions
             .HandleTransientHttpError()
             .WaitAndRetryForeverAsync(
                 sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Min(Math.Pow(2, retryAttempt), maxRetryDelaySeconds)),
@@ -52,21 +54,17 @@ namespace Caster.Api.Infrastructure.Extensions
                     var logger = loggerFactory.CreateLogger<Policy>();
                     logger.LogError(exception.Exception, $"Attempt {retryAttempt}. Retrying connection to {serviceName}");
                 });
-
-            return retryPolicy;
         }
 
-        private static void AddPlayerClient(this IServiceCollection services, ClientOptions clientOptions, ILoggerFactory loggerFactory)
+        private static void AddPlayerClient(this IServiceCollection services, ClientOptions clientOptions)
         {
-            var policy = GetPolicy(clientOptions.MaxRetryDelaySeconds, "Player Vm Api", loggerFactory);
-
             services.AddHttpClient("player", client =>
             {
                 // Workaround to avoid TaskCanceledException after several retries. TODO: find a better way to handle this.
                 client.Timeout = Timeout.InfiniteTimeSpan;
             })
             .AddHttpMessageHandler<AuthenticatingHandler>()
-            .AddPolicyHandler(policy);
+            .AddPolicyHandler((sp, _) => GetPolicy(sp, clientOptions.MaxRetryDelaySeconds, "Player Vm Api"));
 
             services.AddScoped<IPlayerVmApiClient, PlayerVmApiClient>(p =>
             {
@@ -87,28 +85,24 @@ namespace Caster.Api.Infrastructure.Extensions
             });
         }
 
-        private static void AddIdentityClient(this IServiceCollection services, ClientOptions clientOptions, ILoggerFactory loggerFactory)
+        private static void AddIdentityClient(this IServiceCollection services, ClientOptions clientOptions)
         {
-            var policy = GetPolicy(clientOptions.MaxRetryDelaySeconds, "Identity", loggerFactory);
-
             services.AddHttpClient("identity", client =>
             {
                 // Workaround to avoid TaskCanceledException after several retries. TODO: find a better way to handle this.
                 client.Timeout = Timeout.InfiniteTimeSpan;
             })
-            .AddPolicyHandler(policy);
+            .AddPolicyHandler((sp, _) => GetPolicy(sp, clientOptions.MaxRetryDelaySeconds, "Identity"));
         }
 
-        private static void AddGitlabClient(this IServiceCollection services, ClientOptions clientOptions, TerraformOptions terraformOptions, ILoggerFactory loggerFactory)
+        private static void AddGitlabClient(this IServiceCollection services, ClientOptions clientOptions, TerraformOptions terraformOptions)
         {
-            var policy = GetPolicy(clientOptions.MaxRetryDelaySeconds, "Gitlab Api", loggerFactory);
             services.AddHttpClient("gitlab", client =>
             {
                 // Workaround to avoid TaskCanceledException after several retries. TODO: find a better way to handle this.
                 client.Timeout = Timeout.InfiniteTimeSpan;
                 client.BaseAddress = new Uri(terraformOptions.GitlabApiUrl);
-            }).AddPolicyHandler(policy);
-
+            }).AddPolicyHandler((sp, _) => GetPolicy(sp, clientOptions.MaxRetryDelaySeconds, "Gitlab Api"));
         }
 
 
