@@ -132,21 +132,21 @@ namespace Caster.Api.Domain.Services
 
         private INotification DequeueNext()
         {
-            while (_applyQueue.TryDequeue(out var apply))
-            {
-                if (_cancelledRunIds.TryRemove(apply.RunId, out _))
-                    continue;
-                return apply;
-            }
+            return (INotification)TryDequeueValid(_applyQueue)
+                ?? TryDequeueValid(_planQueue);
+        }
 
-            while (_planQueue.TryDequeue(out var plan))
+        private T TryDequeueValid<T>(ConcurrentQueue<T> queue) where T : class, IRunUpdate
+        {
+            while (queue.TryDequeue(out var item))
             {
-                if (_cancelledRunIds.TryRemove(plan.RunId, out _))
+                if (_cancelledRunIds.TryRemove(item.RunId, out _))
+                {
+                    _itemAvailable.Release();
                     continue;
-                return plan;
+                }
+                return item;
             }
-
-            _logger.LogWarning("DequeueNext called but both queues empty");
             return null;
         }
 
