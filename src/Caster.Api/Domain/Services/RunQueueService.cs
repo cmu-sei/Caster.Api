@@ -67,7 +67,7 @@ namespace Caster.Api.Domain.Services
             _logger.LogInformation("RunQueueService starting...");
             var lockResults = await StartRecoverWorkspaces();
             _ = RecoverWorkspaces(lockResults);
-            _ = Task.Run(() => ExecuteAsync());
+            _ = ExecuteAsync();
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
@@ -82,6 +82,9 @@ namespace Caster.Api.Domain.Services
                 _applyQueue.Enqueue(apply);
             else if (notification is RunAdded run)
                 _planQueue.Enqueue(run);
+            else
+                throw new ArgumentException($"Unsupported notification type: {notification.GetType().Name}", nameof(notification));
+
             _itemAvailable.Release();
         }
 
