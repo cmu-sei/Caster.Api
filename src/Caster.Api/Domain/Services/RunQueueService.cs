@@ -195,6 +195,7 @@ namespace Caster.Api.Domain.Services
 
                 var inProgressRuns = await db.Runs
                     .Where(x => RunHelpers.GetActiveStatuses().Contains(x.Status))
+                    .OrderBy(x => x.CreatedAt)
                     .Include(x => x.Apply)
                     .Include(x => x.Plan)
                     .ToListAsync();
