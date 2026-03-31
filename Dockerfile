@@ -3,6 +3,7 @@
 # Build stage
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
+ARG VERSION
 WORKDIR /source
 
 # Copy project files and restore as distinct layers
@@ -14,7 +15,7 @@ RUN dotnet restore -a $TARGETARCH
 WORKDIR /source
 COPY --link . .
 WORKDIR /source/src/Caster.Api
-RUN dotnet publish -a $TARGETARCH --no-restore -o /app
+RUN dotnet publish -a $TARGETARCH --no-restore -o /app /p:Version=${VERSION:-1.0.0} /p:AssemblyVersion=${VERSION:-1.0.0}
 
 # Production Stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS prod
