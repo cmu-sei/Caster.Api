@@ -87,8 +87,7 @@ namespace Caster.Api.Features.Workspaces
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
             CasterContext dbContext,
-            TerraformOptions terraformOptions,
-            TelemetryService telemetryService) : BaseHandler<Command, Workspace>
+            TerraformOptions terraformOptions) : BaseHandler<Command, Workspace>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -100,6 +99,7 @@ namespace Caster.Api.Features.Workspaces
 
                 dbContext.Workspaces.Add(workspace);
                 await dbContext.SaveChangesAsync(cancellationToken);
+
                 return mapper.Map<Workspace>(workspace);
             }
 
