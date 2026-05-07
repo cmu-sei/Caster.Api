@@ -72,11 +72,12 @@ public class KubernetesTerraformService : BaseTerraformService
                 };
             }
 
-            var securityContext = await GetSecurityContext();
+            var jobTemplate = GetJobTemplate();
+            var securityContext = await GetSecurityContext(jobTemplate);
             var (volumes, volumeMounts) = GetVolumes();
             var envVars = GetEnvironmentVariables(workspace);
 
-            var jobRequest = BuildJobRequest(jobName, workspace, argumentList, securityContext, volumes, volumeMounts, envVars);
+            var jobRequest = BuildJobRequest(jobTemplate, jobName, workspace, argumentList, securityContext, volumes, volumeMounts, envVars);
 
             try
             {
@@ -593,7 +594,7 @@ public class KubernetesTerraformService : BaseTerraformService
                httpEx.Response?.StatusCode == HttpStatusCode.NotFound;
     }
 
-    private async Task<V1PodSecurityContext> GetSecurityContext()
+    private async Task<V1PodSecurityContext> GetSecurityContext(V1Job jobTemplate)
     {
         long uid = 1000;
         long gid = 1000;
@@ -619,12 +620,10 @@ public class KubernetesTerraformService : BaseTerraformService
             }
         }
 
-        var securityContext = new V1PodSecurityContext
-        {
-            RunAsUser = uid,
-            RunAsGroup = gid,
-            RunAsNonRoot = true
-        };
+        var securityContext = jobTemplate?.Spec?.Template?.Spec?.SecurityContext ?? new V1PodSecurityContext();
+        securityContext.RunAsUser ??= uid;
+        securityContext.RunAsGroup ??= gid;
+        securityContext.RunAsNonRoot ??= true;
 
         return securityContext;
     }
@@ -730,6 +729,7 @@ public class KubernetesTerraformService : BaseTerraformService
     }
 
     private V1Job BuildJobRequest(
+        V1Job jobTemplate,
         string jobName,
         Workspace workspace,
         IEnumerable<string> argumentList,
@@ -738,7 +738,7 @@ public class KubernetesTerraformService : BaseTerraformService
         V1VolumeMount[] volumeMounts,
         V1EnvVar[] envVars)
     {
-        var job = GetJobTemplate() ?? new V1Job();
+        var job = jobTemplate ?? new V1Job();
 
         // Ensure structural scaffolding exists
         job.Metadata ??= new V1ObjectMeta();
