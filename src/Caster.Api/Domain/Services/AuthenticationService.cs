@@ -88,11 +88,17 @@ namespace Caster.Api.Domain.Services
                     Password = clientOptions.Password
                 }, ct).Result;
 
+                if (response.IsError)
+                {
+                    _logger.LogError("Error renewing auth token: {Error} - {ErrorDescription}", response.Error, response.ErrorDescription);
+                    return null;
+                }
+
                 return response;
             }
             catch (Exception ex)
             {
-                _logger.LogError("Exception renewing auth token.", ex);
+                _logger.LogError(ex, "Exception renewing auth token");
             }
 
             return null;

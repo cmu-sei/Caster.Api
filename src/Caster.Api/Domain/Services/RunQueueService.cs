@@ -257,6 +257,14 @@ namespace Caster.Api.Domain.Services
 
                             var workspace = await db.Workspaces.Where(x => x.Id == kvp.Key).FirstOrDefaultAsync();
 
+                            if (workspace == null)
+                            {
+                                _logger.LogWarning("Workspace {WorkspaceId} no longer exists, skipping recovery", kvp.Key);
+                                kvp.Value.Dispose();
+                                disposedLocks.Add(kvp.Key);
+                                continue;
+                            }
+
                             await terraformService.Resume(workspace);
 
                             var workingDir = workspace.GetPath(options.RootWorkingDirectory);
