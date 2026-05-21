@@ -32,6 +32,7 @@ bld/
 msbuild.log
 msbuild.err
 msbuild.wrn
+*.csproj.lscache
 
 # Visual Studio 2015
 .vs/
