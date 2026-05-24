@@ -204,14 +204,41 @@ public class KubernetesTerraformService : BaseTerraformService
 
     public override async Task<TerraformResult> CancelRun(Workspace workspace, bool force)
     {
+        if (workspace == null)
+        {
+            _logger.LogWarning("Cannot cancel run - workspace is null");
+            return new TerraformResult
+            {
+                ExitCode = 1,
+                Output = "Workspace not found"
+            };
+        }
+
         var jobName = GetJobName(workspace);
 
-        var job = await _k8sClient.BatchV1.ReadNamespacedJobAsync(jobName, _options.KubernetesJobs.Namespace);
+        V1Job job;
+        try
+        {
+            job = await _k8sClient.BatchV1.ReadNamespacedJobAsync(jobName, _options.KubernetesJobs.Namespace);
+        }
+        catch (HttpOperationException ex) when (ex.Response.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogDebug("Job {jobName} not found, may have already completed", jobName);
+            return new TerraformResult
+            {
+                ExitCode = 0,
+                Output = "Job not found - may have already completed"
+            };
+        }
 
         if (job == null)
         {
             _logger.LogDebug("Couldn't find job to cancel");
-            return null;
+            return new TerraformResult
+            {
+                ExitCode = 0,
+                Output = "Job not found"
+            };
         }
         else
         {

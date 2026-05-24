@@ -58,6 +58,15 @@ namespace Caster.Api.Features.Runs
 
                 ValidateRun(run);
 
+                // Check if workspace still exists before attempting any cancellation
+                if (run.Workspace == null)
+                {
+                    // Workspace was deleted - mark run as failed and return
+                    run.Status = RunStatus.Failed;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    throw new InvalidOperationException("Cannot cancel run - workspace no longer exists");
+                }
+
                 if (RunHelpers.QueuedStatuses.Contains(run.Status))
                 {
                     runQueueService.Cancel(run.Id);

@@ -153,6 +153,16 @@ public class ProcessTerraformService : BaseTerraformService
 
     public override Task<TerraformResult> CancelRun(Workspace workspace, bool force)
     {
+        if (workspace == null)
+        {
+            _logger.LogWarning("Cannot cancel run - workspace is null");
+            return Task.FromResult(new TerraformResult
+            {
+                ExitCode = 1,
+                Output = "Workspace not found"
+            });
+        }
+
         if (_processCache.TryGetValue(workspace.Id, out Process p))
         {
             if (force)
@@ -202,7 +212,11 @@ public class ProcessTerraformService : BaseTerraformService
             _logger.LogDebug("Couldn't find process to cancel");
         }
 
-        return null;
+        return Task.FromResult(new TerraformResult
+        {
+            ExitCode = 0,
+            Output = "Process not found - may have already completed"
+        });
     }
 
     public override async Task<IEnumerable<Guid>> GetActiveWorkspaces()
