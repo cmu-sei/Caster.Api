@@ -90,6 +90,12 @@ namespace Caster.Api.Infrastructure.Exceptions.Middleware
                     error.Detail = exception.Message;
                 }
             }
+            else if (exception is WorkspaceConflictException)
+            {
+                error.Title = exception.Message;
+                error.Detail = "Another operation is currently in progress on this workspace. Please wait for it to complete, or contact your administrator if the workspace appears to be stuck.";
+                error.Extensions["type"] = "workspace_locked";
+            }
             else
             {
                 error.Title = exception.Message;
