@@ -157,7 +157,7 @@ public class ProcessTerraformService : BaseTerraformService
         {
             if (force)
             {
-                p.Kill();
+                p.Kill(true);
             }
             else
             {
