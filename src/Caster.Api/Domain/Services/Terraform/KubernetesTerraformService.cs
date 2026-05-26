@@ -29,6 +29,7 @@ public class KubernetesTerraformService : BaseTerraformService
     private readonly BackoffTracker _backoffTracker = new(60);
 
     public override bool EnableOutputTimer => false;
+    public override bool SupportsResume => true;
 
     private const string _appName = "caster";
     private const string _appLabel = "app";

@@ -205,7 +205,12 @@ namespace Caster.Api.Domain.Services
 
                 foreach (var run in inProgressRuns)
                 {
-                    if (run.Status == RunStatus.Applying || run.Status == RunStatus.ApplyQueued)
+                    if (!terraformService.SupportsResume &&
+                        (run.Status == RunStatus.Planning || run.Status == RunStatus.Applying))
+                    {
+                        run.Status = RunStatus.Failed;
+                    }
+                    else if (run.Status == RunStatus.Applying || run.Status == RunStatus.ApplyQueued)
                     {
                         Add(new ApplyAdded { ApplyId = run.Apply.Id, RunId = run.Id, WorkspaceId = run.WorkspaceId });
                     }
@@ -214,6 +219,7 @@ namespace Caster.Api.Domain.Services
                         Add(new RunAdded { RunId = run.Id, WorkspaceId = run.WorkspaceId });
                     }
                 }
+                await db.SaveChangesAsync();
 
                 Dictionary<Guid, AsyncLock> locks = new();
                 Dictionary<Guid, AsyncLock.AsyncLockResult> lockResults = new();
