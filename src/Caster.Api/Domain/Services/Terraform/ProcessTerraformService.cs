@@ -168,6 +168,11 @@ public class ProcessTerraformService : BaseTerraformService
             if (force)
             {
                 p.Kill();
+                return Task.FromResult(new TerraformResult
+                {
+                    ExitCode = 137,
+                    Output = "Process forcefully terminated"
+                });
             }
             else
             {
