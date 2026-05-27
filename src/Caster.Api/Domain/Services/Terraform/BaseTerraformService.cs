@@ -242,6 +242,7 @@ public abstract class BaseTerraformService : ITerraformService
     }
 
     public abstract bool EnableOutputTimer { get; }
+    public abstract bool SupportsResume { get; }
 
     protected abstract string GetBasePath(Workspace workspace);
 

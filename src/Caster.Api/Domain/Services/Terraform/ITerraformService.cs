@@ -29,6 +29,7 @@ public interface ITerraformService
     Task<IEnumerable<Guid>> GetActiveWorkspaces();
     Task<TerraformResult> Resume(Workspace workspace);
     bool EnableOutputTimer { get; }
+    bool SupportsResume { get; }
 }
 
 public class TerraformResult
