@@ -212,7 +212,7 @@ public class KubernetesTerraformService : BaseTerraformService
         if (job == null)
         {
             _logger.LogDebug("Couldn't find job to cancel");
-            return null;
+            return new TerraformResult { ExitCode = 0, Output = "Job not found - may have already completed" };
         }
         else
         {

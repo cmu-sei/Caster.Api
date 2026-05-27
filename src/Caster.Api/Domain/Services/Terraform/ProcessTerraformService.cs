@@ -159,6 +159,11 @@ public class ProcessTerraformService : BaseTerraformService
             if (force)
             {
                 p.Kill(entireProcessTree: true);
+                return Task.FromResult(new TerraformResult
+                {
+                    ExitCode = 137,
+                    Output = "Process forcefully terminated"
+                });
             }
             else
             {
@@ -201,9 +206,12 @@ public class ProcessTerraformService : BaseTerraformService
         else
         {
             _logger.LogDebug("Couldn't find process to cancel");
+            return Task.FromResult(new TerraformResult
+            {
+                ExitCode = 0,
+                Output = "Process not found - may have already completed"
+            });
         }
-
-        return null;
     }
 
     public override async Task<IEnumerable<Guid>> GetActiveWorkspaces()
