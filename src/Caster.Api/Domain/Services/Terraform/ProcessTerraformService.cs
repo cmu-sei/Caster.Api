@@ -20,6 +20,7 @@ namespace Caster.Api.Domain.Services.Terraform;
 public class ProcessTerraformService : BaseTerraformService
 {
     public override bool EnableOutputTimer => true;
+    public override bool SupportsResume => false;
 
     private const string _binaryName = "terraform";
     private readonly ILogger<ProcessTerraformService> _logger;
