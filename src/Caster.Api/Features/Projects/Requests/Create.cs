@@ -60,7 +60,7 @@ namespace Caster.Api.Features.Projects
                     project.Id = request.Id.Value;
                 }
 
-                logger.LogInformation("Creating project with ID: {ProjectId}, Name: {ProjectName}", project.Id, project.Name);
+                logger.LogInformation("Creating project with ID: {ProjectId}", project.Id);
                 dbContext.Projects.Add(project);
 
                 // Add the creator as a member with the appropriate role
@@ -70,13 +70,9 @@ namespace Caster.Api.Features.Projects
                 projectMembership.RoleId = ProjectRoleDefaults.ProjectCreatorRoleId;
                 dbContext.ProjectMemberships.Add(projectMembership);
 
-                logger.LogInformation("Saving project to database...");
-                var result = await dbContext.SaveChangesAsync(cancellationToken);
-                logger.LogInformation("SaveChanges completed. Affected rows: {RowCount}", result);
+                await dbContext.SaveChangesAsync(cancellationToken);
 
-                var savedProject = mapper.Map<Project>(project);
-                logger.LogInformation("Returning project with ID: {ProjectId}", savedProject.Id);
-                return savedProject;
+                return mapper.Map<Project>(project);
             }
         }
     }
