@@ -1,6 +1,7 @@
 // Copyright 2021 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
+using System;
 using System.Runtime.Serialization;
 using System.Linq;
 using System.Threading;
@@ -16,6 +17,7 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Domain.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Caster.Api.Features.Projects
 {
@@ -24,6 +26,12 @@ namespace Caster.Api.Features.Projects
         [DataContract(Name = "CreateProjectCommand")]
         public class Command : IRequest<Project>
         {
+            /// <summary>
+            /// Optional ID for the project. If not provided, one will be generated.
+            /// </summary>
+            [DataMember]
+            public Guid? Id { get; set; }
+
             /// <summary>
             /// Name of the project.
             /// </summary>
@@ -36,7 +44,8 @@ namespace Caster.Api.Features.Projects
             IMapper mapper,
             CasterContext dbContext,
             TelemetryService telemetryService,
-            IIdentityResolver identityResolver) : BaseHandler<Command, Project>
+            IIdentityResolver identityResolver,
+            ILogger<Handler> logger) : BaseHandler<Command, Project>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.CreateProjects], cancellationToken);
@@ -44,6 +53,14 @@ namespace Caster.Api.Features.Projects
             public override async Task<Project> HandleRequest(Command request, CancellationToken cancellationToken)
             {
                 var project = mapper.Map<Domain.Models.Project>(request);
+
+                // Allow Blueprint (or other callers) to specify the ID
+                if (request.Id.HasValue)
+                {
+                    project.Id = request.Id.Value;
+                }
+
+                logger.LogInformation("Creating project with ID: {ProjectId}", project.Id);
                 dbContext.Projects.Add(project);
 
                 // Add the creator as a member with the appropriate role
@@ -54,6 +71,7 @@ namespace Caster.Api.Features.Projects
                 dbContext.ProjectMemberships.Add(projectMembership);
 
                 await dbContext.SaveChangesAsync(cancellationToken);
+
                 return mapper.Map<Project>(project);
             }
         }

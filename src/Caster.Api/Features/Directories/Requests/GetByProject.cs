@@ -17,6 +17,7 @@ using Caster.Api.Features.Shared;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
+using Caster.Api.Infrastructure.Exceptions;
 
 namespace Caster.Api.Features.Directories
 {
@@ -51,7 +52,14 @@ namespace Caster.Api.Features.Directories
         {
             public Validator(IValidationService validationService)
             {
-                RuleFor(x => x.ProjectId).ProjectExists(validationService);
+                RuleFor(x => x.ProjectId)
+                    .MustAsync(async (id, cancellationToken) =>
+                    {
+                        if (!await validationService.ProjectExists(id))
+                            throw new EntityNotFoundException<Project>();
+
+                        return true;
+                    });
             }
         }
 
