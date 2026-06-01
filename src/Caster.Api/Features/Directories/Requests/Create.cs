@@ -33,6 +33,12 @@ namespace Caster.Api.Features.Directories
         public class Command : IRequest<Directory>, IDirectoryUpdateRequest
         {
             /// <summary>
+            /// Optional ID for the directory. If not provided, one will be generated.
+            /// </summary>
+            [DataMember]
+            public Guid? Id { get; set; }
+
+            /// <summary>
             /// Name of the directory.
             /// </summary>
             [DataMember]
@@ -103,6 +109,13 @@ namespace Caster.Api.Features.Directories
             public override async Task<Directory> HandleRequest(Command request, CancellationToken cancellationToken)
             {
                 var directory = mapper.Map<Domain.Models.Directory>(request);
+
+                // Allow caller to specify the ID
+                if (request.Id.HasValue)
+                {
+                    directory.Id = request.Id.Value;
+                }
+
                 await SetPath(directory);
 
                 dbContext.Directories.Add(directory);
@@ -112,7 +125,11 @@ namespace Caster.Api.Features.Directories
 
             private async Task SetPath(Domain.Models.Directory directory)
             {
-                directory.Id = Guid.NewGuid();
+                // Only generate ID if not already set
+                if (directory.Id == Guid.Empty)
+                {
+                    directory.Id = Guid.NewGuid();
+                }
 
                 if (!directory.ParentId.HasValue)
                 {
