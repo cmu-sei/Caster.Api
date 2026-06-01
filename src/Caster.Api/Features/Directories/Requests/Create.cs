@@ -109,27 +109,16 @@ namespace Caster.Api.Features.Directories
             public override async Task<Directory> HandleRequest(Command request, CancellationToken cancellationToken)
             {
                 var directory = mapper.Map<Domain.Models.Directory>(request);
-
-                // Allow caller to specify the ID
-                if (request.Id.HasValue)
-                {
-                    directory.Id = request.Id.Value;
-                }
-
-                await SetPath(directory);
+                await SetPath(directory, request.Id);
 
                 dbContext.Directories.Add(directory);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return mapper.Map<Directory>(directory);
             }
 
-            private async Task SetPath(Domain.Models.Directory directory)
+            private async Task SetPath(Domain.Models.Directory directory, Guid? id = null)
             {
-                // Only generate ID if not already set
-                if (directory.Id == Guid.Empty)
-                {
-                    directory.Id = Guid.NewGuid();
-                }
+                directory.Id = id ?? Guid.NewGuid();
 
                 if (!directory.ParentId.HasValue)
                 {
