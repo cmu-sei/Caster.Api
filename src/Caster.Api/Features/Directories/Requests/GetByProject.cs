@@ -48,8 +48,20 @@ namespace Caster.Api.Features.Directories
             public bool IncludeFileContent { get; set; }
         }
 
-        // Validator removed - authorization layer handles project existence check
-        // and returns 404 instead of 400 when project doesn't exist
+        public class Validator : AbstractValidator<Query>
+        {
+            public Validator(IValidationService validationService)
+            {
+                RuleFor(x => x.ProjectId)
+                    .MustAsync(async (id, cancellationToken) =>
+                    {
+                        if (!await validationService.ProjectExists(id))
+                            throw new EntityNotFoundException<Project>();
+
+                        return true;
+                    });
+            }
+        }
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Directory[]>
         {
@@ -58,11 +70,6 @@ namespace Caster.Api.Features.Directories
 
             public override async Task<Directory[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                // Check if project exists - return 404 instead of 403 if not found
-                var projectExists = await dbContext.Projects.AnyAsync(p => p.Id == request.ProjectId, cancellationToken);
-                if (!projectExists)
-                    throw new EntityNotFoundException<Project>();
-
                 var query = dbContext.Directories.Where(d => d.ProjectId == request.ProjectId);
 
                 if (!request.IncludeDescendants)
