@@ -46,6 +46,30 @@ namespace Caster.Api.Features.Projects
                 if (project == null)
                     throw new EntityNotFoundException<Project>();
 
+                // Check all workspaces in this project for deployed resources
+                var workspaces = await dbContext.Workspaces
+                    .Include(w => w.Directory)
+                    .Where(w => w.Directory.ProjectId == request.Id)
+                    .ToListAsync(cancellationToken);
+
+                var workspacesWithResources = new List<Workspace>();
+                var workspacesWithRuns = new List<Workspace>();
+
+                foreach (var workspace in workspaces)
+                {
+                    if (workspace.GetState().GetResources().Any())
+                        workspacesWithResources.Add(workspace);
+
+                    if (await dbContext.AnyIncompleteRuns(workspace.Id))
+                        workspacesWithRuns.Add(workspace);
+                }
+
+                if (workspacesWithResources.Any())
+                    throw new ConflictException("Cannot delete a Project with deployed Resources.");
+
+                if (workspacesWithRuns.Any())
+                    throw new ConflictException("Cannot delete a Project with pending Runs.");
+
                 dbContext.Projects.Remove(project);
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
