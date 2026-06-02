@@ -39,17 +39,25 @@ namespace Caster.Api.Features.Directories
                 if (directory == null)
                     throw new EntityNotFoundException<Directory>();
 
-                var workspaces = await CheckForResources(directory);
+                var (workspacesWithResources, workspacesWithRuns) = await CheckForResourcesAndRuns(directory);
 
-                if (workspaces.Any())
+                if (workspacesWithResources.Any())
                 {
                     string errorMessage = "Cannot delete this Directory due to existing Resources in the following Workspaces:";
-
-                    foreach (var workspace in workspaces)
+                    foreach (var workspace in workspacesWithResources)
                     {
-                        errorMessage += $"\n Name: {workspace.Name}, Id: {workspace.Id} in Directory: {workspace.Directory.Name}, {workspace.DirectoryId}";
+                        errorMessage += $"\n Workspace Id: {workspace.Id}, Directory Id: {workspace.DirectoryId}";
                     }
+                    throw new ConflictException(errorMessage);
+                }
 
+                if (workspacesWithRuns.Any())
+                {
+                    string errorMessage = "Cannot delete this Directory due to pending Runs in the following Workspaces:";
+                    foreach (var workspace in workspacesWithRuns)
+                    {
+                        errorMessage += $"\n Workspace Id: {workspace.Id}, Directory Id: {workspace.DirectoryId}";
+                    }
                     throw new ConflictException(errorMessage);
                 }
 
@@ -57,24 +65,26 @@ namespace Caster.Api.Features.Directories
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            private async Task<Workspace[]> CheckForResources(Domain.Models.Directory directory)
+            private async Task<(Workspace[], Workspace[])> CheckForResourcesAndRuns(Domain.Models.Directory directory)
             {
                 var directories = await dbContext.Directories
                     .GetChildren(directory, true)
                     .Include(d => d.Workspaces)
                     .ToArrayAsync();
 
-                List<Workspace> workspaces = new List<Workspace>();
+                List<Workspace> workspacesWithResources = new List<Workspace>();
+                List<Workspace> workspacesWithRuns = new List<Workspace>();
 
                 foreach (var workspace in directories.SelectMany(d => d.Workspaces))
                 {
                     if (workspace.GetState().GetResources().Any())
-                    {
-                        workspaces.Add(workspace);
-                    }
+                        workspacesWithResources.Add(workspace);
+
+                    if (await dbContext.AnyIncompleteRuns(workspace.Id))
+                        workspacesWithRuns.Add(workspace);
                 }
 
-                return workspaces.ToArray();
+                return (workspacesWithResources.ToArray(), workspacesWithRuns.ToArray());
             }
         }
     }
