@@ -33,8 +33,7 @@ namespace Caster.Api.Features.Files
 
             protected override async Task PerformOperation(Domain.Models.File file, CancellationToken cancellationToken)
             {
-                var canManage = await AuthorizationService.Authorize<Domain.Models.File>(file.Id, [SystemPermission.ManageProjects], [ProjectPermission.ManageProject], cancellationToken);
-                file.ForceUnlock(canManage);
+                file.ForceUnlock(true);
             }
         }
     }
