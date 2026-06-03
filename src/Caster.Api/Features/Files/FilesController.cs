@@ -228,6 +228,19 @@ namespace Caster.Api.Features.Files
         }
 
         /// <summary>
+        /// Force release a File's edit lock. Allowed for project Managers (and System Admins with ManageProjects).
+        /// </summary>
+        /// <param name="id">ID of a file.</param>
+        [HttpPost("files/{id}/actions/force-unlock")]
+        [ProducesResponseType(typeof(File), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "ForceUnlockFile")]
+        public async Task<IActionResult> ForceUnlock([FromRoute] Guid id)
+        {
+            var result = await _mediator.Send(new ForceUnlock.Command { Id = id });
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Administratively lock a File so that only System Admins can make changes.
         /// </summary>
         /// <param name="id">ID of a file.</param>
