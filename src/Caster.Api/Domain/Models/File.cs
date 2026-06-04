@@ -101,6 +101,14 @@ namespace Caster.Api.Domain.Models
             this.LockedById = null;
         }
 
+        public void ForceUnlock(bool canManage)
+        {
+            if (!canManage)
+                throw new FileInsufficientPrivilegesException();
+
+            this.LockedById = null;
+        }
+
         public void AdministrativelyLock(bool canLock)
         {
             if (!canLock)
