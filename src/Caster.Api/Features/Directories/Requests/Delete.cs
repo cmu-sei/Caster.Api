@@ -42,24 +42,10 @@ namespace Caster.Api.Features.Directories
                 var (workspacesWithResources, workspacesWithRuns) = await CheckForResourcesAndRuns(directory);
 
                 if (workspacesWithResources.Any())
-                {
-                    string errorMessage = "Cannot delete this Directory due to existing Resources in the following Workspaces:";
-                    foreach (var workspace in workspacesWithResources)
-                    {
-                        errorMessage += $"\n Workspace Id: {workspace.Id}, Directory Id: {workspace.DirectoryId}";
-                    }
-                    throw new ConflictException(errorMessage);
-                }
+                    throw new ConflictException("Cannot delete a Directory with deployed Resources.");
 
                 if (workspacesWithRuns.Any())
-                {
-                    string errorMessage = "Cannot delete this Directory due to pending Runs in the following Workspaces:";
-                    foreach (var workspace in workspacesWithRuns)
-                    {
-                        errorMessage += $"\n Workspace Id: {workspace.Id}, Directory Id: {workspace.DirectoryId}";
-                    }
-                    throw new ConflictException(errorMessage);
-                }
+                    throw new ConflictException("Cannot delete a Directory with pending Runs.");
 
                 dbContext.Directories.Remove(directory);
                 await dbContext.SaveChangesAsync(cancellationToken);
