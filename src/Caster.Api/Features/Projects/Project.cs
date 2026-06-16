@@ -23,6 +23,11 @@ namespace Caster.Api.Features.Projects
         public string Description { get; set; }
 
         /// <summary>
+        /// Date the project was created.
+        /// </summary>
+        public DateTime DateCreated { get; set; }
+
+        /// <summary>
         /// The vlan partition this project is a part of.
         /// </summary>
         public Guid? PartitionId { get; set; }
