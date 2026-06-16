@@ -248,6 +248,23 @@ namespace Caster.Api.Domain.Services
                 claims.Add(new Claim(AuthorizationConstants.ProjectPermissionsClaimType, permissionsClaim.ToString()));
             }
 
+            // Get Group Permissions for Groups the user is a Manager of
+            var managedGroupIds = await _context.GroupMemberships
+                .Where(x => x.UserId == userId && x.Role == GroupMembershipRole.Manager)
+                .Select(x => x.GroupId)
+                .ToListAsync();
+
+            foreach (var groupId in managedGroupIds)
+            {
+                var permissionsClaim = new GroupPermissionsClaim
+                {
+                    GroupId = groupId,
+                    Permissions = [GroupPermission.ManageMembership, GroupPermission.EditGroup]
+                };
+
+                claims.Add(new Claim(AuthorizationConstants.GroupPermissionsClaimType, permissionsClaim.ToString()));
+            }
+
             return claims;
         }
 

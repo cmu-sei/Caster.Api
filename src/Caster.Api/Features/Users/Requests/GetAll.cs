@@ -37,9 +37,17 @@ namespace Caster.Api.Features.Users
                     return true;
                 }
 
-                return authorizationService.
+                if (authorizationService.
                     GetProjectPermissions()
-                    .Any(x => x.Permissions.Contains(ProjectPermission.ManageProject));
+                    .Any(x => x.Permissions.Contains(ProjectPermission.ManageProject)))
+                {
+                    return true;
+                }
+
+                // Group managers may list users in order to add them to the groups they manage.
+                return authorizationService.
+                    GetGroupPermissions()
+                    .Any(x => x.Permissions.Contains(GroupPermission.ManageMembership));
             }
 
             public override async Task<User[]> HandleRequest(Query request, CancellationToken cancellationToken)

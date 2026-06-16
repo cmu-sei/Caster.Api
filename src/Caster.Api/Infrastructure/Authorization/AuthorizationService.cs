@@ -30,9 +30,16 @@ public interface ICasterAuthorizationService
         ProjectPermission[] requiredProjectPermissions,
         CancellationToken cancellationToken) where T : IEntity;
 
+    Task<bool> Authorize<T>(
+        Guid? resourceId,
+        SystemPermission[] requiredSystemPermissions,
+        GroupPermission[] requiredGroupPermissions,
+        CancellationToken cancellationToken) where T : IEntity;
+
     IEnumerable<Guid> GetAuthorizedProjectIds();
     IEnumerable<SystemPermission> GetSystemPermissions();
     IEnumerable<ProjectPermissionsClaim> GetProjectPermissions(Guid? projectId = null);
+    IEnumerable<GroupPermissionsClaim> GetGroupPermissions(Guid? groupId = null);
 }
 
 public class AuthorizationService(
@@ -44,7 +51,7 @@ public class AuthorizationService(
         SystemPermission[] requiredSystemPermissions,
         CancellationToken cancellationToken)
     {
-        return await Authorize<IEntity>(null, requiredSystemPermissions, [], cancellationToken);
+        return await Authorize<IEntity>(null, requiredSystemPermissions, Array.Empty<ProjectPermission>(), cancellationToken);
     }
 
     public async Task<bool> Authorize<T>(
@@ -77,6 +84,40 @@ public class AuthorizationService(
                 succeeded = projectPermissionResult.Succeeded;
             }
 
+        }
+
+        return succeeded;
+    }
+
+    public async Task<bool> Authorize<T>(
+        Guid? resourceId,
+        SystemPermission[] requiredSystemPermissions,
+        GroupPermission[] requiredGroupPermissions,
+        CancellationToken cancellationToken) where T : IEntity
+    {
+        bool succeeded = false;
+        var claimsPrincipal = identityResolver.GetClaimsPrincipal();
+        var permissionRequirement = new SystemPermissionRequirement(requiredSystemPermissions);
+        var permissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, permissionRequirement);
+
+        if (permissionResult.Succeeded)
+            succeeded = true;
+
+        if (!succeeded && resourceId.HasValue)
+        {
+            var groupId = await GetGroupId<T>(resourceId.Value, cancellationToken);
+
+            if (groupId == null)
+            {
+                succeeded = false;
+            }
+            else
+            {
+                var groupPermissionRequirement = new GroupPermissionRequirement(requiredGroupPermissions, groupId.Value);
+                var groupPermissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, groupPermissionRequirement);
+
+                succeeded = groupPermissionResult.Succeeded;
+            }
         }
 
         return succeeded;
@@ -118,6 +159,38 @@ public class AuthorizationService(
         }
 
         return permissions;
+    }
+
+    public IEnumerable<GroupPermissionsClaim> GetGroupPermissions(Guid? groupId = null)
+    {
+        var permissions = identityResolver.GetClaimsPrincipal().Claims
+           .Where(x => x.Type == AuthorizationConstants.GroupPermissionsClaimType)
+           .Select(x => GroupPermissionsClaim.FromString(x.Value));
+
+        if (groupId.HasValue)
+        {
+            permissions = permissions.Where(x => x.GroupId == groupId.Value);
+        }
+
+        return permissions;
+    }
+
+    private async Task<Guid?> GetGroupId<T>(Guid resourceId, CancellationToken cancellationToken)
+    {
+        return typeof(T) switch
+        {
+            var t when t == typeof(Group) => resourceId,
+            var t when t == typeof(GroupMembership) => await HandleGroupMembership(resourceId, cancellationToken),
+            _ => throw new NotImplementedException($"Group handler for type {typeof(T).Name} is not implemented.")
+        };
+    }
+
+    private async Task<Guid> HandleGroupMembership(Guid id, CancellationToken cancellationToken)
+    {
+        return await dbContext.GroupMemberships
+            .Where(x => x.Id == id)
+            .Select(x => x.GroupId)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private async Task<Guid?> GetProjectId<T>(Guid resourceId, CancellationToken cancellationToken)

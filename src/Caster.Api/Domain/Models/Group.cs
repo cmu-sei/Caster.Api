@@ -30,3 +30,9 @@ public class GroupConfiguration : IEntityTypeConfiguration<Group>
         builder.HasIndex(e => e.Name).IsUnique();
     }
 }
+
+public enum GroupPermission
+{
+    ManageMembership,
+    EditGroup
+}

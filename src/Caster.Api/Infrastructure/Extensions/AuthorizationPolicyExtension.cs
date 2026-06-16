@@ -24,6 +24,7 @@ namespace Caster.Api.Infrastructure.Extensions
 
             services.AddSingleton<IAuthorizationHandler, SystemPermissionsHandler>();
             services.AddSingleton<IAuthorizationHandler, ProjectPermissionsHandler>();
+            services.AddSingleton<IAuthorizationHandler, GroupPermissionsHandler>();
         }
     }
 }

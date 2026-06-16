@@ -36,6 +36,12 @@ namespace Caster.Api.Features.Groups
             /// </summary>
             [DataMember]
             public Guid UserId { get; set; }
+
+            /// <summary>
+            /// The User's role within the Group. Defaults to Member.
+            /// </summary>
+            [DataMember]
+            public GroupMembershipRole Role { get; set; } = GroupMembershipRole.Member;
         }
 
         public class Validator : AbstractValidator<Command>
@@ -50,7 +56,7 @@ namespace Caster.Api.Features.Groups
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, GroupMembership>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermission.ManageGroups], cancellationToken);
+                await authorizationService.Authorize<Domain.Models.Group>(request.GroupId, [SystemPermission.ManageGroups], [GroupPermission.ManageMembership], cancellationToken);
 
             public override async Task<GroupMembership> HandleRequest(Command request, CancellationToken cancellationToken)
             {
@@ -60,7 +66,7 @@ namespace Caster.Api.Features.Groups
                 if (groupMembershipExists)
                     throw new ConflictException("User is already a member of this Group");
 
-                var groupMembership = new Domain.Models.GroupMembership(request.GroupId, request.UserId);
+                var groupMembership = new Domain.Models.GroupMembership(request.GroupId, request.UserId, request.Role);
                 dbContext.GroupMemberships.Add(groupMembership);
                 await dbContext.SaveChangesAsync();
 

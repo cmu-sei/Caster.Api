@@ -136,6 +136,22 @@ namespace Caster.Api.Features.Groups
         }
 
         /// <summary>
+        /// Edit a Group Membership.
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="command"></param>
+        /// <returns></returns>
+        [HttpPut("memberships/{id}")]
+        [ProducesResponseType(typeof(GroupMembership), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "EditGroupMembership")]
+        public async Task<IActionResult> EditMembership([FromRoute] Guid id, EditMembership.Command command)
+        {
+            command.Id = id;
+            var result = await _mediator.Send(command);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Delete a Group Membership.
         /// </summary>
         /// <returns></returns>
