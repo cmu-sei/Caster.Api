@@ -37,6 +37,12 @@ namespace Caster.Api.Features.Projects
             /// </summary>
             [DataMember]
             public string Name { get; set; }
+
+            /// <summary>
+            /// Description of the project.
+            /// </summary>
+            [DataMember]
+            public string Description { get; set; }
         }
 
         public class Handler(
@@ -53,6 +59,7 @@ namespace Caster.Api.Features.Projects
             public override async Task<Project> HandleRequest(Command request, CancellationToken cancellationToken)
             {
                 var project = mapper.Map<Domain.Models.Project>(request);
+                project.DateCreated = DateTime.UtcNow;
 
                 // Allow Blueprint (or other callers) to specify the ID
                 if (request.Id.HasValue)

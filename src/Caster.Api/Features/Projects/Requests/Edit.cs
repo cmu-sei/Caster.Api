@@ -27,6 +27,12 @@ namespace Caster.Api.Features.Projects
             /// </summary>
             [DataMember]
             public string Name { get; set; }
+
+            /// <summary>
+            /// Description of the project.
+            /// </summary>
+            [DataMember]
+            public string Description { get; set; }
         }
 
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Project>

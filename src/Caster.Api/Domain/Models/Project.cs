@@ -16,6 +16,10 @@ namespace Caster.Api.Domain.Models
 
         public string Name { get; set; }
 
+        public string Description { get; set; }
+
+        public DateTime DateCreated { get; set; }
+
         public virtual ICollection<Directory> Directories { get; set; } = new List<Directory>();
 
         public Guid? PartitionId { get; set; }
@@ -28,6 +32,7 @@ namespace Caster.Api.Domain.Models
         public Project(string name)
         {
             this.Name = name;
+            this.DateCreated = DateTime.UtcNow;
         }
     }
 }
