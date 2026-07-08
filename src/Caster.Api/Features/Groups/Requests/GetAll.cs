@@ -32,14 +32,38 @@ namespace Caster.Api.Features.Groups
                     return true;
                 }
 
-                return authorizationService.
+                if (authorizationService.
                     GetProjectPermissions()
-                    .Any(x => x.Permissions.Contains(ProjectPermission.ManageProject));
+                    .Any(x => x.Permissions.Contains(ProjectPermission.ManageProject)))
+                {
+                    return true;
+                }
+
+                return authorizationService.
+                    GetGroupPermissions()
+                    .Any(x => x.Permissions.Contains(GroupPermission.ManageMembership));
             }
 
             public override async Task<Group[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                return await dbContext.Groups
+                var isSystemViewer =
+                    await authorizationService.Authorize([SystemPermission.ViewGroups, SystemPermission.ViewProjects], cancellationToken) ||
+                    authorizationService.GetProjectPermissions().Any(x => x.Permissions.Contains(ProjectPermission.ManageProject));
+
+                var query = dbContext.Groups.AsQueryable();
+
+                if (!isSystemViewer)
+                {
+                    // The user only reached this point because they manage one or more groups,
+                    // so scope the result to just those groups.
+                    var managedIds = authorizationService.GetGroupPermissions()
+                        .Where(x => x.Permissions.Contains(GroupPermission.ManageMembership))
+                        .Select(x => x.GroupId)
+                        .ToList();
+                    query = query.Where(g => managedIds.Contains(g.Id));
+                }
+
+                return await query
                     .ProjectTo<Group>(mapper.ConfigurationProvider)
                     .ToArrayAsync(cancellationToken);
             }

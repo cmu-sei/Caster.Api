@@ -60,7 +60,7 @@ public class ProjectHub : Hub
 
     public async Task JoinGroup(Guid groupId)
     {
-        if (!await _authorizationService.Authorize([SystemPermission.ViewGroups], Context.ConnectionAborted))
+        if (!await _authorizationService.Authorize<Group>(groupId, [SystemPermission.ViewGroups], [GroupPermission.ManageMembership], Context.ConnectionAborted))
             throw new ForbiddenException();
 
         await Groups.AddToGroupAsync(Context.ConnectionId, groupId.ToString());

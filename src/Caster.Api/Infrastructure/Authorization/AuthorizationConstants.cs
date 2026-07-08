@@ -12,4 +12,5 @@ public static class AuthorizationConstants
 {
     public const string PermissionsClaimType = "Permission";
     public const string ProjectPermissionsClaimType = "ProjectPermission";
+    public const string GroupPermissionsClaimType = "GroupPermission";
 }

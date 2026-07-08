@@ -6,46 +6,49 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
+using AutoMapper;
 using System.Runtime.Serialization;
-using Microsoft.EntityFrameworkCore;
-using FluentValidation;
-using Caster.Api.Features.Shared.Services;
-using Caster.Api.Infrastructure.Extensions;
-using System.Linq;
 using System.Text.Json.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
-using Caster.Api.Features.Shared;
 using Caster.Api.Infrastructure.Authorization;
+using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Groups
 {
-    public class DeleteMembership
+    public class EditMembership
     {
-        [DataContract(Name = "DeleteGroupMembershipCommand")]
-        public record Command : IRequest
+        [DataContract(Name = "EditGroupMembershipCommand")]
+        public record Command : IRequest<GroupMembership>
         {
             /// <summary>
-            /// The Id of the Group Membership to delete
+            /// The Id of the Group Membership to edit.
             /// </summary>
             [JsonIgnore]
             public Guid Id { get; set; }
+
+            /// <summary>
+            /// The User's role within the Group.
+            /// </summary>
+            [DataMember]
+            public GroupMembershipRole Role { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command>
+        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, GroupMembership>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.GroupMembership>(request.Id, [SystemPermission.ManageGroups], [GroupPermission.ManageMembership], cancellationToken);
 
-            public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
+            public override async Task<GroupMembership> HandleRequest(Command request, CancellationToken cancellationToken)
             {
                 var groupMembership = await dbContext.GroupMemberships.FindAsync([request.Id], cancellationToken);
 
                 if (groupMembership == null)
                     throw new EntityNotFoundException<GroupMembership>();
 
-                dbContext.GroupMemberships.Remove(groupMembership);
-                await dbContext.SaveChangesAsync();
+                groupMembership.Role = request.Role;
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return mapper.Map<GroupMembership>(groupMembership);
             }
         }
     }
