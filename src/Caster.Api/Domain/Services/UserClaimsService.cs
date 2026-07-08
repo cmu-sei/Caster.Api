@@ -259,7 +259,7 @@ namespace Caster.Api.Domain.Services
                 var permissionsClaim = new GroupPermissionsClaim
                 {
                     GroupId = groupId,
-                    Permissions = [GroupPermission.ManageMembership, GroupPermission.EditGroup]
+                    Permissions = [GroupPermission.ManageMembership]
                 };
 
                 claims.Add(new Claim(AuthorizationConstants.GroupPermissionsClaimType, permissionsClaim.ToString()));
