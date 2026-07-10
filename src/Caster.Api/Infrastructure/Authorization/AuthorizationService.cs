@@ -130,6 +130,8 @@ public class AuthorizationService(
         GroupPermission[] requiredGroupPermissions,
         CancellationToken cancellationToken) where T : IEntity
     {
+        ValidateScopedPermissionTypes(requiredProjectPermissions, requiredGroupPermissions);
+
         var claimsPrincipal = identityResolver.GetClaimsPrincipal();
         var permissionRequirement = new SystemPermissionRequirement(requiredSystemPermissions);
         var permissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, permissionRequirement);
@@ -137,30 +139,39 @@ public class AuthorizationService(
         if (permissionResult.Succeeded)
             return true;
 
-        if (!resourceId.HasValue)
-            return false;
-
         if (requiredProjectPermissions != null)
-            return await AuthorizeProject<T>(claimsPrincipal, resourceId.Value, requiredProjectPermissions, cancellationToken);
+            return await AuthorizeProject<T>(claimsPrincipal, resourceId, requiredProjectPermissions, cancellationToken);
 
         if (requiredGroupPermissions != null)
-            return await AuthorizeGroup<T>(claimsPrincipal, resourceId.Value, requiredGroupPermissions, cancellationToken);
+            return await AuthorizeGroup<T>(claimsPrincipal, resourceId, requiredGroupPermissions, cancellationToken);
 
         return false;
     }
 
+    private static void ValidateScopedPermissionTypes(
+        ProjectPermission[] projectPermissions,
+        GroupPermission[] groupPermissions)
+    {
+        var scopedPermissionTypeCount =
+            (projectPermissions != null ? 1 : 0) +
+            (groupPermissions != null ? 1 : 0);
+
+        if (scopedPermissionTypeCount > 1)
+            throw new InvalidOperationException(
+                "Only one scoped permission type can be provided for authorization.");
+    }
+
     private async Task<bool> AuthorizeProject<T>(
         ClaimsPrincipal claimsPrincipal,
-        Guid resourceId,
+        Guid? resourceId,
         ProjectPermission[] requiredProjectPermissions,
         CancellationToken cancellationToken) where T : IEntity
     {
-        var projectId = await GetProjectId<T>(resourceId, cancellationToken);
+        var projectId = resourceId.HasValue
+            ? await GetProjectId<T>(resourceId.Value, cancellationToken)
+            : null;
 
-        if (projectId == null)
-            return false;
-
-        var projectPermissionRequirement = new ProjectPermissionRequirement(requiredProjectPermissions, projectId.Value);
+        var projectPermissionRequirement = new ProjectPermissionRequirement(requiredProjectPermissions, projectId);
         var projectPermissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, projectPermissionRequirement);
 
         return projectPermissionResult.Succeeded;
@@ -168,16 +179,15 @@ public class AuthorizationService(
 
     private async Task<bool> AuthorizeGroup<T>(
         ClaimsPrincipal claimsPrincipal,
-        Guid resourceId,
+        Guid? resourceId,
         GroupPermission[] requiredGroupPermissions,
         CancellationToken cancellationToken) where T : IEntity
     {
-        var groupId = await GetGroupId<T>(resourceId, cancellationToken);
+        var groupId = resourceId.HasValue
+            ? await GetGroupId<T>(resourceId.Value, cancellationToken)
+            : null;
 
-        if (groupId == null)
-            return false;
-
-        var groupPermissionRequirement = new GroupPermissionRequirement(requiredGroupPermissions, groupId.Value);
+        var groupPermissionRequirement = new GroupPermissionRequirement(requiredGroupPermissions, groupId);
         var groupPermissionResult = await authService.AuthorizeAsync(claimsPrincipal, null, groupPermissionRequirement);
 
         return groupPermissionResult.Succeeded;
@@ -193,11 +203,11 @@ public class AuthorizationService(
         };
     }
 
-    private async Task<Guid> HandleGroupMembership(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleGroupMembership(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.GroupMemberships
             .Where(x => x.Id == id)
-            .Select(x => x.GroupId)
+            .Select(x => (Guid?)x.GroupId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -221,91 +231,91 @@ public class AuthorizationService(
         };
     }
 
-    private async Task<Guid> HandleDirectory(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleDirectory(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Directories
             .Where(x => x.Id == id)
-            .Select(x => x.ProjectId)
+            .Select(x => (Guid?)x.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandleFile(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleFile(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Files
             .Where(x => x.Id == id)
-            .Select(x => x.Directory.ProjectId)
+            .Select(x => (Guid?)x.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandleFileVersion(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleFileVersion(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Files
             .Where(x => x.Id == id)
-            .Select(x => x.Directory.ProjectId)
+            .Select(x => (Guid?)x.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandleWorkspace(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleWorkspace(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Workspaces
             .Where(x => x.Id == id)
-            .Select(x => x.Directory.ProjectId)
+            .Select(x => (Guid?)x.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandleRun(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleRun(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Runs
             .Where(x => x.Id == id)
-            .Select(x => x.Workspace.Directory.ProjectId)
+            .Select(x => (Guid?)x.Workspace.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandlePlan(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandlePlan(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Plans
             .Where(x => x.Id == id)
-            .Select(x => x.Run.Workspace.Directory.ProjectId)
+            .Select(x => (Guid?)x.Run.Workspace.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandleApply(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleApply(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Applies
             .Where(x => x.Id == id)
-            .Select(x => x.Run.Workspace.Directory.ProjectId)
+            .Select(x => (Guid?)x.Run.Workspace.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandleDesign(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleDesign(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Designs
             .Where(x => x.Id == id)
-            .Select(x => x.Directory.ProjectId)
+            .Select(x => (Guid?)x.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandleDesignModule(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleDesignModule(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.DesignModules
             .Where(x => x.Id == id)
-            .Select(x => x.Design.Directory.ProjectId)
+            .Select(x => (Guid?)x.Design.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandleVariable(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleVariable(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Variables
             .Where(x => x.Id == id)
-            .Select(x => x.Design.Directory.ProjectId)
+            .Select(x => (Guid?)x.Design.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid> HandleProjectMembership(Guid id, CancellationToken cancellationToken)
+    private async Task<Guid?> HandleProjectMembership(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.ProjectMemberships
             .Where(x => x.Id == id)
-            .Select(x => x.ProjectId)
+            .Select(x => (Guid?)x.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 }

@@ -13,11 +13,11 @@ namespace Caster.Api.Infrastructure.Authorization
     public class ProjectPermissionRequirement : IAuthorizationRequirement
     {
         public ProjectPermission[] RequiredPermissions;
-        public Guid ProjectId;
+        public Guid? ProjectId;
 
         public ProjectPermissionRequirement(
             ProjectPermission[] requiredPermissions,
-            Guid projectId)
+            Guid? projectId)
         {
             RequiredPermissions = requiredPermissions;
             ProjectId = projectId;
@@ -28,7 +28,7 @@ namespace Caster.Api.Infrastructure.Authorization
     {
         protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, ProjectPermissionRequirement requirement)
         {
-            if (context.User == null)
+            if (context.User == null || !requirement.ProjectId.HasValue)
             {
                 context.Fail();
             }
@@ -43,7 +43,7 @@ namespace Caster.Api.Infrastructure.Authorization
                 foreach (var claim in claims)
                 {
                     var claimValue = ProjectPermissionsClaim.FromString(claim.Value);
-                    if (claimValue.ProjectId == requirement.ProjectId)
+                    if (claimValue.ProjectId == requirement.ProjectId.Value)
                     {
                         projectPermissionsClaim = claimValue;
                         break;
