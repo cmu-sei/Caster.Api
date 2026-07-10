@@ -13,11 +13,11 @@ namespace Caster.Api.Infrastructure.Authorization
     public class GroupPermissionRequirement : IAuthorizationRequirement
     {
         public GroupPermission[] RequiredPermissions;
-        public Guid GroupId;
+        public Guid? GroupId;
 
         public GroupPermissionRequirement(
             GroupPermission[] requiredPermissions,
-            Guid groupId)
+            Guid? groupId)
         {
             RequiredPermissions = requiredPermissions;
             GroupId = groupId;
@@ -28,7 +28,7 @@ namespace Caster.Api.Infrastructure.Authorization
     {
         protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, GroupPermissionRequirement requirement)
         {
-            if (context.User == null)
+            if (context.User == null || !requirement.GroupId.HasValue)
             {
                 context.Fail();
             }
@@ -43,7 +43,7 @@ namespace Caster.Api.Infrastructure.Authorization
                 foreach (var claim in claims)
                 {
                     var claimValue = GroupPermissionsClaim.FromString(claim.Value);
-                    if (claimValue.GroupId == requirement.GroupId)
+                    if (claimValue.GroupId == requirement.GroupId.Value)
                     {
                         groupPermissionsClaim = claimValue;
                         break;
