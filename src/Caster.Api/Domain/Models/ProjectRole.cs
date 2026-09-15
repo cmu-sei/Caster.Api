@@ -73,7 +73,7 @@ public class ProjectRoleConfiguration : IEntityTypeConfiguration<ProjectRole>
                     ProjectPermission.EditProject,
                     ProjectPermission.ImportProject
                 ],
-                Description = "Has read only access to the Project"
+                Description = "Can view, edit, and import content in the Project, but not manage Memberships"
             }
         );
     }
