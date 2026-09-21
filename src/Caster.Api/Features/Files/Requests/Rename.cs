@@ -14,6 +14,8 @@ using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Files.Interfaces;
 using System.Text.Json.Serialization;
 using Caster.Api.Infrastructure.Authorization;
+using Caster.Api.Features.Shared.Validators;
+using FluentValidation;
 
 namespace Caster.Api.Features.Files
 {
@@ -33,6 +35,14 @@ namespace Caster.Api.Features.Files
 
             [JsonIgnore]
             public override string Content { get; set; }
+        }
+
+        public class CommandValidator : AbstractValidator<Command>
+        {
+            public CommandValidator()
+            {
+                RuleFor(x => x.Name).FileNameValidation();
+            }
         }
 
         public class Handler(
