@@ -135,7 +135,7 @@ namespace Caster.Api.Domain.Models
             }
             else
             {
-                return Path.Combine(basePath, Workspace.StateFileDirectory, this.Name, stateFileName);
+                return GetContainedPath(basePath, Path.Combine(Workspace.StateFileDirectory, this.Name, stateFileName));
             }
         }
 
@@ -152,7 +152,7 @@ namespace Caster.Api.Domain.Models
             // Write Files
             foreach (File file in files)
             {
-                var filePath = Path.Combine(workingDir, file.Name);
+                var filePath = GetContainedPath(workingDir, file.Name);
                 using (var writer = System.IO.File.CreateText(filePath))
                 {
                     await writer.WriteLineAsync(file.Content);
@@ -182,7 +182,7 @@ namespace Caster.Api.Domain.Models
             }
             else
             {
-                var workspaceStateDir = Path.Combine(workingDir, Workspace.StateFileDirectory, this.Name);
+                var workspaceStateDir = GetContainedPath(workingDir, Path.Combine(Workspace.StateFileDirectory, this.Name));
                 System.IO.Directory.CreateDirectory(workspaceStateDir);
 
                 if (!string.IsNullOrEmpty(this.State))
@@ -203,6 +203,22 @@ namespace Caster.Api.Domain.Models
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Combines a name with the working directory, ensuring the result stays inside of it.
+        /// </summary>
+        private static string GetContainedPath(string workingDir, string name)
+        {
+            var path = Path.Combine(workingDir, name);
+            var root = Path.GetFullPath(workingDir);
+
+            if (!Path.GetFullPath(path).StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"The name '{name}' resolves to a path outside of the Workspace directory.");
+            }
+
+            return path;
         }
 
         private void DeleteDirectory(string path)
