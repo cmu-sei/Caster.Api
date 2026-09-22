@@ -213,7 +213,15 @@ namespace Caster.Api.Domain.Models
             var path = Path.Combine(workingDir, name);
             var root = Path.GetFullPath(workingDir);
 
-            if (!Path.GetFullPath(path).StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            // The working directory may or may not already end in a separator, and the
+            // separator has to be part of the comparison so that a sibling directory with
+            // a matching prefix is not treated as being inside of it.
+            if (!Path.EndsInDirectorySeparator(root))
+            {
+                root += Path.DirectorySeparatorChar;
+            }
+
+            if (!Path.GetFullPath(path).StartsWith(root, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException($"The name '{name}' resolves to a path outside of the Workspace directory.");
             }
