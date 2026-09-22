@@ -27,10 +27,14 @@ namespace Caster.Api.Tests.Unit.Validators
         [Theory]
         [InlineData("../../etc/cron.d/backdoor")]
         [InlineData("../escaped.tf")]
+        [InlineData("....//escaped.tf")]
         [InlineData("subdir/main.tf")]
+        [InlineData("/etc/cron.d/backdoor")]
         [InlineData("..\\escaped.tf")]
+        [InlineData("\\\\server\\share\\backdoor")]
         [InlineData("main.tf\0.txt")]
         [InlineData("main\tsomething.tf")]
+        [InlineData("main\nsomething.tf")]
         [InlineData(".")]
         [InlineData("..")]
         [InlineData(" main.tf")]
@@ -57,6 +61,8 @@ namespace Caster.Api.Tests.Unit.Validators
         [InlineData("network (old).tf")]
         [InlineData("a+b,c=d&e.tf")]
         [InlineData("café.tf")]
+        // Percent encoded separators are never decoded, so they are stored and written literally
+        [InlineData("%2e%2e%2fescaped.tf")]
         public async Task Test_Create_Allows_Valid_File_Names(string name)
         {
             var validator = new Create.CommandValidator(_validationService);
@@ -65,6 +71,23 @@ namespace Caster.Api.Tests.Unit.Validators
             var result = await validator.ValidateAsync(command);
 
             Assert.True(result.IsValid, string.Join(", ", result.Errors.Select(x => x.ErrorMessage)));
+        }
+
+        [Theory]
+        [InlineData(255, true)]
+        [InlineData(256, false)]
+        public async Task Test_Create_Limits_The_Length_Of_File_Names(int length, bool expectedValid)
+        {
+            var validator = new Create.CommandValidator(_validationService);
+            var command = new Create.Command()
+            {
+                Name = new string('a', length - 3) + ".tf",
+                DirectoryId = Guid.NewGuid()
+            };
+
+            var result = await validator.ValidateAsync(command);
+
+            Assert.Equal(expectedValid, result.IsValid);
         }
 
         [Theory]

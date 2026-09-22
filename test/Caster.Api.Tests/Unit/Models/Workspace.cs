@@ -92,6 +92,22 @@ namespace Caster.Api.Tests.Unit
         }
 
         [Fact]
+        public async Task Test_PrepareFileSystem_Does_Not_Decode_Percent_Encoded_File_Names()
+        {
+            var workspace = new Workspace() { Id = Guid.NewGuid(), Name = "default" };
+            var workingDir = workspace.GetPath(_basePath);
+            var files = new List<Caster.Api.Domain.Models.File>
+            {
+                new() { Name = "%2e%2e%2fescaped.tf", Content = "content" }
+            };
+
+            await workspace.PrepareFileSystem(workingDir, files);
+
+            Assert.True(System.IO.File.Exists(Path.Combine(workingDir, "%2e%2e%2fescaped.tf")));
+            Assert.False(System.IO.File.Exists(Path.Combine(_basePath, "escaped.tf")));
+        }
+
+        [Fact]
         public async Task Test_PrepareFileSystem_Allows_A_Working_Directory_With_A_Trailing_Separator()
         {
             var workspace = new Workspace() { Id = Guid.NewGuid(), Name = "default" };
@@ -131,10 +147,41 @@ namespace Caster.Api.Tests.Unit
                 statePath);
         }
 
-        [Fact]
-        public void Test_GetStatePath_Rejects_Traversing_Workspace_Names()
+        [Theory]
+        [InlineData("../../escaped")]
+        [InlineData("../../../../../../../../etc/cron.d")]
+        public void Test_GetStatePath_Rejects_Traversing_Workspace_Names(string name)
         {
-            var workspace = new Workspace() { Id = Guid.NewGuid(), Name = "../../escaped" };
+            var workspace = new Workspace() { Id = Guid.NewGuid(), Name = name };
+
+            Assert.Throws<InvalidOperationException>(() => workspace.GetStatePath(_basePath, backupState: false));
+        }
+
+        /// <summary>
+        /// Traversal that resolves back inside the working directory is not an escape, so it is
+        /// allowed. The guarantee is containment, not that state stays under terraform.tfstate.d.
+        /// </summary>
+        [Fact]
+        public void Test_GetStatePath_Contains_Traversal_That_Resolves_Back_Inside()
+        {
+            var workspace = new Workspace() { Id = Guid.NewGuid(), Name = "subdir/../../escaped" };
+
+            var statePath = workspace.GetStatePath(_basePath, backupState: false);
+
+            Assert.StartsWith(
+                _basePath + Path.DirectorySeparatorChar,
+                Path.GetFullPath(statePath),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Test_GetStatePath_Rejects_Rooted_Workspace_Names()
+        {
+            var workspace = new Workspace()
+            {
+                Id = Guid.NewGuid(),
+                Name = Path.Combine(Path.GetPathRoot(Path.GetTempPath()), "escaped")
+            };
 
             Assert.Throws<InvalidOperationException>(() => workspace.GetStatePath(_basePath, backupState: false));
         }
