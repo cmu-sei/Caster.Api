@@ -10,7 +10,8 @@ public static class FileValidationRules
 {
     /// <summary>
     /// File names are written directly into a Workspace's working directory on disk, so they must
-    /// not be able to reference anything outside of it.
+    /// not be able to reference anything outside of it. Spaces are allowed because they do not
+    /// enable traversal and existing deployments may already have file names that contain them.
     /// </summary>
     public static IRuleBuilderOptions<T, string> FileNameValidation<T>(this IRuleBuilder<T, string> rule)
     {
@@ -18,7 +19,7 @@ public static class FileValidationRules
             .NotEmpty()
             .MaximumLength(255)
             .Must(x => string.IsNullOrEmpty(x) ||
-                (x != "." && x != ".." && x.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.')))
-            .WithMessage("File names can only include letters, numbers, -, _, and .");
+                (x != "." && x != ".." && x.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ' ')))
+            .WithMessage("File names can only include letters, numbers, -, _, ., and spaces");
     }
 }

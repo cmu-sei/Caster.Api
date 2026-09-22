@@ -32,6 +32,7 @@ namespace Caster.Api.Tests.Unit.Validators
         [InlineData("main.tf\0.txt")]
         [InlineData("..")]
         [InlineData("")]
+        [InlineData(" ")]
         [InlineData(null)]
         public async Task Test_Create_Rejects_Invalid_File_Names(string name)
         {
@@ -47,6 +48,7 @@ namespace Caster.Api.Tests.Unit.Validators
         [InlineData("main.tf")]
         [InlineData("variables.auto.tfvars.json")]
         [InlineData("my-file_2.tf")]
+        [InlineData("my file.tf")] // spaces were accepted before this rule existed
         public async Task Test_Create_Allows_Valid_File_Names(string name)
         {
             var validator = new Create.CommandValidator(_validationService);
