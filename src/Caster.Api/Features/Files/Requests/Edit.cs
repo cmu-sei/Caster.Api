@@ -17,6 +17,7 @@ using Caster.Api.Features.Files.Interfaces;
 using System.Text.Json.Serialization;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
+using Caster.Api.Features.Shared.Validators;
 
 namespace Caster.Api.Features.Files
 {
@@ -57,6 +58,7 @@ namespace Caster.Api.Features.Files
         {
             public CommandValidator(IValidationService validationService)
             {
+                RuleFor(x => x.Name).FileNameValidation();
                 RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
                 RuleFor(x => x.WorkspaceId.Value).WorkspaceExists(validationService).When(x => x.WorkspaceId.HasValue);
             }

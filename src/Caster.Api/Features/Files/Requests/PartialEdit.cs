@@ -18,6 +18,7 @@ using System.Text.Json.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
+using Caster.Api.Features.Shared.Validators;
 
 namespace Caster.Api.Features.Files
 {
@@ -59,6 +60,8 @@ namespace Caster.Api.Features.Files
         {
             public CommandValidator(IValidationService validationService)
             {
+                // A null Name is not mapped onto the File, so it only needs to be valid when supplied.
+                RuleFor(x => x.Name).FileNameValidation().When(x => x.Name != null);
                 RuleFor(x => x.DirectoryId.Value).DirectoryExists(validationService).When(x => x.DirectoryId.HasValue);
                 RuleFor(x => x.WorkspaceId.Value.Value).WorkspaceExists(validationService).When(x => x.WorkspaceId.HasValue && x.WorkspaceId.Value.HasValue);
             }

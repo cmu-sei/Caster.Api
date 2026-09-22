@@ -61,6 +61,62 @@ namespace Caster.Api.Tests.Unit.Validators
 
         [Theory]
         [InlineData("../../etc/cron.d/backdoor")]
+        [InlineData("../escaped.tf")]
+        [InlineData("subdir/main.tf")]
+        [InlineData("..")]
+        [InlineData("")]
+        [InlineData(null)]
+        public async Task Test_Edit_Rejects_Invalid_File_Names(string name)
+        {
+            var validator = new Edit.CommandValidator(_validationService);
+            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = name, DirectoryId = Guid.NewGuid() };
+
+            var result = await validator.ValidateAsync(command);
+
+            Assert.Contains(result.Errors, x => x.PropertyName == nameof(Edit.Command.Name));
+        }
+
+        [Fact]
+        public async Task Test_Edit_Allows_Valid_File_Names()
+        {
+            var validator = new Edit.CommandValidator(_validationService);
+            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = "main.tf", DirectoryId = Guid.NewGuid() };
+
+            var result = await validator.ValidateAsync(command);
+
+            Assert.True(result.IsValid, string.Join(", ", result.Errors.Select(x => x.ErrorMessage)));
+        }
+
+        [Theory]
+        [InlineData("../../etc/cron.d/backdoor")]
+        [InlineData("subdir/main.tf")]
+        [InlineData("..")]
+        [InlineData("")]
+        public async Task Test_PartialEdit_Rejects_Invalid_File_Names(string name)
+        {
+            var validator = new PartialEdit.CommandValidator(_validationService);
+            var command = new PartialEdit.Command() { Id = Guid.NewGuid(), Name = name };
+
+            var result = await validator.ValidateAsync(command);
+
+            Assert.Contains(result.Errors, x => x.PropertyName == nameof(PartialEdit.Command.Name));
+        }
+
+        [Theory]
+        [InlineData("main.tf")]
+        [InlineData(null)] // Name is optional on a partial edit
+        public async Task Test_PartialEdit_Allows_Valid_File_Names(string name)
+        {
+            var validator = new PartialEdit.CommandValidator(_validationService);
+            var command = new PartialEdit.Command() { Id = Guid.NewGuid(), Name = name };
+
+            var result = await validator.ValidateAsync(command);
+
+            Assert.True(result.IsValid, string.Join(", ", result.Errors.Select(x => x.ErrorMessage)));
+        }
+
+        [Theory]
+        [InlineData("../../etc/cron.d/backdoor")]
         [InlineData("subdir/main.tf")]
         [InlineData("..")]
         [InlineData(null)]
