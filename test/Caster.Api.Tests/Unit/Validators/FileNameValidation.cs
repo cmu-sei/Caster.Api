@@ -30,7 +30,11 @@ namespace Caster.Api.Tests.Unit.Validators
         [InlineData("subdir/main.tf")]
         [InlineData("..\\escaped.tf")]
         [InlineData("main.tf\0.txt")]
+        [InlineData("main\tsomething.tf")]
+        [InlineData(".")]
         [InlineData("..")]
+        [InlineData(" main.tf")]
+        [InlineData("main.tf ")]
         [InlineData("")]
         [InlineData(" ")]
         [InlineData(null)]
@@ -48,7 +52,11 @@ namespace Caster.Api.Tests.Unit.Validators
         [InlineData("main.tf")]
         [InlineData("variables.auto.tfvars.json")]
         [InlineData("my-file_2.tf")]
-        [InlineData("my file.tf")] // spaces were accepted before this rule existed
+        // Anything that cannot escape the Workspace directory was accepted before this rule existed
+        [InlineData("my file.tf")]
+        [InlineData("network (old).tf")]
+        [InlineData("a+b,c=d&e.tf")]
+        [InlineData("café.tf")]
         public async Task Test_Create_Allows_Valid_File_Names(string name)
         {
             var validator = new Create.CommandValidator(_validationService);
