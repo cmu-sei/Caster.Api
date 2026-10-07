@@ -754,7 +754,7 @@ public class KubernetesTerraformService : BaseTerraformService
         job.Metadata.Labels ??= new Dictionary<string, string>();
         job.Metadata.Labels[_appLabel] = _appName;
         job.Metadata.Labels[_workspaceIdLabel] = workspace.Id.ToString();
-        job.Metadata.Labels[_workspaceNameLabel] = workspace.Name;
+        job.Metadata.Labels[_workspaceNameLabel] = KubernetesLabel.ToValue(workspace.Name);
 
         job.Metadata.Annotations ??= new Dictionary<string, string>();
         job.Metadata.Annotations["cancellable"] = "true";
