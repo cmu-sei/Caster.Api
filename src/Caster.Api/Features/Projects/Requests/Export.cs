@@ -30,6 +30,13 @@ namespace Caster.Api.Features.Projects
             /// If true, Directory Ids will be appended to their names to be optionally preserved on Import
             /// </summary>
             public bool IncludeIds { get; set; }
+
+            /// <summary>
+            /// If true, Directory and Workspace settings are included in the archive so that they
+            /// can be restored on Import. Set to false when the archive will be imported by an
+            /// older instance of Caster that does not understand them.
+            /// </summary>
+            public bool IncludeSettings { get; set; } = true;
         }
 
         public class Handler(
@@ -52,7 +59,7 @@ namespace Caster.Api.Features.Projects
                 if (project == null)
                     throw new EntityNotFoundException<Project>();
 
-                return await archiveService.ArchiveProject(project, request.ArchiveType, request.IncludeIds);
+                return await archiveService.ArchiveProject(project, request.ArchiveType, request.IncludeIds, request.IncludeSettings);
             }
         }
     }

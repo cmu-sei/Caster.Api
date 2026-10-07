@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -69,6 +70,16 @@ namespace Caster.Api.Features.Directories
             /// they were locked or the current user does not have permission to lock them
             /// </summary>
             public string[] LockedFiles { get; set; }
+
+            /// <summary>
+            /// A list of settings carried by the archive that could not be applied
+            /// </summary>
+            public string[] SkippedSettings { get; set; }
+
+            /// <summary>
+            /// A list of non-fatal problems found with the archive
+            /// </summary>
+            public string[] Warnings { get; set; }
         }
 
         public class Handler(
@@ -90,23 +101,39 @@ namespace Caster.Api.Features.Directories
                 if (directory == null)
                     throw new EntityNotFoundException<Directory>();
 
-                Domain.Models.Directory extractedDirectory;
+                ArchiveExtractResult<Domain.Models.Directory> extracted;
 
                 using (var memStream = new System.IO.MemoryStream())
                 {
                     await request.Archive.CopyToAsync(memStream, cancellationToken);
                     memStream.Position = 0;
-                    extractedDirectory = archiveService.ExtractDirectory(memStream, request.Archive.FileName);
+                    extracted = archiveService.ExtractDirectory(memStream, request.Archive.FileName);
                 }
 
                 var directories = await dbContext.GetDirectoryWithChildren(directory.Id, cancellationToken);
-                var importResult = await importService.ImportDirectory(directory, extractedDirectory, request.PreserveIds, cancellationToken);
+                var importResult = await importService.ImportDirectory(directory, extracted.Entity, request.PreserveIds, cancellationToken);
+
+                importResult.SkippedSettings = extracted.SkippedSettings;
+                importResult.Warnings = GetWarnings(extracted, directory.Name);
 
                 var entries = dbContext.GetUpdatedEntries();
                 await dbContext.SaveChangesAsync(cancellationToken);
                 await this.PublishEvents(entries);
 
                 return mapper.Map<ImportDirectoryResult>(importResult);
+            }
+
+            private static List<string> GetWarnings(ArchiveExtractResult extracted, string targetName)
+            {
+                var warnings = new List<string>(extracted.Warnings);
+                var sourceName = extracted.Manifest?.Source?.Name;
+
+                if (!string.IsNullOrEmpty(sourceName) && !sourceName.Equals(targetName, StringComparison.Ordinal))
+                {
+                    warnings.Add($"This archive was exported from '{sourceName}', which does not match '{targetName}'.");
+                }
+
+                return warnings;
             }
 
             private async Task PublishEvents(EntityEntry[] entries)

@@ -63,6 +63,8 @@ namespace Caster.Api.Domain.Services
                             existingDir = new Directory(directory.Name);
                         }
 
+                        ApplySettings(directory, existingDir);
+
                         _db.Entry(existingDir).State = EntityState.Added;
                         existingDir.ProjectId = existingProject.Id;
                         existingProject.Directories.Add(existingDir);
@@ -122,6 +124,7 @@ namespace Caster.Api.Domain.Services
                 if (dbWorkspace == null)
                 {
                     var newWorkspace = new Workspace(workspace.Name, existingDir);
+                    ApplySettings(workspace, newWorkspace);
                     existingDir.Workspaces.Add(newWorkspace);
                     workspaceToUse = newWorkspace;
                 }
@@ -191,6 +194,7 @@ namespace Caster.Api.Domain.Services
                     }
 
                     var newDir = new Directory(directory.Name, existingDir, id);
+                    ApplySettings(directory, newDir);
                     existingDir.Children.Add(newDir);
                     childDirToUse = newDir;
                     _db.Entry(newDir).State = EntityState.Added;
@@ -205,6 +209,26 @@ namespace Caster.Api.Domain.Services
             {
                 LockedFiles = lockedFiles
             };
+        }
+
+        /// <summary>
+        /// Settings only travel onto entities the Import creates. An entity that already exists
+        /// keeps whatever it is configured with, so re-importing over a Project cannot silently
+        /// reconfigure it. Host assignment and state are deliberately not carried by an archive.
+        /// </summary>
+        private static void ApplySettings(Directory source, Directory target)
+        {
+            target.TerraformVersion = source.TerraformVersion;
+            target.Parallelism = source.Parallelism;
+            target.AzureDestroyFailureThresholdEnabled = source.AzureDestroyFailureThresholdEnabled;
+            target.AzureDestroyFailureThreshold = source.AzureDestroyFailureThreshold;
+        }
+
+        private static void ApplySettings(Workspace source, Workspace target)
+        {
+            target.TerraformVersion = source.TerraformVersion;
+            target.Parallelism = source.Parallelism;
+            target.AzureDestroyFailureThreshold = source.AzureDestroyFailureThreshold;
         }
 
         private class FileUpdateResult

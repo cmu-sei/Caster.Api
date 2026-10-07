@@ -75,6 +75,7 @@ namespace Caster.Api.Features.Workspaces
         {
             public CommandValidator(IValidationService validationService, TerraformOptions options)
             {
+                RuleFor(x => x.Name).NotAReservedName("Workspace").When(x => x.Name != null);
                 RuleFor(x => x.DirectoryId.Value).DirectoryExists(validationService).When(x => x.DirectoryId.HasValue);
                 RuleFor(x => x.Parallelism.Value.Value)
                     .ParalellismValidation(options)
