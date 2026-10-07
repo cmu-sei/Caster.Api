@@ -35,13 +35,16 @@ public class ProcessTerraformService : BaseTerraformService
 
     private string GetBinaryPath(Workspace workspace)
     {
-        return Path.Combine(
-            _options.BinaryPath,
-            string.IsNullOrEmpty(workspace.TerraformVersion) ?
-                _options.DefaultVersion :
-                workspace.TerraformVersion,
-            _binaryName
-        );
+        var version = string.IsNullOrEmpty(workspace.TerraformVersion) ?
+            _options.DefaultVersion :
+            workspace.TerraformVersion;
+
+        if (!IsValidVersion(version))
+        {
+            throw new ArgumentException("Unauthorized version specified.");
+        }
+
+        return Path.Combine(_options.BinaryPath, version, _binaryName);
     }
 
     protected override async Task<TerraformResult> Run(Workspace workspace,
@@ -138,11 +141,14 @@ public class ProcessTerraformService : BaseTerraformService
 
     public override bool IsValidVersion(string version)
     {
-        var path = Path.Combine(
-            _options.BinaryPath,
-            version);
+        // Match against the installed version directory names rather than probing
+        // Path.Combine(BinaryPath, version), which accepts "..", nested and rooted paths
+        if (string.IsNullOrEmpty(version) || !System.IO.Directory.Exists(_options.BinaryPath))
+        {
+            return false;
+        }
 
-        return System.IO.Directory.Exists(path);
+        return GetVersions().Contains(version, StringComparer.Ordinal);
     }
 
     public override IEnumerable<string> GetVersions()
