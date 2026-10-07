@@ -18,8 +18,10 @@ using Microsoft.Extensions.Logging;
 namespace Caster.Api.Domain.Services.Inventory;
 
 /// <summary>
-/// Reads inventory from a provider. Kept behind an interface so it can be faked
-/// in tests, since there is no vCenter available to the test suite.
+/// Reads inventory from whichever provider is configured. Kept behind an
+/// interface so it can be faked in tests, since there is no provider available to
+/// the test suite. The implementation registered in the container is
+/// <see cref="InventoryProviderDispatcher"/>, not a single provider.
 /// </summary>
 public interface IInventoryProviderClient
 {
@@ -33,9 +35,13 @@ public interface IInventoryProviderClient
 /// </summary>
 public class VsphereInventoryClient(
     IHttpClientFactory httpClientFactory,
-    ILogger<VsphereInventoryClient> logger) : IInventoryProviderClient
+    ILogger<VsphereInventoryClient> logger) : IInventoryProvider
 {
     public const string HttpClientName = "vsphere-inventory";
+
+    string IInventoryProvider.Provider => InfrastructureProviders.Vsphere;
+
+    string IInventoryProvider.HttpClientName => HttpClientName;
 
     private const string SessionHeader = "vmware-api-session-id";
     private const string SessionPath = "api/session";
@@ -50,11 +56,8 @@ public class VsphereInventoryClient(
 
     public async Task<InventorySnapshot> GetInventoryAsync(InfrastructureOptions options, CancellationToken cancellationToken)
     {
-        if (!string.Equals(options.Provider, InfrastructureProviders.Vsphere, StringComparison.OrdinalIgnoreCase))
-        {
-            return InventorySnapshot.AllUnavailable(InventoryMessages.UnsupportedProvider(options.Provider));
-        }
-
+        // Provider selection lives in InventoryProviderDispatcher, so reaching
+        // this method means vsphere was asked for.
         if (string.IsNullOrWhiteSpace(options.Url) ||
             string.IsNullOrWhiteSpace(options.Username) ||
             string.IsNullOrWhiteSpace(options.Password))
@@ -338,17 +341,8 @@ public class VsphereInventoryClient(
         }
     }
 
-    /// <summary>
-    /// Last line of defence so a provider error string can never carry the
-    /// configured password out to an api response or a log line.
-    /// </summary>
-    private static string Redact(string message, InfrastructureOptions options)
-    {
-        if (string.IsNullOrEmpty(message) || string.IsNullOrEmpty(options?.Password))
-            return message;
-
-        return message.Replace(options.Password, "***");
-    }
+    private static string Redact(string message, InfrastructureOptions options) =>
+        InventoryRedaction.Redact(message, options);
 
     #endregion
 

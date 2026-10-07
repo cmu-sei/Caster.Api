@@ -191,13 +191,49 @@ namespace Caster.Api.Infrastructure.Extensions
         #endregion
 
         /// <summary>
-        /// Registers the read-only infrastructure inventory reader. Safe to call
+        /// Registers the read-only infrastructure inventory readers. Safe to call
         /// when the feature is disabled or unconfigured - nothing connects until
         /// the background service runs and finds Infrastructure:Enabled true.
+        /// <para>
+        /// Every provider is registered as an <see cref="IInventoryProvider"/>
+        /// with its own named http client, and the only
+        /// <see cref="IInventoryProviderClient"/> in the container is the
+        /// dispatcher that picks between them. So nothing but configuration
+        /// decides which provider runs, and an unconfigured provider costs
+        /// nothing but a registration.
+        /// </para>
         /// </summary>
         public static void AddInventoryServices(this IServiceCollection services)
         {
-            services.AddHttpClient(VsphereInventoryClient.HttpClientName, client =>
+            services.AddInventoryHttpClient(VsphereInventoryClient.HttpClientName);
+
+            services.AddInventoryHttpClient(ProxmoxInventoryClient.HttpClientName, handler =>
+            {
+                // The ticket auth path sets the PVEAuthCookie header itself, which
+                // the handler's own cookie container would otherwise fight over.
+                handler.UseCookies = false;
+            });
+
+            services.AddSingleton<IInventoryProvider, VsphereInventoryClient>();
+            services.AddSingleton<IInventoryProvider, ProxmoxInventoryClient>();
+
+            services.AddSingleton<IInventoryProviderClient, InventoryProviderDispatcher>();
+        }
+
+        /// <summary>
+        /// One named http client per inventory provider, so each gets its own
+        /// timeout and its own TLS handler.
+        /// </summary>
+        /// <remarks>
+        /// InsecureSkipVerify is read when the handler is built, so toggling it at
+        /// runtime only takes effect after handler rotation.
+        /// </remarks>
+        private static void AddInventoryHttpClient(
+            this IServiceCollection services,
+            string name,
+            Action<HttpClientHandler> configureHandler = null)
+        {
+            services.AddHttpClient(name, client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(60);
             })
@@ -212,10 +248,10 @@ namespace Caster.Api.Infrastructure.Extensions
                         HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
                 }
 
+                configureHandler?.Invoke(handler);
+
                 return handler;
             });
-
-            services.AddSingleton<IInventoryProviderClient, VsphereInventoryClient>();
         }
 
         public static void AddTerraformServices(this IServiceCollection services, TerraformOptions terraformOptions)

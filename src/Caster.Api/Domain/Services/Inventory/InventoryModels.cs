@@ -3,6 +3,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Caster.Api.Infrastructure.Options;
 
 namespace Caster.Api.Domain.Services.Inventory;
 
@@ -23,7 +25,8 @@ public enum InventoryCategory
 public class InventoryEntry
 {
     /// <summary>
-    /// Provider native identifier, e.g. a vSphere managed object id like "vm-1024".
+    /// Provider native identifier, e.g. a vSphere managed object id like
+    /// "vm-1024", or a Proxmox resource id like "qemu/105".
     /// </summary>
     public string Id { get; set; }
 
@@ -128,12 +131,39 @@ public static class InventoryMessages
     public const string NotConfigured = "Infrastructure inventory is enabled but the provider connection is incomplete. Infrastructure:Url, Infrastructure:Username and Infrastructure:Password are all required.";
 
     /// <summary>
+    /// Proxmox accepts either an api token or a username/password ticket, so its
+    /// "incomplete" case is different from vSphere's.
+    /// </summary>
+    public const string ProxmoxNotConfigured = "Infrastructure inventory is enabled but the Proxmox connection is incomplete. Infrastructure:Url is required, plus either Infrastructure:ApiToken or both Infrastructure:Username and Infrastructure:Password.";
+
+    /// <summary>
+    /// Deliberately describes the shape without ever echoing the configured value.
+    /// </summary>
+    public const string ProxmoxApiTokenMalformed = "Infrastructure:ApiToken is not a valid Proxmox api token. It must be a single string of the form 'user@realm!tokenid=secret'.";
+
+    /// <summary>
     /// ISO discovery requires datastore file browsing. The vSphere Automation
     /// REST api does not expose it, so the category is reported as unsupported
     /// rather than silently empty. Tracked as CRU-2828.
+    /// <para>
+    /// vSphere only. Proxmox lists storage content over rest, so the proxmox
+    /// provider returns real ISOs and never uses this message.
+    /// </para>
     /// </summary>
     public const string IsoNotSupported = "ISO discovery is not supported by the vSphere Automation REST API. Listing ISO files requires datastore file browsing, which is only available through the vim25 (SOAP) API. Enter ISO paths manually for now.";
 
     public static string UnsupportedProvider(string provider) =>
-        $"Infrastructure provider '{provider}' is not supported. Only 'vsphere' is implemented.";
+        $"Infrastructure provider '{provider}' is not supported. Supported providers are {Quoted(InfrastructureProviders.All)}.";
+
+    private static string Quoted(IReadOnlyList<string> values)
+    {
+        var quoted = values.Select(x => $"'{x}'").ToArray();
+
+        return quoted.Length switch
+        {
+            0 => "none",
+            1 => quoted[0],
+            _ => $"{string.Join(", ", quoted.Take(quoted.Length - 1))} and {quoted[^1]}"
+        };
+    }
 }

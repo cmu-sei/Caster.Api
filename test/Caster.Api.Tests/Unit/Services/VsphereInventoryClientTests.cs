@@ -242,15 +242,18 @@ namespace Caster.Api.Tests.Unit.Services
         }
 
         [Fact]
-        public async Task GetInventoryAsync_UnsupportedProvider_ReportsUnsupported()
+        public async Task GetInventoryAsync_DoesNotDispatchOnTheProviderName()
         {
+            // Provider selection moved to InventoryProviderDispatcher, so this
+            // client must read vCenter whenever it is called and never inspect
+            // Infrastructure:Provider itself.
             var options = Options();
-            options.Provider = "proxmox";
+            options.Provider = "something-else";
 
             var snapshot = await Read(DefaultResponder(), options);
 
-            AssertAllUnavailable(snapshot);
-            Assert.All(AllErrors(snapshot), x => Assert.Equal(InventoryMessages.UnsupportedProvider("proxmox"), x));
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.Equal(2, snapshot.VmTemplates.Entries.Length);
         }
 
         #region Helpers

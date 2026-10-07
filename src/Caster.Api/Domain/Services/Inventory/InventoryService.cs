@@ -146,12 +146,8 @@ public class InventoryService : BackgroundService, IInventoryService
         {
             _logger.LogError(ex, "Exception getting infrastructure inventory.");
 
-            var message = $"Could not read the infrastructure inventory: {ex.Message}";
-
-            if (!string.IsNullOrEmpty(options.Password))
-            {
-                message = message.Replace(options.Password, "***");
-            }
+            var message = InventoryRedaction.Redact(
+                $"Could not read the infrastructure inventory: {ex.Message}", options);
 
             _snapshot = InventorySnapshot.AllUnavailable(message, _snapshot?.LastUpdated);
         }
