@@ -11,6 +11,7 @@ using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Modules;
 using System;
 using System.Linq;
 using Caster.Api.Features.Shared;
@@ -52,7 +53,7 @@ namespace Caster.Api.Features.Modules
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
             CasterContext dbContext,
-            IGitlabRepositoryService gitlabRepositoryService) : BaseHandler<Query, Module[]>
+            IModuleRepositoryService moduleRepositoryService) : BaseHandler<Query, Module[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
@@ -68,13 +69,13 @@ namespace Caster.Api.Features.Modules
 
             public override async Task<Module[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                // TODO: add handling for other repositories?
-                // get all modules from the repository and update the database
-                try
-                {
-                    await gitlabRepositoryService.GetModulesAsync(request.ForceUpdate, cancellationToken);
-                }
-                catch (Exception) { }
+                // Sync every configured module source into the database first.
+                // Failures propagate on purpose: this used to swallow every
+                // exception, which made an unconfigured or broken module source
+                // indistinguishable from a repository that genuinely has no
+                // Modules. See ModuleSourceNotConfiguredException (503) and
+                // ModuleSyncException (502).
+                await moduleRepositoryService.GetModulesAsync(request.ForceUpdate, cancellationToken);
 
                 IQueryable<Domain.Models.Module> query = dbContext.Modules;
 

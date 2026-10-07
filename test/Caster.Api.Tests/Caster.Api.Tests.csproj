@@ -21,6 +21,10 @@
     <None Update="Data/terraform.tfstate" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Data/plan.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Data/gitlab-modules.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Real Terraform module declarations copied from the Crucible module
+         catalog, used as the module source fixture. Hand-written JSON would not
+         exercise the loader's object-form / omitted-default constraints. -->
+    <Content Include="Data/catalog/**/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Integration" />

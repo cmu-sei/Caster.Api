@@ -16,6 +16,23 @@ public class TerraformOptions
     public string GitlabApiUrl { get; set; }
     public string GitlabToken { get; set; }
     public int? GitlabGroupId { get; set; }
+
+    /// <summary>
+    /// Plain git repositories to discover Terraform Modules in, in addition to
+    /// the legacy Gitlab group named by <see cref="GitlabApiUrl"/> and
+    /// <see cref="GitlabGroupId"/>. The two are independent: configuring either
+    /// one, both, or neither are all valid, and an existing Gitlab-only
+    /// deployment needs no change here.
+    /// </summary>
+    public ModuleSourceOptions[] ModuleSources { get; set; } = [];
+
+    /// <summary>
+    /// Seconds any single git command (ls-remote, clone, log) may run before it
+    /// is killed. Guards against a module source that accepts a connection and
+    /// then never answers. 0 or less means no timeout.
+    /// </summary>
+    public int ModuleSourceTimeoutSeconds { get; set; } = 120;
+
     public int StateRetryCount { get; set; }
     public int StateRetryIntervalSeconds { get; set; }
     public int? AzureDestroyFailureThreshhold { get; set; }

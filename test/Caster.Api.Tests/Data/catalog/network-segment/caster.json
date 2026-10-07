@@ -1,0 +1,48 @@
+{
+  "displayName": "Network Segment",
+  "category": "Network",
+  "icon": "mdi-lan",
+  "description": "Create an isolated layer 2 segment as a distributed port group on an existing distributed switch.",
+  "variables": {
+    "name": {
+      "displayName": "Name",
+      "inventory": null,
+      "group": "Identity"
+    },
+    "datacenter": {
+      "displayName": "Datacenter",
+      "inventory": "datacenter",
+      "group": "Placement"
+    },
+    "distributed_switch": {
+      "displayName": "Distributed Switch",
+      "inventory": "distributed_switch",
+      "group": "Placement"
+    },
+    "vlan_id": {
+      "displayName": "VLAN ID",
+      "inventory": null,
+      "group": "Segment"
+    },
+    "number_of_ports": {
+      "displayName": "Port Count",
+      "inventory": null,
+      "group": "Segment"
+    },
+    "allow_promiscuous": {
+      "displayName": "Allow Promiscuous Mode",
+      "inventory": null,
+      "group": "Security"
+    },
+    "allow_spoofing": {
+      "displayName": "Allow MAC Spoofing",
+      "inventory": null,
+      "group": "Security"
+    },
+    "annotation": {
+      "displayName": "Notes",
+      "inventory": null,
+      "group": "Identity"
+    }
+  }
+}

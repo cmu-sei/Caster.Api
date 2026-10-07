@@ -1,0 +1,69 @@
+{
+  "variable": {
+    "name": {
+      "description": "Name of the virtual machine as it will appear in vCenter inventory.",
+      "type": "string"
+    },
+    "datacenter": {
+      "description": "Name of the vCenter datacenter that contains the target inventory.",
+      "type": "string"
+    },
+    "cluster": {
+      "description": "Name of the vSphere compute cluster whose root resource pool will own the virtual machine.",
+      "type": "string"
+    },
+    "host_name": {
+      "description": "Optional ESXi host to pin the virtual machine to. Leave empty to let the cluster place it.",
+      "type": "string",
+      "default": ""
+    },
+    "datastore": {
+      "description": "Name of the datastore that will hold the virtual machine's disks.",
+      "type": "string"
+    },
+    "folder": {
+      "description": "Optional vCenter VM folder path, relative to the datacenter. Leave empty for the datacenter root.",
+      "type": "string",
+      "default": ""
+    },
+    "network_name": {
+      "description": "Name of the port group that the primary network adapter attaches to.",
+      "type": "string"
+    },
+    "num_cpus": {
+      "description": "Number of virtual CPUs.",
+      "type": "number",
+      "default": 2
+    },
+    "memory_mb": {
+      "description": "Guest memory size in megabytes.",
+      "type": "number",
+      "default": 4096
+    },
+    "disk_size_gb": {
+      "description": "Size of the primary disk in gigabytes.",
+      "type": "number",
+      "default": 40
+    },
+    "guest_id": {
+      "description": "VMware guest OS identifier, for example ubuntu64Guest, windows2019srvNext_64Guest or otherGuest64.",
+      "type": "string",
+      "default": "otherGuest64"
+    },
+    "firmware": {
+      "description": "Boot firmware for the virtual machine. Must be bios or efi.",
+      "type": "string",
+      "default": "efi"
+    },
+    "wait_for_guest_ip_timeout": {
+      "description": "Minutes to wait for VMware Tools to report a network address. Set to 0 to disable the wait, which is required for a machine with no installed operating system.",
+      "type": "number",
+      "default": 0
+    },
+    "annotation": {
+      "description": "Free-form notes recorded on the created object.",
+      "type": "string",
+      "default": ""
+    }
+  }
+}

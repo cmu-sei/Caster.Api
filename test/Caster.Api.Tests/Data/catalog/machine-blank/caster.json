@@ -1,0 +1,78 @@
+{
+  "displayName": "Blank Machine",
+  "category": "Compute",
+  "icon": "mdi-server-plus",
+  "description": "Create an empty virtual machine with no template and no media, sized for a later operating system install.",
+  "variables": {
+    "name": {
+      "displayName": "Name",
+      "inventory": null,
+      "group": "Identity"
+    },
+    "datacenter": {
+      "displayName": "Datacenter",
+      "inventory": "datacenter",
+      "group": "Placement"
+    },
+    "cluster": {
+      "displayName": "Cluster",
+      "inventory": "cluster",
+      "group": "Placement"
+    },
+    "host_name": {
+      "displayName": "ESXi Host",
+      "inventory": "host",
+      "group": "Placement"
+    },
+    "datastore": {
+      "displayName": "Datastore",
+      "inventory": "datastore",
+      "group": "Placement"
+    },
+    "folder": {
+      "displayName": "VM Folder",
+      "inventory": "folder",
+      "group": "Placement"
+    },
+    "network_name": {
+      "displayName": "Network",
+      "inventory": "network",
+      "group": "Network"
+    },
+    "num_cpus": {
+      "displayName": "vCPUs",
+      "inventory": null,
+      "group": "Hardware"
+    },
+    "memory_mb": {
+      "displayName": "Memory (MB)",
+      "inventory": null,
+      "group": "Hardware"
+    },
+    "disk_size_gb": {
+      "displayName": "Disk Size (GB)",
+      "inventory": null,
+      "group": "Hardware"
+    },
+    "guest_id": {
+      "displayName": "Guest OS ID",
+      "inventory": null,
+      "group": "Hardware"
+    },
+    "firmware": {
+      "displayName": "Firmware",
+      "inventory": null,
+      "group": "Hardware"
+    },
+    "wait_for_guest_ip_timeout": {
+      "displayName": "Guest IP Wait (minutes)",
+      "inventory": null,
+      "group": "Lifecycle"
+    },
+    "annotation": {
+      "displayName": "Notes",
+      "inventory": null,
+      "group": "Identity"
+    }
+  }
+}
