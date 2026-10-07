@@ -25,6 +25,8 @@ using Microsoft.OpenApi;
 using k8s;
 using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Inventory;
+using Microsoft.Extensions.Options;
 
 namespace Caster.Api.Infrastructure.Extensions
 {
@@ -187,6 +189,34 @@ namespace Caster.Api.Infrastructure.Extensions
         }
 
         #endregion
+
+        /// <summary>
+        /// Registers the read-only infrastructure inventory reader. Safe to call
+        /// when the feature is disabled or unconfigured - nothing connects until
+        /// the background service runs and finds Infrastructure:Enabled true.
+        /// </summary>
+        public static void AddInventoryServices(this IServiceCollection services)
+        {
+            services.AddHttpClient(VsphereInventoryClient.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(60);
+            })
+            .ConfigurePrimaryHttpMessageHandler(sp =>
+            {
+                var options = sp.GetRequiredService<IOptionsMonitor<InfrastructureOptions>>().CurrentValue;
+                var handler = new HttpClientHandler();
+
+                if (options.InsecureSkipVerify)
+                {
+                    handler.ServerCertificateCustomValidationCallback =
+                        HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                }
+
+                return handler;
+            });
+
+            services.AddSingleton<IInventoryProviderClient, VsphereInventoryClient>();
+        }
 
         public static void AddTerraformServices(this IServiceCollection services, TerraformOptions terraformOptions)
         {
