@@ -1,0 +1,8 @@
+root = true
+
+[*.cs]
+
+# A skipped test reports nothing. A defect found while testing is characterized by a passing test of the
+# current behaviour, never parked with Skip. Runtime conditional skips (Assert.SkipWhen, SkipUnless) are
+# unaffected. (agent-docs/api-testing/editorconfig)
+dotnet_diagnostic.xUnit1004.severity = warning
