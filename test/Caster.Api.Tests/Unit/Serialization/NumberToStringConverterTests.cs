@@ -18,7 +18,7 @@ namespace Caster.Api.Tests.Unit.Serialization
     public class NumberToStringConverterTests
     {
         private static string DefaultOf(string variablesJson, string name) =>
-            GitlabModuleVariableResponse
+            ModuleVariableResponse
                 .GetModuleVariables(Encoding.UTF8.GetBytes(variablesJson))
                 .Single(x => x.Name == name)
                 .DefaultValue;

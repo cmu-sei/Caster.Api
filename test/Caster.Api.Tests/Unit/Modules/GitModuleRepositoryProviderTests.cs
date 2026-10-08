@@ -293,14 +293,8 @@ namespace Caster.Api.Tests.Unit.Modules
             Assert.True(promiscuous.IsOptional);
             Assert.Equal("bool", promiscuous.VariableType);
 
-            // Pre-existing bug, asserted so it is visible rather than silent:
-            // NumberToStringConverter falls through to JsonElement.ToString()
-            // for a JSON boolean, which yields .NET casing. Terraform only
-            // accepts lowercase true/false, so a designer who accepts this
-            // default unedited generates HCL terraform rejects. The converter is
-            // shared with the Gitlab path, so correcting it is a change in
-            // behaviour for existing deployments and is left to its own change.
-            Assert.Equal("False", promiscuous.DefaultValue);
+            // Terraform only accepts lowercase true/false.
+            Assert.Equal("false", promiscuous.DefaultValue);
         }
 
         [Fact]
