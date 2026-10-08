@@ -23,6 +23,16 @@ namespace Caster.Api.Infrastructure.Serialization
             if(reader.TokenType == JsonTokenType.String) {
                 return reader.GetString();
             }
+            // Booleans must keep Terraform's lower-case spelling. Without these two cases
+            // they fall through to JsonElement.ToString() below, which renders .NET casing
+            // ("True"/"False") -- not valid HCL, so a module default taken unedited produces
+            // a file Terraform rejects. See CRU-2054.
+            if(reader.TokenType == JsonTokenType.True) {
+                return "true";
+            }
+            if(reader.TokenType == JsonTokenType.False) {
+                return "false";
+            }
             using(JsonDocument document = JsonDocument.ParseValue(ref reader)){
                 return document.RootElement.Clone().ToString();
             }
