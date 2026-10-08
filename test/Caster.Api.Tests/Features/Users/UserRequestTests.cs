@@ -119,6 +119,20 @@ public class UserRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task Create_by_a_caller_holding_ManageUsers_stores_a_user_without_a_role()
+    {
+        var id = Guid.NewGuid();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/users", new { id, name = "Created" }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        var stored = await StoredUser(id);
+        Assert.Equal("Created", stored.Name);
+        Assert.Null(stored.RoleId);
+    }
+
+    [Fact]
     public async Task Create_is_forbidden_for_a_caller_holding_only_ViewUsers()
     {
         var id = Guid.NewGuid();
@@ -130,6 +144,20 @@ public class UserRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.Null(await StoredUser(id));
     }
 
+    /// <summary>A caller holding only ManageUsers creates a user with the Administrator role.</summary>
+    [Fact]
+    public async Task Create_lets_a_caller_holding_only_ManageUsers_create_an_Administrator()
+    {
+        var id = Guid.NewGuid();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/users", new { id, name = "Created", roleId = TestData.Roles.Administrator.ToString() }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        Assert.Equal(TestData.Roles.Administrator, (await StoredUser(id)).RoleId);
+    }
+
     /// <summary>An id another user already has is answered with a 500 on create.</summary>
     [Fact]
     public async Task Create_answers_an_id_that_is_already_taken_with_a_server_error()
@@ -138,7 +166,9 @@ public class UserRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
 
         var response = await RootClient.PostAsJsonAsync("api/users", new { id = user.Id, name = "Again" }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
     }
 
     [Fact]
@@ -152,6 +182,33 @@ public class UserRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
 
         await AssertStatus(HttpStatusCode.OK, response);
         Assert.Equal(TestData.Roles.ContentDeveloper, (await StoredUser(user.Id)).RoleId);
+    }
+
+    [Fact]
+    public async Task Edit_by_a_caller_holding_ManageUsers_without_a_role_stores_the_new_name()
+    {
+        var user = await SeedUser();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/users/{user.Id}", new { name = "Renamed" }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredUser(user.Id);
+        Assert.Equal("Renamed", stored.Name);
+        Assert.Null(stored.RoleId);
+    }
+
+    /// <summary>A caller holding only ManageUsers gives itself the Administrator role.</summary>
+    [Fact]
+    public async Task Edit_lets_a_caller_holding_only_ManageUsers_give_itself_the_Administrator_role()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageUsers).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/users/{actor.Id}", new { name = actor.Name, roleId = TestData.Roles.Administrator.ToString() }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal(TestData.Roles.Administrator, (await StoredUser(actor.Id)).RoleId);
     }
 
     [Fact]

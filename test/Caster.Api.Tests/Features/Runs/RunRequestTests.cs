@@ -263,7 +263,9 @@ public class RunRequestTests(DatabaseFixture fixture, CasterAppFactory factory) 
 
         var response = await RootClient.PostAsync($"api/runs/{run.Id}/actions/reject", null, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Equal("Cannot reject a Run with a Plan in progress. Please try again when it has completed.", problem.Detail);
     }
 
     [Fact]
@@ -321,7 +323,9 @@ public class RunRequestTests(DatabaseFixture fixture, CasterAppFactory factory) 
 
         var response = await RootClient.PostAsJsonAsync($"api/runs/{run.Id}/actions/cancel", new { force = false }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Equal("Cannot cancel a Run that is not queued or in progress", problem.Detail);
     }
 
     [Fact]

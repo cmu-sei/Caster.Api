@@ -61,10 +61,10 @@ public class ExceptionMiddlewareTests(DatabaseFixture fixture, CasterAppFactory 
         Assert.True(body.RootElement.GetProperty("errors").TryGetProperty("DirectoryId", out _));
     }
 
+    // Same case as ModuleRequestTests.Get_with_a_malformed_id_answers_with_a_server_error.
     [Fact]
     public async Task An_unhandled_exception_is_a_500_whose_detail_is_the_message_without_a_stack_trace()
     {
-        // Same case as Get_with_a_malformed_id_answers_with_a_server_error.
         var problem = await AssertProblem(HttpStatusCode.InternalServerError, await RootClient.GetAsync("api/modules/not-a-guid", Ct));
 
         Assert.Equal("A server error occurred.", problem.Title);

@@ -165,7 +165,9 @@ public class GroupRequestTests(DatabaseFixture fixture, CasterAppFactory factory
 
         var response = await RootClient.PostAsJsonAsync("api/groups", new { name = "Taken" }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
     }
 
     [Fact]
@@ -214,7 +216,9 @@ public class GroupRequestTests(DatabaseFixture fixture, CasterAppFactory factory
 
         var response = await RootClient.PutAsJsonAsync("api/groups", new { id = group.Id, name = "Taken" }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
     }
 
     [Fact]

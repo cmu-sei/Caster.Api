@@ -1,7 +1,7 @@
 // Copyright 2026 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
-// Caster's claims cache and IdP groups, plus the Terraform directories, whose shipped empty
+// Caster's claims cache, plus the Terraform directories, whose shipped empty
 // values make the version validators and GET terraform/versions throw.
 
 using System;
@@ -48,10 +48,6 @@ internal static class TestConfiguration
         // claims would leak across tests: a user whose permissions one test seeds would keep them in the
         // next test that uses the same id.
         ["ClaimsTransformation:EnableCaching"] = "false",
-
-        // Group memberships come from the rows a test seeds, so that one mechanism decides what an actor may
-        // do. UserClaimsServiceTests covers reading groups and roles from the token.
-        ["ClaimsTransformation:UseGroupsFromIdP"] = "false",
 
         // The shipped values are empty: Directory.EnumerateDirectories("") throws, so GET
         // terraform/versions would be a 500 and every TerraformVersion on a workspace would be refused.

@@ -127,7 +127,23 @@ public class ProjectMembershipRequestTests(DatabaseFixture fixture, CasterAppFac
     // ---- POST api/projects/{projectId}/memberships ----------------------------------------------
 
     [Fact]
-    public async Task CreateMembership_by_a_member_holding_ManageProject_adds_the_user_with_the_member_role()
+    public async Task CreateMembership_by_a_member_holding_ManageProject_and_the_member_roles_permissions_adds_the_user_with_the_member_role()
+    {
+        var project = await SeedProject();
+        var user = await SeedUser();
+        var actor = await Actor()
+            .OnProject(project, [ProjectPermission.ManageProject, ProjectPermission.ViewProject, ProjectPermission.EditProject, ProjectPermission.ImportProject])
+            .SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/projects/{project.Id}/memberships", new { userId = user.Id }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        Assert.Equal(TestData.ProjectRoles.Member, (await StoredMembership(project.Id, user.Id)).RoleId);
+    }
+
+    /// <summary>A caller holding only ManageProject adds a user with the Member role, which grants permissions the caller does not hold.</summary>
+    [Fact]
+    public async Task CreateMembership_lets_a_caller_holding_only_ManageProject_grant_the_Member_role()
     {
         var project = await SeedProject();
         var user = await SeedUser();
@@ -232,7 +248,23 @@ public class ProjectMembershipRequestTests(DatabaseFixture fixture, CasterAppFac
     // ---- PUT api/projects/memberships -----------------------------------------------------------
 
     [Fact]
-    public async Task EditMembership_by_a_member_holding_ManageProject_stores_the_new_role()
+    public async Task EditMembership_by_a_member_holding_ManageProject_and_ViewProject_stores_the_Observer_role()
+    {
+        var project = await SeedProject();
+        var user = await SeedUser();
+        var membership = TestData.ProjectMembership(project.Id, TestData.ProjectRoles.Member, userId: user.Id);
+        await Seed(membership);
+        var actor = await Actor().OnProject(project, [ProjectPermission.ManageProject, ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync("api/projects/memberships", new { id = membership.Id, roleId = TestData.ProjectRoles.Observer }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal(TestData.ProjectRoles.Observer, (await StoredMembership(project.Id, user.Id)).RoleId);
+    }
+
+    /// <summary>A caller holding only ManageProject gives a member the Manager role.</summary>
+    [Fact]
+    public async Task EditMembership_lets_a_caller_holding_only_ManageProject_grant_the_Manager_role()
     {
         var (project, membership) = await SeedProjectWithAMember();
         var actor = await Actor().OnProject(project, [ProjectPermission.ManageProject]).SeedAsync();

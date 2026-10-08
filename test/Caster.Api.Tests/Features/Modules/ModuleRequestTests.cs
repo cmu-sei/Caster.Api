@@ -56,7 +56,8 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     [Fact]
     public async Task Get_with_a_malformed_id_answers_with_a_server_error()
     {
-        await AssertProblem(HttpStatusCode.InternalServerError, await RootClient.GetAsync("api/modules/not-a-guid", Ct));
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, await RootClient.GetAsync("api/modules/not-a-guid", Ct));
+        Assert.Equal("Unrecognized Guid format.", problem.Detail);
     }
 
     [Fact]
@@ -95,20 +96,24 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
 
         var response = await Client(actor).GetAsync($"api/modules/{module.Id}/versions", Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.StartsWith("The LINQ expression 'dtoModuleVariable => new ModuleVariable", problem.Detail);
     }
 
+    // Same case as GetVersions_answers_a_member_of_any_project_with_a_server_error.
     [Fact]
     public async Task GetVersions_answers_a_caller_holding_ViewModules_with_a_server_error()
     {
-        // Same case as GetVersions_answers_a_member_of_any_project_with_a_server_error.
         var module = TestData.Module();
         await Seed(module);
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewModules).SeedAsync();
 
         var response = await Client(actor).GetAsync($"api/modules/{module.Id}/versions", Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.StartsWith("The LINQ expression 'dtoModuleVariable => new ModuleVariable", problem.Detail);
     }
 
     [Fact]
@@ -128,7 +133,9 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
 
         var response = await Client(actor).PostAsJsonAsync("api/modules", new { name = "network", path = "modules/network" }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Matches(@"^Missing type map configuration or unsupported mapping\.[\s\S]*Modules\.Create\+Command -> Caster\.Api\.Domain\.Models\.Module$", problem.Detail);
         await using var context = NewContext();
         Assert.False(await context.Modules.AnyAsync(x => x.Path == "modules/network", Ct));
     }

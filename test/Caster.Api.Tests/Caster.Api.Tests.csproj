@@ -50,6 +50,8 @@
     <!-- Hosts the API in process over TestServer, so the tests drive the real Startup. -->
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.1" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.15.0" />
+    <!-- The client for ProjectHub's real-connection tests (Hubs/ProjectHubConnectionTests.cs). -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.1" />
   </ItemGroup>
 
   <ItemGroup>

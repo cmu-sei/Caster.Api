@@ -54,6 +54,16 @@ public class TerraformRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     [Fact]
+    public async Task GetMaxParallelism_returns_the_configured_value_to_a_caller_holding_ViewProjects()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/terraform/max-parallelism", Ct);
+
+        Assert.Equal(25, await ReadAsync<int>(response));
+    }
+
+    [Fact]
     public async Task GetMaxParallelism_is_forbidden_for_a_caller_holding_only_ViewWorkspaces()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewWorkspaces).SeedAsync();

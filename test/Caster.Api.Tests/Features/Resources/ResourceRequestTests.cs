@@ -29,6 +29,9 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     /// <summary>A vSphere virtual machine in <c>Data/terraform.tfstate</c>.</summary>
     private const string MachineAddress = "vsphere_virtual_machine.course-centos7-server";
 
+    /// <summary>The title of the 409 <c>WorkspaceConflictException</c> answers for a workspace with a run in progress.</summary>
+    private const string BusyWorkspaceTitle = "Only one operation can be performed on a Workspace at a time";
+
     // ---- reads ----------------------------------------------------------------------------------
 
     [Fact]
@@ -108,7 +111,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
 
         var response = await Client(actor).PostAsJsonAsync(Url(workspace, "taint"), new { resourceAddresses = new[] { MachineAddress } }, Ct);
 
-        await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, response)).Title);
     }
 
     [Fact]
@@ -119,7 +122,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
 
         var response = await Client(actor).PostAsJsonAsync(Url(workspace, "taint"), new { resourceAddresses = new[] { MachineAddress } }, Ct);
 
-        await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, response)).Title);
     }
 
     [Fact]
@@ -152,7 +155,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
 
         var response = await Client(actor).PostAsJsonAsync(Url(workspace, "untaint"), new { resourceAddresses = new[] { MachineAddress } }, Ct);
 
-        await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, response)).Title);
     }
 
     [Fact]
@@ -185,7 +188,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
 
         var response = await Client(actor).PostAsJsonAsync(Url(workspace, "remove"), new { resourceAddresses = new[] { MachineAddress } }, Ct);
 
-        await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, response)).Title);
     }
 
     [Fact]
@@ -196,7 +199,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
 
         var response = await Client(actor).PostAsJsonAsync(Url(workspace, "remove"), new { resourceAddresses = new[] { MachineAddress } }, Ct);
 
-        await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, response)).Title);
     }
 
     [Fact]
@@ -227,7 +230,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (project, workspace) = await SeedBusyWorkspace();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.Conflict, await Client(actor).PostAsync(Url(workspace, "refresh"), null, Ct));
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, await Client(actor).PostAsync(Url(workspace, "refresh"), null, Ct))).Title);
     }
 
     [Fact]
@@ -236,7 +239,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (_, workspace) = await SeedBusyWorkspace();
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.Conflict, await Client(actor).PostAsync(Url(workspace, "refresh"), null, Ct));
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, await Client(actor).PostAsync(Url(workspace, "refresh"), null, Ct))).Title);
     }
 
     [Fact]
@@ -265,7 +268,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (project, workspace) = await SeedBusyWorkspace();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.Conflict, await Client(actor).PostAsync(Url(workspace, "outputs"), null, Ct));
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, await Client(actor).PostAsync(Url(workspace, "outputs"), null, Ct))).Title);
     }
 
     [Fact]
@@ -274,7 +277,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (_, workspace) = await SeedBusyWorkspace();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.Conflict, await Client(actor).PostAsync(Url(workspace, "outputs"), null, Ct));
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, await Client(actor).PostAsync(Url(workspace, "outputs"), null, Ct))).Title);
     }
 
     [Fact]
@@ -303,7 +306,7 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
 
         var response = await Client(actor).PostAsJsonAsync(Url(workspace, "import"), new { resourceAddress = MachineAddress, resourceId = "vm-1" }, Ct);
 
-        await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(BusyWorkspaceTitle, (await AssertProblem(HttpStatusCode.Conflict, response)).Title);
     }
 
     /// <summary>Import has no project path: even a manager of the workspace's project is refused.</summary>

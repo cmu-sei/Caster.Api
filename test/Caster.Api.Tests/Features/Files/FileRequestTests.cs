@@ -25,6 +25,15 @@ namespace Caster.Api.Tests.Features.Files;
 /// </summary>
 public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory) : ApiTestBase(fixture, factory)
 {
+    /// <summary>The title of the 409 <c>FileAdminLockedException</c> answers, which no other conflict on these routes carries.</summary>
+    private const string AdminLockedTitle = "This File has been locked by an Administrator. It must be unlocked before you can make changes";
+
+    /// <summary>The title of the 409 <c>File.VerifyLock</c> answers for a caller who does not hold the file's lock.</summary>
+    private const string NotTheHolderTitle = "You cannot make changes to a File without holding it's lock";
+
+    /// <summary>The title of the 409 <c>Rename</c> answers when another user holds the file's lock.</summary>
+    private const string RenameWhileHeldTitle = "Cannot rename a file while it's being edited or locked by another user.";
+
     // ---- GET api/files/{id}, export, versions ---------------------------------------------------
 
     [Fact]
@@ -319,7 +328,8 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var response = await Client(actor).PutAsJsonAsync(
             $"api/files/{file.Id}", new { name = file.Name, directoryId = directory.Id, content = "edited" }, Ct);
 
-        await AssertProblem(HttpStatusCode.Conflict, response);
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(NotTheHolderTitle, problem.Title);
         Assert.Equal(file.Content, (await StoredFile(file.Id)).Content);
     }
 
@@ -572,10 +582,12 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var (project, directory) = await SeedDirectory();
         var holder = await Actor().WithName("Holder").OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
         var file = await SeedFileLockedBy(directory, holder);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
 
-        var response = await RootClient.PostAsync($"api/files/{file.Id}/actions/lock", null, Ct);
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/lock", null, Ct);
 
-        await AssertProblem(HttpStatusCode.Conflict, response);
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(NotTheHolderTitle, problem.Title);
         Assert.Equal(holder.Id, (await StoredFile(file.Id)).LockedById);
     }
 
@@ -757,6 +769,20 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.True((await StoredFile(file.Id)).AdministrativelyLocked);
     }
 
+    // ---- the administrative lock on writes (FileCommandHandler.CanLock) ----------------------------
+
+    [Fact]
+    public async Task Lock_of_an_administratively_locked_file_by_a_member_holding_EditProject_and_LockFiles_records_the_holder()
+    {
+        var (project, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject, ProjectPermission.LockFiles]).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/lock", null, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal(actor.Id, (await StoredFile(file.Id)).LockedById);
+    }
+
     [Fact]
     public async Task Lock_of_an_administratively_locked_file_without_LockFiles_is_a_conflict()
     {
@@ -765,16 +791,214 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
 
         var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/lock", null, Ct);
 
-        await AssertProblem(HttpStatusCode.Conflict, response);
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.Null((await StoredFile(file.Id)).LockedById);
+    }
+
+    [Fact]
+    public async Task Lock_of_an_administratively_locked_file_is_a_conflict_for_a_member_holding_LockFiles_only_on_another_project()
+    {
+        var (project, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor()
+            .OnProject(project, [ProjectPermission.EditProject])
+            .OnNewProject(ProjectPermission.LockFiles)
+            .SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/lock", null, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.Null((await StoredFile(file.Id)).LockedById);
+    }
+
+    [Fact]
+    public async Task Edit_of_an_administratively_locked_file_by_the_holder_holding_EditProject_and_LockFiles_stores_the_new_content()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject, ProjectPermission.LockFiles]).SeedAsync();
+        var file = await SeedAdministrativelyLockedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/files/{file.Id}", new { name = file.Name, directoryId = directory.Id, content = "edited" }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal("edited", (await StoredFile(file.Id)).Content);
+    }
+
+    [Fact]
+    public async Task Edit_of_an_administratively_locked_file_is_a_conflict_for_a_holder_holding_LockFiles_only_on_another_project()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor()
+            .OnProject(project, [ProjectPermission.EditProject])
+            .OnNewProject(ProjectPermission.LockFiles)
+            .SeedAsync();
+        var file = await SeedAdministrativelyLockedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/files/{file.Id}", new { name = file.Name, directoryId = directory.Id, content = "edited" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.Equal(file.Content, (await StoredFile(file.Id)).Content);
+    }
+
+    [Fact]
+    public async Task PartialEdit_of_an_administratively_locked_file_by_the_holder_holding_EditProject_and_LockFiles_stores_the_content()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject, ProjectPermission.LockFiles]).SeedAsync();
+        var file = await SeedAdministrativelyLockedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PatchAsJsonAsync($"api/files/{file.Id}", new { content = "patched" }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal("patched", (await StoredFile(file.Id)).Content);
+    }
+
+    [Fact]
+    public async Task PartialEdit_of_an_administratively_locked_file_is_a_conflict_for_a_holder_holding_LockFiles_only_on_another_project()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor()
+            .OnProject(project, [ProjectPermission.EditProject])
+            .OnNewProject(ProjectPermission.LockFiles)
+            .SeedAsync();
+        var file = await SeedAdministrativelyLockedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PatchAsJsonAsync($"api/files/{file.Id}", new { content = "patched" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.Equal(file.Content, (await StoredFile(file.Id)).Content);
+    }
+
+    [Fact]
+    public async Task Rename_of_an_administratively_locked_file_by_a_member_holding_EditProject_and_LockFiles_stores_the_new_name()
+    {
+        var (project, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject, ProjectPermission.LockFiles]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/files/{file.Id}/actions/rename", new { name = "renamed.tf" }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal("renamed.tf", (await StoredFile(file.Id)).Name);
+    }
+
+    [Fact]
+    public async Task Rename_of_an_administratively_locked_file_is_a_conflict_for_a_member_holding_LockFiles_only_on_another_project()
+    {
+        var (project, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor()
+            .OnProject(project, [ProjectPermission.EditProject])
+            .OnNewProject(ProjectPermission.LockFiles)
+            .SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/files/{file.Id}/actions/rename", new { name = "renamed.tf" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.Equal(file.Name, (await StoredFile(file.Id)).Name);
+    }
+
+    [Fact]
+    public async Task Delete_of_an_administratively_locked_file_by_a_member_holding_EditProject_and_LockFiles_marks_it_deleted()
+    {
+        var (project, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject, ProjectPermission.LockFiles]).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/files/{file.Id}", Ct);
+
+        await AssertStatus(HttpStatusCode.NoContent, response);
+        Assert.True((await StoredFile(file.Id)).IsDeleted);
+    }
+
+    [Fact]
+    public async Task Delete_of_an_administratively_locked_file_is_a_conflict_for_a_member_holding_LockFiles_only_on_another_project()
+    {
+        var (project, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor()
+            .OnProject(project, [ProjectPermission.EditProject])
+            .OnNewProject(ProjectPermission.LockFiles)
+            .SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/files/{file.Id}", Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.False((await StoredFile(file.Id)).IsDeleted);
+    }
+
+    // ---- the edit lock another user holds (File.VerifyLock) ------------------------------------------
+
+    [Fact]
+    public async Task PartialEdit_of_a_file_another_user_holds_is_a_conflict()
+    {
+        var (project, directory) = await SeedDirectory();
+        var holder = await Actor().WithName("Holder").OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var file = await SeedFileLockedBy(directory, holder);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PatchAsJsonAsync($"api/files/{file.Id}", new { content = "patched" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(NotTheHolderTitle, problem.Title);
+        Assert.Equal(file.Content, (await StoredFile(file.Id)).Content);
+    }
+
+    [Fact]
+    public async Task Unlock_of_a_file_another_user_holds_is_a_conflict()
+    {
+        var (project, directory) = await SeedDirectory();
+        var holder = await Actor().WithName("Holder").OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var file = await SeedFileLockedBy(directory, holder);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/unlock", null, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(NotTheHolderTitle, problem.Title);
+        Assert.Equal(holder.Id, (await StoredFile(file.Id)).LockedById);
+    }
+
+    [Fact]
+    public async Task Rename_of_a_file_another_user_holds_is_a_conflict()
+    {
+        var (project, directory) = await SeedDirectory();
+        var holder = await Actor().WithName("Holder").OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var file = await SeedFileLockedBy(directory, holder);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/files/{file.Id}/actions/rename", new { name = "renamed.tf" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(RenameWhileHeldTitle, problem.Title);
+        Assert.Equal(file.Name, (await StoredFile(file.Id)).Name);
+    }
+
+    [Fact]
+    public async Task Delete_of_a_file_another_user_holds_is_a_conflict()
+    {
+        var (project, directory) = await SeedDirectory();
+        var holder = await Actor().WithName("Holder").OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var file = await SeedFileLockedBy(directory, holder);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/files/{file.Id}", Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(NotTheHolderTitle, problem.Title);
+        Assert.False((await StoredFile(file.Id)).IsDeleted);
     }
 
     // ---- POST api/files/actions/tag -------------------------------------------------------------
 
     /// <summary>A member holding EditProject on the file's project is refused tagging it.</summary>
+    // Same case as Tag_by_a_member_holding_only_ViewProject_stores_a_tagged_version.
     [Fact]
     public async Task Tag_is_forbidden_for_a_member_holding_EditProject_on_the_files_project()
     {
-        // Same case as Tag_by_a_member_holding_only_ViewProject_stores_a_tagged_version.
         var (project, _, file) = await SeedFile();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
 
@@ -828,6 +1052,20 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     {
         var file = TestData.File(directory);
         file.Lock(holder.Id, canLock: false);
+        await Seed(file);
+
+        return file;
+    }
+
+    /// <summary>
+    /// A file of <paramref name="directory"/> whose edit lock <paramref name="holder"/> holds, and which an
+    /// administrator has locked since.
+    /// </summary>
+    private async Task<File> SeedAdministrativelyLockedFileLockedBy(Directory directory, TestActor holder)
+    {
+        var file = TestData.File(directory);
+        file.Lock(holder.Id, canLock: false);
+        file.AdministrativelyLock(canLock: true);
         await Seed(file);
 
         return file;

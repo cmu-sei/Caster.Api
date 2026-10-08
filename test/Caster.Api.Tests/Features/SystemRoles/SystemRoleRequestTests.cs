@@ -99,7 +99,9 @@ public class SystemRoleRequestTests(DatabaseFixture fixture, CasterAppFactory fa
     {
         var response = await RootClient.PostAsJsonAsync("api/system-roles", new { name = "Observer" }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
     }
 
     [Fact]
@@ -148,7 +150,9 @@ public class SystemRoleRequestTests(DatabaseFixture fixture, CasterAppFactory fa
 
         var response = await RootClient.PutAsJsonAsync($"api/system-roles/{role.Id}", new { name = "Observer" }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
     }
 
     [Fact]

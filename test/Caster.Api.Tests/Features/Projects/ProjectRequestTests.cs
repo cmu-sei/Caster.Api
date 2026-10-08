@@ -205,7 +205,9 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
 
         var response = await RootClient.PostAsJsonAsync("api/projects", new { id = project.Id, name = "Again" }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
     }
 
     // ---- PUT api/projects/{id} ------------------------------------------------------------------

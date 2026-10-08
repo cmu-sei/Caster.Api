@@ -12,6 +12,8 @@ using Caster.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Directory = Caster.Api.Domain.Models.Directory;
 using DirectoryView = Caster.Api.Features.Directories.Directory;
+using File = Caster.Api.Domain.Models.File;
+using ImportResultView = Caster.Api.Features.Directories.Import.ImportDirectoryResult;
 
 namespace Caster.Api.Tests.Features.Directories;
 
@@ -192,11 +194,11 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     /// <summary>A project membership held through a group lists none of the project's directories.</summary>
+    // Same case as GetAll_lists_a_projects_directories_to_a_member_whose_role_grants_no_permission.
     [Fact]
     public async Task GetAll_lists_nothing_to_a_caller_whose_membership_comes_from_a_group()
     {
         var (project, _) = await SeedDirectory();
-        // Same case as GetAll_lists_a_projects_directories_to_a_member_whose_role_grants_no_permission.
         var actor = await Actor().OnProjectThroughNewGroup(project, ProjectPermission.ViewProject).SeedAsync();
 
         var response = await Client(actor).GetAsync("api/directories", Ct);
@@ -404,10 +406,10 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     /// <summary>A member of one project moves its directory under a directory of a project it holds nothing on.</summary>
+    // Same case as Edit_moves_a_directory_under_a_parent_in_another_project.
     [Fact]
     public async Task PartialEdit_moves_a_directory_under_a_parent_in_another_project()
     {
-        // Same case as Edit_moves_a_directory_under_a_parent_in_another_project.
         var (project, directory) = await SeedDirectory();
         var (_, foreignParent) = await SeedDirectory();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
@@ -567,11 +569,67 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
+    [Fact]
+    public async Task Import_by_a_caller_holding_EditProjects_and_LockFiles_replaces_an_administratively_locked_file()
+    {
+        var (_, directory) = await SeedDirectory();
+        await SeedAdministrativelyLockedFile(directory);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects, SystemPermission.LockFiles).SeedAsync();
+
+        var response = await Client(actor).PostAsync(ImportUrl(directory), ArchiveHelper.Zip(ImportedFileName, ImportedContent), Ct);
+
+        Assert.Empty((await ReadAsync<ImportResultView>(response)).LockedFiles);
+        Assert.Equal(ImportedContent, await StoredContent(directory.Id, ImportedFileName));
+    }
+
+    [Fact]
+    public async Task Import_by_a_caller_holding_only_EditProjects_leaves_an_administratively_locked_file_and_lists_it()
+    {
+        var (_, directory) = await SeedDirectory();
+        var file = await SeedAdministrativelyLockedFile(directory);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsync(ImportUrl(directory), ArchiveHelper.Zip(ImportedFileName, ImportedContent), Ct);
+
+        Assert.Equal([LockedPath(directory)], (await ReadAsync<ImportResultView>(response)).LockedFiles);
+        Assert.Equal(file.Content, await StoredContent(directory.Id, ImportedFileName));
+    }
+
+    /// <summary>A member holding EditProject and LockFiles on the project is listed for an administratively locked file, which keeps its content.</summary>
+    [Fact]
+    public async Task Import_by_a_member_holding_EditProject_and_LockFiles_leaves_an_administratively_locked_file_and_lists_it()
+    {
+        var (project, directory) = await SeedDirectory();
+        var file = await SeedAdministrativelyLockedFile(directory);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject, ProjectPermission.LockFiles]).SeedAsync();
+
+        var response = await Client(actor).PostAsync(ImportUrl(directory), ArchiveHelper.Zip(ImportedFileName, ImportedContent), Ct);
+
+        Assert.Equal([LockedPath(directory)], (await ReadAsync<ImportResultView>(response)).LockedFiles);
+        Assert.Equal(file.Content, await StoredContent(directory.Id, ImportedFileName));
+    }
+
+    [Fact]
+    public async Task Import_leaves_a_file_another_user_holds_and_lists_it()
+    {
+        var (project, directory) = await SeedDirectory();
+        var holder = await Actor().WithName("Holder").OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var file = TestData.File(directory, ImportedFileName);
+        file.Lock(holder.Id, canLock: false);
+        await Seed(file);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsync(ImportUrl(directory), ArchiveHelper.Zip(ImportedFileName, ImportedContent), Ct);
+
+        Assert.Equal([LockedPath(directory)], (await ReadAsync<ImportResultView>(response)).LockedFiles);
+        Assert.Equal(file.Content, await StoredContent(directory.Id, ImportedFileName));
+    }
+
     /// <summary>A member holding only ImportProject is refused an import.</summary>
+    // Same case as ProjectRequestTests.Import_is_forbidden_for_a_caller_holding_only_ImportProject.
     [Fact]
     public async Task Import_is_forbidden_for_a_caller_holding_only_ImportProject()
     {
-        // Same case as ProjectRequestTests.Import_is_forbidden_for_a_caller_holding_only_ImportProject.
         var (project, directory) = await SeedDirectory();
         var actor = await Actor().OnProject(project, [ProjectPermission.ImportProject]).SeedAsync();
 
@@ -583,6 +641,19 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     // ---- helpers --------------------------------------------------------------------------------
 
     private static string ImportUrl(Directory directory) => $"api/directories/{directory.Id}/actions/import";
+
+    /// <summary>How an import names a file of <paramref name="directory"/> it could not update.</summary>
+    private static string LockedPath(Directory directory) => $"{directory.Name}/{ImportedFileName}";
+
+    /// <summary>A file of <paramref name="directory"/>, named as the imported one, that an administrator has locked.</summary>
+    private async Task<File> SeedAdministrativelyLockedFile(Directory directory)
+    {
+        var file = TestData.File(directory, ImportedFileName);
+        file.AdministrativelyLock(canLock: true);
+        await Seed(file);
+
+        return file;
+    }
 
     private async Task<string> StoredContent(Guid directoryId, string name)
     {

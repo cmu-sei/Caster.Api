@@ -154,7 +154,9 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         var response = await RootClient.PostAsJsonAsync(
             "api/designModules", new { designId = design.Id, moduleId = module.Id, name = "web", moduleVersion = "1.0.0" }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Matches(@"^Error mapping types\.[\s\S]*DesignModules\.Create\+Command -> Caster\.Api\.Domain\.Models\.DesignModule[\s\S]*Destination Member:\s+Values\s*$", problem.Detail);
         Assert.False(await AnyDesignModule(design.Id));
     }
 
@@ -308,15 +310,17 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
     }
 
     /// <summary>A values body without <c>values</c> is answered with a 500.</summary>
+    // Same case as Create_without_values_answers_with_a_server_error.
     [Fact]
     public async Task AddOrUpdateValues_without_values_answers_with_a_server_error()
     {
-        // Same case as Create_without_values_answers_with_a_server_error.
         var (_, _, designModule) = await SeedDesignModule();
 
         var response = await RootClient.PostAsJsonAsync($"api/designModules/{designModule.Id}/values", new { }, Ct);
 
-        await AssertProblem(HttpStatusCode.InternalServerError, response);
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+
+        Assert.Equal("Object reference not set to an instance of an object.", problem.Detail);
     }
 
     [Fact]
