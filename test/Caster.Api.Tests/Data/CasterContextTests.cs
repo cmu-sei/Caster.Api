@@ -24,7 +24,7 @@ public class CasterContextTests(DatabaseFixture fixture) : DatabaseTestBase(fixt
         await using var context = NewContext();
         var stored = await context.Projects.Include(x => x.Directories).SingleAsync(x => x.Id == project.Id, Ct);
 
-        Assert.Equal([directory.Id], stored.Directories.Select(x => x.Id));
+        Assert.Collection(stored.Directories, x => { Assert.Equal(directory.Id, x.Id); Assert.Same(stored, x.Project); });
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class CasterContextTests(DatabaseFixture fixture) : DatabaseTestBase(fixt
         var stored = await context.Directories.Include(x => x.Files).SingleAsync(x => x.Id == child.Id, Ct);
 
         Assert.Equal(parent.Id, stored.ParentId);
-        Assert.Equal([file.Id], stored.Files.Select(x => x.Id));
+        Assert.Collection(stored.Files, x => { Assert.Equal(file.Id, x.Id); Assert.Same(stored, x.Directory); });
         Assert.Equal($"{parent.Id}/{child.Id}/", stored.Path);
     }
 

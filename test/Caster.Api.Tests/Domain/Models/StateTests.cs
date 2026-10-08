@@ -150,6 +150,20 @@ namespace Caster.Api.Tests.Domain.Models
             Assert.Contains("423c087c-4715-bfca-2475-9cadb6954f2e", json);
         }
 
+        [Fact]
+        public void A_host_port_group_serializes_with_its_vlan_id_as_a_searchable_attribute()
+        {
+            const string id = "tf-HostPortGroup:host-87:course-4c2eb68c-a77f-45aa-990a-6b837ee59d71";
+            var portGroup = _stateFixture.GetResources().Single(r => r.Type == "vsphere_host_port_group" && r.Id == id);
+
+            var json = JsonSerializer.Serialize(portGroup, DefaultJsonSettings.Settings);
+
+            Assert.Equal(["vlan_id"], portGroup.SearchableAttributes.Keys);
+            using var document = JsonDocument.Parse(json);
+            Assert.Equal(id, document.RootElement.GetProperty("Id").GetString());
+            Assert.Equal(0, document.RootElement.GetProperty("SearchableAttributes").GetProperty("vlan_id").GetInt32());
+        }
+
         #endregion
     }
 
