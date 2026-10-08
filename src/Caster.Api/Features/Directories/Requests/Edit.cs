@@ -95,19 +95,19 @@ namespace Caster.Api.Features.Directories
 
             public override async Task<Directory> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var directory = await dbContext.Directories.FindAsync(request.Id);
+                var directory = await dbContext.Directories.FindAsync([request.Id], cancellationToken);
 
                 if (directory == null)
                     throw new EntityNotFoundException<Directory>();
 
                 if (directory.ParentId != request.ParentId)
                 {
-                    await UpdatePaths(directory, request.ParentId);
+                    await UpdatePaths(directory, request.ParentId, cancellationToken);
                 }
 
                 mapper.Map(request, directory);
 
-                await dbContext.SaveChangesAsync();
+                await dbContext.SaveChangesAsync(cancellationToken);
                 return mapper.Map<Directory>(directory);
             }
         }

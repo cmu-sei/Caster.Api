@@ -14,7 +14,6 @@ using Microsoft.CodeAnalysis;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Workspaces.Interfaces;
 using FluentValidation;
-using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
 using System.Text.Json.Serialization;
 using Caster.Api.Features.Shared.Validators;
@@ -36,12 +35,6 @@ namespace Caster.Api.Features.Workspaces
             /// </summary>
             [DataMember]
             public string Name { get; set; }
-
-            /// <summary>
-            /// The Id of the Directory of the Workspace
-            /// </summary>
-            [DataMember]
-            public Guid? DirectoryId { get; set; }
 
             /// <summary>
             /// True if this Workspace will be dynamically assigned a Host on first Run
@@ -73,9 +66,8 @@ namespace Caster.Api.Features.Workspaces
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidationService validationService, TerraformOptions options)
+            public CommandValidator(TerraformOptions options)
             {
-                RuleFor(x => x.DirectoryId.Value).DirectoryExists(validationService).When(x => x.DirectoryId.HasValue);
                 RuleFor(x => x.Parallelism.Value.Value)
                     .ParalellismValidation(options)
                     .When(x => x.Parallelism.HasValue && x.Parallelism.Value.HasValue);

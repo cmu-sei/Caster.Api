@@ -20,20 +20,16 @@ using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Features.Shared;
 using Caster.Api.Features.Shared.Validators;
+using Microsoft.EntityFrameworkCore;
+using System.Linq;
 
 namespace Caster.Api.Features.Files
 {
     public class Create
     {
         [DataContract(Name = "CreateFileCommand")]
-        public class Command : FileUpdateRequest, IRequest<File>
+        public class Command : FileFields, IRequest<File>
         {
-            /// <summary>
-            /// Name of the file.
-            /// </summary>
-            [DataMember]
-            public string Name { get; set; }
-
             /// <summary>
             /// ID of the directory this file is under.
             /// </summary>
@@ -46,11 +42,6 @@ namespace Caster.Api.Features.Files
             [DataMember]
             public Guid? WorkspaceId { get; set; }
 
-            /// <summary>
-            /// The full contents of the file.
-            /// </summary>
-            [DataMember]
-            public override string Content { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
@@ -59,7 +50,6 @@ namespace Caster.Api.Features.Files
             {
                 RuleFor(x => x.Name).FileNameValidation();
                 RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
-                RuleFor(x => x.WorkspaceId.Value).WorkspaceExists(validationService).When(x => x.WorkspaceId.HasValue);
             }
         }
 
@@ -75,6 +65,20 @@ namespace Caster.Api.Features.Files
 
             public override async Task<File> HandleRequest(Command request, CancellationToken cancellationToken)
             {
+                if (request.WorkspaceId.HasValue)
+                {
+                    var workspaceDirectoryId = await db.Workspaces
+                        .Where(w => w.Id == request.WorkspaceId.Value)
+                        .Select(w => (Guid?)w.DirectoryId)
+                        .SingleOrDefaultAsync(cancellationToken);
+
+                    if (!workspaceDirectoryId.HasValue)
+                        throw new EntityNotFoundException<Domain.Models.Workspace>();
+
+                    if (workspaceDirectoryId.Value != request.DirectoryId)
+                        throw new ConflictException("File and Workspace must be in the same Directory");
+                }
+
                 var file = mapper.Map<Domain.Models.File>(request);
                 file.Save(
                     identityResolver.GetId(),

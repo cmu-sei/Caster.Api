@@ -47,16 +47,16 @@ namespace Caster.Api.Features.Files
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken)
             {
-                List<Task<bool>> authTasks = [];
+                if (request.FileIds == null || request.FileIds.Length == 0)
+                    return false;
 
-                foreach (var fileId in request.FileIds)
+                foreach (var fileId in request.FileIds.Distinct())
                 {
-                    authTasks.Add(authorizationService.Authorize<Domain.Models.File>(fileId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken));
+                    if (!await authorizationService.Authorize<Domain.Models.File>(fileId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken))
+                        return false;
                 }
 
-                await Task.WhenAll(authTasks);
-
-                return authTasks.Any(x => !x.Result);
+                return true;
             }
 
             public override async Task<FileVersion[]> HandleRequest(Command request, CancellationToken cancellationToken)
@@ -66,20 +66,23 @@ namespace Caster.Api.Features.Files
 
                 var files = await dbContext.Files
                     .Where(f => request.FileIds.Contains(f.Id))
-                    .ToArrayAsync();
+                    .ToArrayAsync(cancellationToken);
 
-                foreach (var fileId in request.FileIds)
+                var fileIds = request.FileIds.Distinct().ToArray();
+                if (files.Length != fileIds.Length)
                 {
-                    var file = files.Where(f => f.Id == fileId).FirstOrDefault();
-                    if (file == null)
-                        throw new EntityNotFoundException<File>($"File {fileId} could not be found.");
+                    var missingId = fileIds.First(id => files.All(file => file.Id != id));
+                    throw new EntityNotFoundException<File>($"File {missingId} could not be found.");
+                }
 
+                foreach (var file in files)
+                {
                     file.Tag(tag, identityResolver.GetId(), dateTagged);
                 }
 
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return await dbContext.FileVersions
-                    .Where(fileVersion => fileVersion.Tag == request.Tag)
+                    .Where(fileVersion => fileVersion.Tag == request.Tag && request.FileIds.Contains(fileVersion.FileId))
                     .ProjectTo<FileVersion>(mapper.ConfigurationProvider)
                     .ToArrayAsync(cancellationToken);
             }
@@ -87,4 +90,3 @@ namespace Caster.Api.Features.Files
         }
     }
 }
-

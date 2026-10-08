@@ -17,7 +17,6 @@ namespace Caster.Api.Features.Files
             CreateMap<Create.Command, Domain.Models.File>();
             CreateMap<Edit.Command, Domain.Models.File>();
             CreateMap<PartialEdit.Command, Domain.Models.File>()
-                .ForMember(dest => dest.WorkspaceId, opt => opt.MapFrom((src, dest) => src.WorkspaceId.HasValue ? src.WorkspaceId.Value : dest.WorkspaceId))
                 .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
             CreateMap<Domain.Models.FileVersion, FileVersion>()
                 .ForMember(m => m.Content, opt => opt.ExplicitExpansion())

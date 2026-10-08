@@ -25,45 +25,16 @@ namespace Caster.Api.Features.DesignModules;
 public class Edit
 {
     [DataContract(Name = "EditDesignModuleCommand")]
-    public record Command : IRequest<DesignModule>
+    public record Command : DesignModuleFields, IRequest<DesignModule>
     {
         [JsonIgnore]
         public Guid DesignModuleId { get; set; }
-
-        /// <summary>
-        /// The Id of the Design to add this DesignModule
-        /// </summary>
-        public Guid DesignId { get; set; }
-
-        /// <summary>
-        /// The Id of the selected Module for this DesignModule
-        /// </summary>
-        public Guid ModuleId { get; init; }
-
-        /// <summary>
-        /// Name of the DesignModule.
-        /// </summary>
-        [DataMember]
-        public string Name { get; init; }
-
-        /// <summary>
-        /// Version of the selected Module to use
-        /// </summary>
-        [DataMember]
-        public string ModuleVersion { get; init; }
-
-        /// <summary>
-        /// Values for each input
-        /// </summary>
-        [DataMember]
-        public ModuleValue[] Values { get; init; }
     }
 
     public class Validator : AbstractValidator<Command>
     {
         public Validator(IValidationService validationService)
         {
-            RuleFor(x => x.DesignId).DesignExists(validationService);
             RuleFor(x => x.ModuleId).ModuleExists(validationService);
         }
     }

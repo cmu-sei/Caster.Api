@@ -97,19 +97,22 @@ namespace Caster.Api.Features.Directories
 
             public override async Task<Directory> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var directory = await dbContext.Directories.FindAsync(request.Id);
+                var directory = await dbContext.Directories.FindAsync([request.Id], cancellationToken);
 
                 if (directory == null)
                     throw new EntityNotFoundException<Directory>();
 
                 if (request.ParentId.HasValue && directory.ParentId != request.ParentId.Value)
                 {
-                    await UpdatePaths(directory, request.ParentId.Value);
+                    await UpdatePaths(directory, request.ParentId.Value, cancellationToken);
                 }
 
                 mapper.Map(request, directory);
+                // The partial-edit map skips null values, but an explicit null detaches the parent.
+                if (request.ParentId.HasValue)
+                    directory.ParentId = request.ParentId.Value;
 
-                await dbContext.SaveChangesAsync();
+                await dbContext.SaveChangesAsync(cancellationToken);
                 return mapper.Map<Directory>(directory);
             }
         }
