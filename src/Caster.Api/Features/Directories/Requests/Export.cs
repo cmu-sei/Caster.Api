@@ -35,6 +35,13 @@ namespace Caster.Api.Features.Directories
             /// If true, Directory Ids will be appended to their names to be optionally preserved on Import
             /// </summary>
             public bool IncludeIds { get; set; }
+
+            /// <summary>
+            /// If true, Directory and Workspace settings are included in the archive so that they
+            /// can be restored on Import. Set to false when the archive will be imported by an
+            /// older instance of Caster that does not understand them.
+            /// </summary>
+            public bool IncludeSettings { get; set; } = true;
         }
 
         public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IArchiveService archiveService) : BaseHandler<Query, ArchiveResult>
@@ -51,7 +58,7 @@ namespace Caster.Api.Features.Directories
                     throw new EntityNotFoundException<Directory>();
 
                 var directories = await dbContext.GetDirectoryWithChildren(directory.Id, cancellationToken);
-                return await archiveService.ArchiveDirectory(directory, request.ArchiveType, request.IncludeIds);
+                return await archiveService.ArchiveDirectory(directory, request.ArchiveType, request.IncludeIds, request.IncludeSettings);
             }
         }
     }
