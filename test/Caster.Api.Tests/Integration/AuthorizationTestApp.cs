@@ -38,8 +38,8 @@ namespace Caster.Api.Tests.Integration;
 
 /// <summary>
 /// An isolated relational database and HTTP host for the real controllers, handlers, mappings,
-/// validators and authorization service. Only token authentication and Terraform version discovery
-/// are substituted; background workers and external event delivery are outside these request tests.
+/// validators and authorization service. Token authentication, Terraform version discovery and
+/// GitLab synchronization are substituted; background workers and external events are excluded.
 /// </summary>
 internal sealed class AuthorizationTestApp : IAsyncDisposable
 {
@@ -68,6 +68,8 @@ internal sealed class AuthorizationTestApp : IAsyncDisposable
     public DesignModule DesignModuleA { get; }
     public DesignModule DesignModuleB { get; }
     public HttpClient Client { get; }
+    public IServiceProvider Services => _host.Services;
+    public IGitlabRepositoryService GitlabRepository { get; } = Substitute.For<IGitlabRepositoryService>();
 
     public AuthorizationTestApp(string serverConnectionString)
     {
@@ -128,6 +130,17 @@ internal sealed class AuthorizationTestApp : IAsyncDisposable
                 services.AddScoped<ICasterAuthorizationService, Infrastructure.Authorization.AuthorizationService>();
                 services.AddScoped<IValidationService, ValidationService>();
                 services.AddScoped<IGetFileQuery, GetFileQuery>();
+                services.AddMemoryCache();
+                services.AddSingleton(new ClaimsTransformationOptions
+                {
+                    UseGroupsFromIdP = true,
+                    GroupsClaimPath = "groups",
+                    UseRolesFromIdP = true,
+                    RolesClaimPath = "roles"
+                });
+                services.AddScoped<IUserClaimsService, UserClaimsService>();
+                GitlabRepository.GetModulesAsync(Arg.Any<bool>(), Arg.Any<System.Threading.CancellationToken>()).Returns(true);
+                services.AddSingleton(GitlabRepository);
                 services.AddSingleton<ILockService, LockService>();
                 services.AddSingleton(new TerraformOptions { MaxParallelism = 10 });
                 var terraform = Substitute.For<ITerraformService>();
@@ -190,8 +203,21 @@ internal sealed class AuthorizationTestApp : IAsyncDisposable
 
     public void AsAdmin()
     {
+        AsSystemPermissions(SystemPermission.EditProjects);
+    }
+
+    public void AsSystemPermissions(params SystemPermission[] permissions)
+    {
         AsProjectPermission(null);
-        Client.DefaultRequestHeaders.Add("Test-System", SystemPermission.EditProjects.ToString());
+        Client.DefaultRequestHeaders.Add("Test-System", Array.ConvertAll(permissions, p => p.ToString()));
+    }
+
+    public void AsStoredPermissions(string groupName = null)
+    {
+        AsProjectPermission(null);
+        Client.DefaultRequestHeaders.Add("Test-StoredPermissions", "true");
+        if (groupName != null)
+            Client.DefaultRequestHeaders.Add("Test-Group", groupName);
     }
 
     private static Workspace NewWorkspace(string name, Directory directory) => new(name, directory)
@@ -220,9 +246,10 @@ internal sealed class AuthorizationTestApp : IAsyncDisposable
 internal sealed class TestAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
-    UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    UrlEncoder encoder,
+    IUserClaimsService claimsService) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var claims = new List<Claim> { new("sub", Request.Headers["Test-User"].ToString()) };
         if (Guid.TryParse(Request.Headers["Test-Project"], out var projectId)
@@ -232,10 +259,22 @@ internal sealed class TestAuthenticationHandler(
                 new ProjectPermissionsClaim { ProjectId = projectId, Permissions = [permission] }.ToString()));
         }
 
-        if (Request.Headers.TryGetValue("Test-System", out var systemPermission))
-            claims.Add(new Claim(AuthorizationConstants.PermissionsClaimType, systemPermission.ToString()));
+        if (Request.Headers.TryGetValue("Test-System", out var systemPermissions))
+        {
+            foreach (var value in systemPermissions)
+            {
+                foreach (var systemPermission in value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                    claims.Add(new Claim(AuthorizationConstants.PermissionsClaimType, systemPermission));
+            }
+        }
+
+        if (Request.Headers.TryGetValue("Test-Group", out var groupName))
+            claims.Add(new Claim("groups", groupName.ToString()));
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme.Name));
-        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name)));
+        if (Request.Headers["Test-StoredPermissions"] == "true")
+            principal = await claimsService.AddUserClaims(principal, true);
+
+        return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
     }
 }

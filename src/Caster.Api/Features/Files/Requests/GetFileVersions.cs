@@ -32,7 +32,7 @@ namespace Caster.Api.Features.Files
         public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbcontext) : BaseHandler<Query, FileVersion[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize<Domain.Models.File>(request.FileId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
+                await authorizationService.Authorize<Domain.Models.File>(request.FileId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken, includeDeletedFiles: true);
 
             public override async Task<FileVersion[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
