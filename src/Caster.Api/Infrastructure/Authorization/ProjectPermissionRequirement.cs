@@ -54,11 +54,8 @@ namespace Caster.Api.Infrastructure.Authorization
                 {
                     context.Fail();
                 }
-                else if (requirement.RequiredPermissions == null || requirement.RequiredPermissions.Length == 0)
-                {
-                    context.Succeed(requirement);
-                }
-                else if (requirement.RequiredPermissions.Any(x => projectPermissionsClaim.Permissions.Contains(x)))
+                else if (requirement.RequiredPermissions != null &&
+                    requirement.RequiredPermissions.Any(x => projectPermissionsClaim.Permissions.Contains(x)))
                 {
                     context.Succeed(requirement);
                 }

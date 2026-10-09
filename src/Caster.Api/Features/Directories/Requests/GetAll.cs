@@ -10,7 +10,6 @@ using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
-using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
 
@@ -37,34 +36,28 @@ namespace Caster.Api.Features.Directories
         public class Handler(
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
-            CasterContext dbContext,
-            IIdentityResolver identityResolver) : BaseHandler<Query, Directory[]>
+            CasterContext dbContext) : BaseHandler<Query, Directory[]>
         {
             public override Task<bool> Authorize(Query request, CancellationToken cancellationToken) => Task.FromResult(true);
 
             public override async Task<Directory[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                if (await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken))
-                {
-                    return await dbContext.Directories
-                        .Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent)
-                        .ToArrayAsync(cancellationToken);
-                }
-                else
-                {
-                    var userId = identityResolver.GetId();
-                    var myProjectIds = await dbContext.ProjectMemberships
-                        .Where(pm => pm.UserId == userId)
-                        .Select(pm => pm.ProjectId)
-                        .ToListAsync(cancellationToken);
+                var query = dbContext.Directories.AsQueryable();
 
-                    var myDirectories = await dbContext.Directories
-                        .Where(d => myProjectIds.Contains(d.ProjectId))
-                        .Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent)
-                        .ToArrayAsync(cancellationToken);
+                if (!await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken))
+                {
+                    var projectIds = authorizationService.GetProjectPermissions()
+                        .Where(p => p.Permissions.Contains(ProjectPermission.ViewProject))
+                        .Select(p => p.ProjectId)
+                        .Distinct()
+                        .ToArray();
 
-                    return myDirectories;
+                    query = query.Where(d => projectIds.Contains(d.ProjectId));
                 }
+
+                return await query
+                    .Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent)
+                    .ToArrayAsync(cancellationToken);
             }
         }
     }

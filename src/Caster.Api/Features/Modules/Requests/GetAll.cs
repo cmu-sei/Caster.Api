@@ -56,14 +56,15 @@ namespace Caster.Api.Features.Modules
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                if (authorizationService.GetAuthorizedProjectIds().Any())
-                {
-                    return true;
-                }
-                else
-                {
-                    return await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
-                }
+                var canViewCatalog = authorizationService.GetAuthorizedProjectIds().Any()
+                    || await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+
+                if (!canViewCatalog)
+                    return false;
+
+                return !request.DesignId.HasValue
+                    || await authorizationService.Authorize<Domain.Models.Design>(
+                        request.DesignId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
             }
 
             public override async Task<Module[]> HandleRequest(Query request, CancellationToken cancellationToken)

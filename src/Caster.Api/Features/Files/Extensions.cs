@@ -19,27 +19,25 @@ namespace Caster.Api.Features.Files
             bool includeContent,
             Guid? directoryId = null)
         {
-            IQueryable<Domain.Models.File> initialQuery = query;
-
             if (directoryId.HasValue)
             {
-                initialQuery = initialQuery.Where(f => f.DirectoryId == directoryId);
+                query = query.Where(f => f.DirectoryId == directoryId);
             }
 
             if(includeDeleted)
             {
-                initialQuery = query.IgnoreQueryFilters();
+                query = query.IgnoreQueryFilters();
             }
 
             IQueryable<File> returnQuery;
 
             if(includeContent)
             {
-                returnQuery = initialQuery.ProjectTo<File>(configurationProvider, dest => dest.Content);
+                returnQuery = query.ProjectTo<File>(configurationProvider, dest => dest.Content);
             }
             else
             {
-                returnQuery = initialQuery.ProjectTo<File>(configurationProvider);
+                returnQuery = query.ProjectTo<File>(configurationProvider);
             }
 
             return returnQuery;

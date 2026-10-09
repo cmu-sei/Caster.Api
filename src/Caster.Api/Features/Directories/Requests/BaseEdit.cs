@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Caster.Api.Data.Extensions;
 using Caster.Api.Features.Shared;
 using MediatR;
+using System.Threading;
 
 namespace Caster.Api.Features.Directories
 {
@@ -25,22 +26,28 @@ namespace Caster.Api.Features.Directories
                 dbContext = db;
             }
 
-            protected async Task UpdatePaths(Domain.Models.Directory directory, Guid? parentId)
+            protected async Task UpdatePaths(Domain.Models.Directory directory, Guid? parentId, CancellationToken cancellationToken)
             {
                 string parentPath = null;
                 string oldPath = directory.Path;
 
                 if (parentId.HasValue)
                 {
-                    var parentDirectory = await dbContext.Directories.FindAsync(parentId);
+                    var parentDirectory = await dbContext.Directories.FindAsync([parentId.Value], cancellationToken);
 
                     if (parentDirectory == null)
                         throw new EntityNotFoundException<Directory>("Parent Directory Not Found");
 
+                    if (parentDirectory.ProjectId != directory.ProjectId)
+                        throw new ConflictException("Parent and child Directories must be in the same Project");
+
+                    if (parentDirectory.Id == directory.Id || parentDirectory.Path.StartsWith(directory.Path, StringComparison.Ordinal))
+                        throw new ConflictException("A Directory cannot be its own parent or a child of its descendants");
+
                     parentPath = parentDirectory.Path;
                 }
 
-                var descendants = await dbContext.Directories.GetChildren(directory, false).ToListAsync();
+                var descendants = await dbContext.Directories.GetChildren(directory, false).ToListAsync(cancellationToken);
 
                 directory.SetPath(parentPath);
 
