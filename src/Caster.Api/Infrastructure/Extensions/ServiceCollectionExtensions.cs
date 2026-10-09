@@ -25,6 +25,7 @@ using Microsoft.OpenApi;
 using k8s;
 using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Modules;
 
 namespace Caster.Api.Infrastructure.Extensions
 {
@@ -211,6 +212,28 @@ namespace Caster.Api.Infrastructure.Extensions
             {
                 services.AddScoped<ITerraformService, ProcessTerraformService>();
             }
+        }
+
+        /// <summary>
+        /// Registers the Module discovery seam. Safe to call when nothing is
+        /// configured - no source is contacted until a Modules request runs and
+        /// finds a configured source.
+        /// <para>
+        /// Every reader is registered as an <see cref="IModuleRepositoryProvider"/>,
+        /// and the only <see cref="IModuleRepositoryService"/> in the container
+        /// is the dispatcher that picks between them. So configuration alone
+        /// decides which sources are read, and the legacy Gitlab path keeps
+        /// working through the same seam with no config change.
+        /// </para>
+        /// </summary>
+        public static void AddModuleRepositoryServices(this IServiceCollection services)
+        {
+            services.AddSingleton<IGitCommandRunner, GitCommandRunner>();
+
+            services.AddScoped<IModuleRepositoryProvider, GitlabModuleRepositoryProvider>();
+            services.AddScoped<IModuleRepositoryProvider, GitModuleRepositoryProvider>();
+
+            services.AddScoped<IModuleRepositoryService, ModuleRepositoryDispatcher>();
         }
     }
 }

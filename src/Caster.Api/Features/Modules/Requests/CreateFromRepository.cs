@@ -7,6 +7,7 @@ using MediatR;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
 
@@ -18,7 +19,10 @@ namespace Caster.Api.Features.Modules
         public class Command : IRequest<bool>
         {
             /// <summary>
-            /// Repository ID of the Module.
+            /// Identifies the Module to sync. For a git module source this is
+            /// the source Name, or Name/subdirectory for a source using the
+            /// Subdirectories layout. For the legacy Gitlab source it is the
+            /// Gitlab project id, unchanged.
             /// </summary>
             [DataMember]
             public string Id { get; set; }
@@ -26,15 +30,14 @@ namespace Caster.Api.Features.Modules
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IGitlabRepositoryService gitlabRepositoryService) : BaseHandler<Command, bool>
+            IModuleRepositoryService moduleRepositoryService) : BaseHandler<Command, bool>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageModules], cancellationToken);
 
             public override async Task<bool> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                // TODO: add handling for other repositories?
-                return await gitlabRepositoryService.GetModuleAsync(request.Id, cancellationToken);
+                return await moduleRepositoryService.GetModuleAsync(request.Id, cancellationToken);
             }
         }
     }
