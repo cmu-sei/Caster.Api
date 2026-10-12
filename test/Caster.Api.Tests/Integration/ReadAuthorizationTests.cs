@@ -74,14 +74,15 @@ public class ReadAuthorizationTests(AuthorizationDatabase database) : IClassFixt
     }
 
     [Fact]
-    public async Task History_access_does_not_authorize_editing_a_deleted_file()
+    public async Task Deleted_files_can_be_read_but_not_edited_by_project_members()
     {
         await using var app = new AuthorizationTestApp(database.ConnectionString);
         app.AsProjectPermission(ProjectPermission.ViewProject);
         await AssertStatus(HttpStatusCode.OK, await app.Client.GetAsync($"api/files/{app.DeletedFileA.Id}/versions"));
+        await AssertStatus(HttpStatusCode.OK, await app.Client.GetAsync($"api/files/{app.DeletedFileA.Id}"));
         app.AsProjectEditor();
 
-        await AssertStatus(HttpStatusCode.Forbidden, await app.Client.PutAsJsonAsync($"api/files/{app.DeletedFileA.Id}",
+        await AssertStatus(HttpStatusCode.NotFound, await app.Client.PutAsJsonAsync($"api/files/{app.DeletedFileA.Id}",
             new { name = "changed.tf", content = "changed" }));
         await using var db = app.NewContext();
         var file = await db.Files.IgnoreQueryFilters().SingleAsync(f => f.Id == app.DeletedFileA.Id);

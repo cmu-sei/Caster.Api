@@ -27,8 +27,7 @@ public interface ICasterAuthorizationService
         Guid? resourceId,
         SystemPermission[] requiredSystemPermissions,
         ProjectPermission[] requiredProjectPermissions,
-        CancellationToken cancellationToken,
-        bool includeDeletedFiles = false) where T : IEntity;
+        CancellationToken cancellationToken) where T : IEntity;
 
     Task<bool> Authorize<T>(
         Guid? resourceId,
@@ -58,10 +57,9 @@ public class AuthorizationService(
         Guid? resourceId,
         SystemPermission[] requiredSystemPermissions,
         ProjectPermission[] requiredProjectPermissions,
-        CancellationToken cancellationToken,
-        bool includeDeletedFiles = false) where T : IEntity
+        CancellationToken cancellationToken) where T : IEntity
     {
-        return await Authorize<T>(resourceId, requiredSystemPermissions, requiredProjectPermissions, null, cancellationToken, includeDeletedFiles);
+        return await Authorize<T>(resourceId, requiredSystemPermissions, requiredProjectPermissions, null, cancellationToken);
     }
 
     public async Task<bool> Authorize<T>(
@@ -130,8 +128,7 @@ public class AuthorizationService(
         SystemPermission[] requiredSystemPermissions,
         ProjectPermission[] requiredProjectPermissions,
         GroupPermission[] requiredGroupPermissions,
-        CancellationToken cancellationToken,
-        bool includeDeletedFiles = false) where T : IEntity
+        CancellationToken cancellationToken) where T : IEntity
     {
         ValidateScopedPermissionTypes(requiredProjectPermissions, requiredGroupPermissions);
 
@@ -143,7 +140,7 @@ public class AuthorizationService(
             return true;
 
         if (requiredProjectPermissions != null)
-            return await AuthorizeProject<T>(claimsPrincipal, resourceId, requiredProjectPermissions, cancellationToken, includeDeletedFiles);
+            return await AuthorizeProject<T>(claimsPrincipal, resourceId, requiredProjectPermissions, cancellationToken);
 
         if (requiredGroupPermissions != null)
             return await AuthorizeGroup<T>(claimsPrincipal, resourceId, requiredGroupPermissions, cancellationToken);
@@ -168,11 +165,10 @@ public class AuthorizationService(
         ClaimsPrincipal claimsPrincipal,
         Guid? resourceId,
         ProjectPermission[] requiredProjectPermissions,
-        CancellationToken cancellationToken,
-        bool includeDeletedFiles) where T : IEntity
+        CancellationToken cancellationToken) where T : IEntity
     {
         var projectId = resourceId.HasValue
-            ? await GetProjectId<T>(resourceId.Value, cancellationToken, includeDeletedFiles)
+            ? await GetProjectId<T>(resourceId.Value, cancellationToken)
             : null;
 
         var projectPermissionRequirement = new ProjectPermissionRequirement(requiredProjectPermissions, projectId);
@@ -215,13 +211,13 @@ public class AuthorizationService(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid?> GetProjectId<T>(Guid resourceId, CancellationToken cancellationToken, bool includeDeletedFiles)
+    private async Task<Guid?> GetProjectId<T>(Guid resourceId, CancellationToken cancellationToken)
     {
         return typeof(T) switch
         {
             var t when t == typeof(Project) => resourceId,
             var t when t == typeof(Directory) => await HandleDirectory(resourceId, cancellationToken),
-            var t when t == typeof(File) => await HandleFile(resourceId, cancellationToken, includeDeletedFiles),
+            var t when t == typeof(File) => await HandleFile(resourceId, cancellationToken),
             var t when t == typeof(FileVersion) => await HandleFileVersion(resourceId, cancellationToken),
             var t when t == typeof(Workspace) => await HandleWorkspace(resourceId, cancellationToken),
             var t when t == typeof(Run) => await HandleRun(resourceId, cancellationToken),
@@ -243,13 +239,10 @@ public class AuthorizationService(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private async Task<Guid?> HandleFile(Guid id, CancellationToken cancellationToken, bool includeDeletedFiles)
+    private async Task<Guid?> HandleFile(Guid id, CancellationToken cancellationToken)
     {
-        IQueryable<File> query = dbContext.Files;
-        if (includeDeletedFiles)
-            query = query.IgnoreQueryFilters();
-
-        return await query
+        return await dbContext.Files
+            .IgnoreQueryFilters()
             .Where(x => x.Id == id)
             .Select(x => (Guid?)x.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
