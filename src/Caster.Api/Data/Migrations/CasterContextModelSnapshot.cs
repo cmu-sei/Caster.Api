@@ -545,6 +545,10 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("status");
 
+                    b.Property<string>("Topology")
+                        .HasColumnType("text")
+                        .HasColumnName("topology");
+
                     b.HasKey("Id");
 
                     b.HasIndex("RunId")

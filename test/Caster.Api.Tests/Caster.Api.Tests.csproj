@@ -20,6 +20,7 @@
   <ItemGroup>
     <None Update="Data/terraform.tfstate" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Data/plan.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Data/topology/*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Data/gitlab-modules.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

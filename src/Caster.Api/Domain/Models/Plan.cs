@@ -21,6 +21,13 @@ namespace Caster.Api.Domain.Models
 
         public PlanStatus Status { get; set; }
         public string Output { get; set; }
+
+        /// <summary>
+        /// JSON of the <see cref="Topology"/> read from this plan, or null when
+        /// the plan failed or topology is turned off. Kept out of the Plan
+        /// payload; served by its own endpoint.
+        /// </summary>
+        public string Topology { get; set; }
     }
 
     public enum PlanStatus
