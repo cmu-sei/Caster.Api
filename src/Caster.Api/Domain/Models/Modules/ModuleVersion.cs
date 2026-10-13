@@ -43,6 +43,15 @@ public class ModuleVersion : IEntity
 
             var value = variable.Value;
 
+            // Writing a blank required value as "" would count as set, so plan would
+            // pass and the module would fail later. Left commented, Terraform reports
+            // the missing argument and the user sees what still needs filling in.
+            if (!v.IsOptional && string.IsNullOrEmpty(value))
+            {
+                snippet = $"{snippet}\n  # {variable.Name} = (required)";
+                continue;
+            }
+
             if (v.RequiresQuotes)
             {
                 value = $"\"{value}\"";
