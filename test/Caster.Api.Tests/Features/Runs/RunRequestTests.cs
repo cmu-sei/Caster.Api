@@ -59,6 +59,15 @@ public class RunRequestTests(DatabaseFixture fixture, CasterAppFactory factory) 
     }
 
     [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, _, run) = await SeedRun();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/runs/{run.Id}", Ct));
+    }
+
+    [Fact]
     public async Task Get_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var (_, _, run) = await SeedRun();
@@ -101,6 +110,15 @@ public class RunRequestTests(DatabaseFixture fixture, CasterAppFactory factory) 
     {
         var (project, workspace, _) = await SeedRun();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/workspaces/{workspace.Id}/runs", Ct));
+    }
+
+    [Fact]
+    public async Task GetByWorkspace_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, workspace, _) = await SeedRun();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
         await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/workspaces/{workspace.Id}/runs", Ct));
     }
@@ -181,6 +199,18 @@ public class RunRequestTests(DatabaseFixture fixture, CasterAppFactory factory) 
     }
 
     [Fact]
+    public async Task Create_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, workspace) = await SeedWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/runs", new { workspaceId = workspace.Id }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.False(await AnyRun(workspace.Id));
+    }
+
+    [Fact]
     public async Task Create_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, workspace) = await SeedWorkspace();
@@ -235,6 +265,18 @@ public class RunRequestTests(DatabaseFixture fixture, CasterAppFactory factory) 
     {
         var (project, _, run) = await SeedPlannedRun();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/runs/{run.Id}/actions/reject", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(RunStatus.Planned, (await StoredRun(run.Id)).Status);
+    }
+
+    [Fact]
+    public async Task Reject_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, run) = await SeedPlannedRun();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).PostAsync($"api/runs/{run.Id}/actions/reject", null, Ct);
 
@@ -304,6 +346,18 @@ public class RunRequestTests(DatabaseFixture fixture, CasterAppFactory factory) 
     }
 
     [Fact]
+    public async Task Cancel_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, run) = await SeedRun();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/runs/{run.Id}/actions/cancel", new { force = false }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(RunStatus.Queued, (await StoredRun(run.Id)).Status);
+    }
+
+    [Fact]
     public async Task Cancel_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, run) = await SeedRun();
@@ -358,6 +412,15 @@ public class RunRequestTests(DatabaseFixture fixture, CasterAppFactory factory) 
     }
 
     [Fact]
+    public async Task SaveState_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, run) = await SeedRun(RunStatus.Applied_StateError);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).PostAsync($"api/runs/{run.Id}/actions/save-state", null, Ct));
+    }
+
+    [Fact]
     public async Task SaveState_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, run) = await SeedRun(RunStatus.Applied_StateError);
@@ -377,13 +440,24 @@ public class RunRequestTests(DatabaseFixture fixture, CasterAppFactory factory) 
         await AssertStatus(HttpStatusCode.NoContent, await Client(actor).GetAsync($"api/runs/{run.Id}/queue-position", Ct));
     }
 
-    [Fact]
-    public async Task GetQueuePosition_is_answered_for_a_caller_holding_ViewWorkspaces()
+    [Theory]
+    [InlineData(SystemPermission.ViewWorkspaces)]
+    [InlineData(SystemPermission.ViewProjects)]
+    public async Task GetQueuePosition_is_answered_for_a_caller_holding_a_system_view_permission(SystemPermission permission)
     {
         var (_, _, run) = await SeedRun();
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewWorkspaces).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(permission).SeedAsync();
 
         await AssertStatus(HttpStatusCode.NoContent, await Client(actor).GetAsync($"api/runs/{run.Id}/queue-position", Ct));
+    }
+
+    [Fact]
+    public async Task GetQueuePosition_is_forbidden_for_a_caller_holding_only_ManageWorkspaces()
+    {
+        var (_, _, run) = await SeedRun();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageWorkspaces).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/runs/{run.Id}/queue-position", Ct));
     }
 
     [Fact]

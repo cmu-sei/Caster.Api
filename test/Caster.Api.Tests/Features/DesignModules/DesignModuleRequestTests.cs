@@ -52,6 +52,15 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
     }
 
     [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, _, designModule) = await SeedDesignModule();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designModules/{designModule.Id}", Ct));
+    }
+
+    [Fact]
     public async Task Get_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var (_, _, designModule) = await SeedDesignModule();
@@ -69,6 +78,26 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         var response = await Client(actor).GetAsync($"api/designs/{design.Id}/modules", Ct);
 
         Assert.Equal([designModule.Id], (await ReadAsync<DesignModuleView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetByDesign_lists_the_modules_for_a_caller_holding_ViewProjects()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/designs/{design.Id}/modules", Ct);
+
+        Assert.Equal([designModule.Id], (await ReadAsync<DesignModuleView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetByDesign_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, design, _) = await SeedDesignModule();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designs/{design.Id}/modules", Ct));
     }
 
     [Fact]
@@ -131,6 +160,20 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
     }
 
     [Fact]
+    public async Task Create_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, design) = await SeedDesign();
+        var module = await SeedModule();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            "api/designModules", new { designId = design.Id, moduleId = module.Id, name = "web", moduleVersion = "1.0.0", values = NoValues }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.False(await AnyDesignModule(design.Id));
+    }
+
+    [Fact]
     public async Task Create_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, design) = await SeedDesign();
@@ -178,6 +221,19 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
     {
         var (project, design, designModule) = await SeedDesignModule();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = designModule.ModuleId, name = designModule.Name, moduleVersion = "2.0.0", values = NoValues }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal("1.0.0", (await StoredDesignModule(designModule.Id)).ModuleVersion);
+    }
+
+    [Fact]
+    public async Task Edit_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).PutAsJsonAsync($"api/designModules/{designModule.Id}",
             new { designId = design.Id, moduleId = designModule.ModuleId, name = designModule.Name, moduleVersion = "2.0.0", values = NoValues }, Ct);
@@ -260,6 +316,18 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
     }
 
     [Fact]
+    public async Task Disable_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, designModule) = await SeedDesignModule();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/designModules/{designModule.Id}/actions/disable", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.True((await StoredDesignModule(designModule.Id)).Enabled);
+    }
+
+    [Fact]
     public async Task Disable_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, designModule) = await SeedDesignModule();
@@ -283,6 +351,32 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         await AssertStatus(HttpStatusCode.OK, response);
         var stored = await StoredDesignModule(designModule.Id);
         Assert.Equal("3", Assert.Single(stored.Values, x => x.Name == "count").Value);
+    }
+
+    [Fact]
+    public async Task AddOrUpdateValues_by_a_caller_holding_EditProjects_stores_the_values()
+    {
+        var (_, _, designModule) = await SeedDesignModule();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            $"api/designModules/{designModule.Id}/values", new { values = new[] { new { name = "count", value = "3" } } }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredDesignModule(designModule.Id);
+        Assert.Equal("3", Assert.Single(stored.Values, x => x.Name == "count").Value);
+    }
+
+    [Fact]
+    public async Task AddOrUpdateValues_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, designModule) = await SeedDesignModule();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(
+            $"api/designModules/{designModule.Id}/values", new { values = new[] { new { name = "count", value = "3" } } }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
     [Fact]
@@ -349,6 +443,18 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
     {
         var (project, _, designModule) = await SeedDesignModule();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/designsModules/{designModule.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.NotNull(await StoredDesignModule(designModule.Id));
+    }
+
+    [Fact]
+    public async Task Delete_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, designModule) = await SeedDesignModule();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/designsModules/{designModule.Id}", Ct);
 

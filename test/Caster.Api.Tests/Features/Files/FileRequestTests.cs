@@ -66,6 +66,15 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, _, file) = await SeedFile();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/files/{file.Id}", Ct));
+    }
+
+    [Fact]
     public async Task Get_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var (_, _, file) = await SeedFile();
@@ -106,6 +115,28 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var response = await Client(actor).GetAsync($"api/files/{file.Id}/versions", Ct);
 
         Assert.Equal([version.Id], (await ReadAsync<FileVersionView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetFileVersions_lists_the_versions_for_a_caller_holding_ViewProjects()
+    {
+        var (_, _, file) = await SeedFile();
+        var version = TestData.FileVersion(file);
+        await Seed(version);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/files/{file.Id}/versions", Ct);
+
+        Assert.Equal([version.Id], (await ReadAsync<FileVersionView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetFileVersions_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, _, file) = await SeedFile();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/files/{file.Id}/versions", Ct));
     }
 
     [Fact]
@@ -224,6 +255,15 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/directories/{directory.Id}/files", Ct));
     }
 
+    [Fact]
+    public async Task GetByDirectory_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, directory, _) = await SeedFile();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/directories/{directory.Id}/files", Ct));
+    }
+
     // ---- POST api/files -------------------------------------------------------------------------
 
     [Fact]
@@ -259,6 +299,18 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     {
         var (project, directory) = await SeedDirectory();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files", new { name = "refused.tf", directoryId = directory.Id, content = "" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.False(await FileNamed("refused.tf"));
+    }
+
+    [Fact]
+    public async Task Create_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync("api/files", new { name = "refused.tf", directoryId = directory.Id, content = "" }, Ct);
 
@@ -348,6 +400,20 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task Edit_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+        var file = await SeedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/files/{file.Id}", new { name = file.Name, directoryId = directory.Id, content = "edited" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(file.Content, (await StoredFile(file.Id)).Content);
+    }
+
+    [Fact]
     public async Task Edit_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, directory) = await SeedDirectory();
@@ -390,6 +456,34 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var stored = await StoredFile(file.Id);
         Assert.Equal("patched", stored.Content);
         Assert.Equal(file.Name, stored.Name);
+    }
+
+    [Fact]
+    public async Task PartialEdit_by_the_holder_holding_EditProjects_stores_only_the_content()
+    {
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+        var file = await SeedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PatchAsJsonAsync($"api/files/{file.Id}", new { content = "patched" }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredFile(file.Id);
+        Assert.Equal("patched", stored.Content);
+        Assert.Equal(file.Name, stored.Name);
+    }
+
+    [Fact]
+    public async Task PartialEdit_is_forbidden_for_a_holder_holding_only_ViewProjects()
+    {
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+        var file = await SeedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PatchAsJsonAsync($"api/files/{file.Id}", new { content = "patched" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(file.Content, (await StoredFile(file.Id)).Content);
     }
 
     [Fact]
@@ -458,6 +552,18 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task Rename_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, file) = await SeedFile();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/files/{file.Id}/actions/rename", new { name = "renamed.tf" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(file.Name, (await StoredFile(file.Id)).Name);
+    }
+
+    [Fact]
     public async Task Rename_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, file) = await SeedFile();
@@ -516,6 +622,18 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task Delete_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, file) = await SeedFile();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/files/{file.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.False((await StoredFile(file.Id)).IsDeleted);
+    }
+
+    [Fact]
     public async Task Delete_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, file) = await SeedFile();
@@ -565,6 +683,18 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task Lock_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, file) = await SeedFile();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/lock", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Null((await StoredFile(file.Id)).LockedById);
+    }
+
+    [Fact]
     public async Task Lock_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, file) = await SeedFile();
@@ -602,6 +732,32 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
 
         await AssertStatus(HttpStatusCode.OK, response);
         Assert.Null((await StoredFile(file.Id)).LockedById);
+    }
+
+    [Fact]
+    public async Task Unlock_by_the_holder_holding_EditProjects_releases_the_lock()
+    {
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+        var file = await SeedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/unlock", null, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Null((await StoredFile(file.Id)).LockedById);
+    }
+
+    [Fact]
+    public async Task Unlock_is_forbidden_for_a_holder_holding_only_ViewProjects()
+    {
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+        var file = await SeedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/unlock", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(actor.Id, (await StoredFile(file.Id)).LockedById);
     }
 
     [Fact]
@@ -671,6 +827,20 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task ForceUnlock_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (project, directory) = await SeedDirectory();
+        var holder = await Actor().WithName("Holder").OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var file = await SeedFileLockedBy(directory, holder);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/force-unlock", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(holder.Id, (await StoredFile(file.Id)).LockedById);
+    }
+
+    [Fact]
     public async Task ForceUnlock_is_forbidden_for_a_caller_holding_ManageProject_only_on_another_project()
     {
         var (project, directory) = await SeedDirectory();
@@ -722,6 +892,18 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task AdminLock_is_forbidden_for_a_caller_holding_only_ManageProjects()
+    {
+        var (_, _, file) = await SeedFile();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/admin-lock", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.False((await StoredFile(file.Id)).AdministrativelyLocked);
+    }
+
+    [Fact]
     public async Task AdminLock_is_forbidden_for_a_caller_holding_LockFiles_only_on_another_project()
     {
         var (_, _, file) = await SeedFile();
@@ -750,6 +932,18 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     {
         var (project, _, file) = await SeedFile(administrativelyLocked: true);
         var actor = await Actor().OnProject(project, [ProjectPermission.ManageProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/admin-unlock", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.True((await StoredFile(file.Id)).AdministrativelyLocked);
+    }
+
+    [Fact]
+    public async Task AdminUnlock_is_forbidden_for_a_caller_holding_only_ManageProjects()
+    {
+        var (_, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageProjects).SeedAsync();
 
         var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/admin-unlock", null, Ct);
 
@@ -813,6 +1007,20 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task Lock_of_an_administratively_locked_file_is_a_conflict_for_a_caller_holding_only_EditProjects()
+    {
+        // Gate: src/Caster.Api/Features/Files/Requests/Lock.cs#Lock.Handler.PerformOperation
+        var (_, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/files/{file.Id}/actions/lock", null, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.Null((await StoredFile(file.Id)).LockedById);
+    }
+
+    [Fact]
     public async Task Edit_of_an_administratively_locked_file_by_the_holder_holding_EditProject_and_LockFiles_stores_the_new_content()
     {
         var (project, directory) = await SeedDirectory();
@@ -834,6 +1042,22 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
             .OnProject(project, [ProjectPermission.EditProject])
             .OnNewProject(ProjectPermission.LockFiles)
             .SeedAsync();
+        var file = await SeedAdministrativelyLockedFileLockedBy(directory, actor);
+
+        var response = await Client(actor).PutAsJsonAsync(
+            $"api/files/{file.Id}", new { name = file.Name, directoryId = directory.Id, content = "edited" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.Equal(file.Content, (await StoredFile(file.Id)).Content);
+    }
+
+    [Fact]
+    public async Task Edit_of_an_administratively_locked_file_is_a_conflict_for_a_holder_holding_only_EditProjects()
+    {
+        // Gate: src/Caster.Api/Features/Files/Requests/Edit.cs#Edit.Handler.PerformOperation
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
         var file = await SeedAdministrativelyLockedFileLockedBy(directory, actor);
 
         var response = await Client(actor).PutAsJsonAsync(
@@ -903,6 +1127,20 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task Rename_of_an_administratively_locked_file_is_a_conflict_for_a_caller_holding_only_EditProjects()
+    {
+        // Gate: src/Caster.Api/Features/Files/Requests/Rename.cs#Rename.Handler.PerformOperation
+        var (_, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/files/{file.Id}/actions/rename", new { name = "renamed.tf" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.Equal(file.Name, (await StoredFile(file.Id)).Name);
+    }
+
+    [Fact]
     public async Task Delete_of_an_administratively_locked_file_by_a_member_holding_EditProject_and_LockFiles_marks_it_deleted()
     {
         var (project, _, file) = await SeedFile(administrativelyLocked: true);
@@ -922,6 +1160,20 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
             .OnProject(project, [ProjectPermission.EditProject])
             .OnNewProject(ProjectPermission.LockFiles)
             .SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/files/{file.Id}", Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(AdminLockedTitle, problem.Title);
+        Assert.False((await StoredFile(file.Id)).IsDeleted);
+    }
+
+    [Fact]
+    public async Task Delete_of_an_administratively_locked_file_is_a_conflict_for_a_caller_holding_only_EditProjects()
+    {
+        // Gate: src/Caster.Api/Features/Files/Requests/Delete.cs#Delete.Handler.PerformOperation
+        var (_, _, file) = await SeedFile(administrativelyLocked: true);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/files/{file.Id}", Ct);
 

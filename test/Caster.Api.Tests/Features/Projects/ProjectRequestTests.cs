@@ -385,6 +385,17 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
     }
 
     [Fact]
+    public async Task Export_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ExportUrl(project.Id), Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
     public async Task Export_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var project = await SeedProjectWithAFile();

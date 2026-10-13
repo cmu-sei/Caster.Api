@@ -64,6 +64,15 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     }
 
     [Fact]
+    public async Task GetByWorkspace_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, workspace) = await SeedWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/workspaces/{workspace.Id}/resources", Ct));
+    }
+
+    [Fact]
     public async Task GetByWorkspace_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var (_, workspace) = await SeedWorkspace();
@@ -81,6 +90,28 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var response = await Client(actor).GetAsync($"api/workspaces/{workspace.Id}/resources/{MachineAddress}", Ct);
 
         Assert.Equal("course.centos7.server-4c2eb68c-a77f-45aa-990a-6b837ee59d71", (await ReadAsync<ResourceView>(response)).Name);
+    }
+
+    [Fact]
+    public async Task Get_returns_one_resource_by_address_to_a_caller_holding_ViewProjects()
+    {
+        var (_, workspace) = await SeedWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/workspaces/{workspace.Id}/resources/{MachineAddress}", Ct);
+
+        Assert.Equal("course.centos7.server-4c2eb68c-a77f-45aa-990a-6b837ee59d71", (await ReadAsync<ResourceView>(response)).Name);
+    }
+
+    [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, workspace) = await SeedWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/workspaces/{workspace.Id}/resources/{MachineAddress}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
     [Fact]
@@ -130,6 +161,17 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     {
         var (project, workspace) = await SeedBusyWorkspace();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(Url(workspace, "taint"), new { resourceAddresses = new[] { MachineAddress } }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
+    public async Task Taint_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, workspace) = await SeedBusyWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync(Url(workspace, "taint"), new { resourceAddresses = new[] { MachineAddress } }, Ct);
 
@@ -214,6 +256,17 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     }
 
     [Fact]
+    public async Task Remove_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, workspace) = await SeedBusyWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync(Url(workspace, "remove"), new { resourceAddresses = new[] { MachineAddress } }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
     public async Task Remove_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, workspace) = await SeedBusyWorkspace();
@@ -252,6 +305,15 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     }
 
     [Fact]
+    public async Task Refresh_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, workspace) = await SeedBusyWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).PostAsync(Url(workspace, "refresh"), null, Ct));
+    }
+
+    [Fact]
     public async Task Refresh_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, workspace) = await SeedBusyWorkspace();
@@ -285,6 +347,15 @@ public class ResourceRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     {
         var (project, workspace) = await SeedBusyWorkspace();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).PostAsync(Url(workspace, "outputs"), null, Ct));
+    }
+
+    [Fact]
+    public async Task Output_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, workspace) = await SeedBusyWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
         await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).PostAsync(Url(workspace, "outputs"), null, Ct));
     }

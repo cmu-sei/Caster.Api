@@ -56,6 +56,17 @@ public class ProjectMembershipRequestTests(DatabaseFixture fixture, CasterAppFac
     }
 
     [Fact]
+    public async Task GetMemberships_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var project = await SeedProject();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/projects/{project.Id}/memberships", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
     public async Task GetMemberships_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var project = await SeedProject();
@@ -300,6 +311,18 @@ public class ProjectMembershipRequestTests(DatabaseFixture fixture, CasterAppFac
     }
 
     [Fact]
+    public async Task EditMembership_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (project, membership) = await SeedProjectWithAMember();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync("api/projects/memberships", new { id = membership.Id, roleId = TestData.ProjectRoles.Manager }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(TestData.ProjectRoles.Observer, (await StoredMembership(project.Id, membership.UserId.Value)).RoleId);
+    }
+
+    [Fact]
     public async Task EditMembership_is_forbidden_for_a_caller_holding_ManageProject_only_on_another_project()
     {
         var (project, membership) = await SeedProjectWithAMember();
@@ -352,6 +375,18 @@ public class ProjectMembershipRequestTests(DatabaseFixture fixture, CasterAppFac
     {
         var (project, membership) = await SeedProjectWithAMember();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/projects/memberships/{membership.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.NotNull(await StoredMembership(project.Id, membership.UserId.Value));
+    }
+
+    [Fact]
+    public async Task DeleteMembership_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (project, membership) = await SeedProjectWithAMember();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/projects/memberships/{membership.Id}", Ct);
 

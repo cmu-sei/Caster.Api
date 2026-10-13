@@ -49,6 +49,15 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     }
 
     [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, _, variable) = await SeedVariable();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/variables/{variable.Id}", Ct));
+    }
+
+    [Fact]
     public async Task Get_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var (_, _, variable) = await SeedVariable();
@@ -66,6 +75,26 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var response = await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct);
 
         Assert.Equal([variable.Id], (await ReadAsync<VariableView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetByDesign_lists_the_variables_for_a_caller_holding_ViewProjects()
+    {
+        var (_, design, variable) = await SeedVariable();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct);
+
+        Assert.Equal([variable.Id], (await ReadAsync<VariableView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetByDesign_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, design, _) = await SeedVariable();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct));
     }
 
     [Fact]
@@ -125,6 +154,18 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     }
 
     [Fact]
+    public async Task Create_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, design) = await SeedDesign();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/variables", new { designId = design.Id, name = "refused", type = "string" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.False(await VariableNamed("refused"));
+    }
+
+    [Fact]
     public async Task Create_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, design) = await SeedDesign();
@@ -172,6 +213,18 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     }
 
     [Fact]
+    public async Task Edit_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, variable) = await SeedVariable();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/variables/{variable.Id}", new { name = variable.Name, type = "string", defaultValue = "changed" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(variable.DefaultValue, (await StoredVariable(variable.Id)).DefaultValue);
+    }
+
+    [Fact]
     public async Task Edit_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, variable) = await SeedVariable();
@@ -209,6 +262,18 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     {
         var (project, _, variable) = await SeedVariable();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/variables/{variable.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.NotNull(await StoredVariable(variable.Id));
+    }
+
+    [Fact]
+    public async Task Delete_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, variable) = await SeedVariable();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/variables/{variable.Id}", Ct);
 

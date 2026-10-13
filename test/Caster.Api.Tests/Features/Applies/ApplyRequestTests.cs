@@ -47,6 +47,15 @@ public class ApplyRequestTests(DatabaseFixture fixture, CasterAppFactory factory
     }
 
     [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, _, apply) = await SeedApply();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/applies/{apply.Id}", Ct));
+    }
+
+    [Fact]
     public async Task Get_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var (_, _, apply) = await SeedApply();
@@ -94,6 +103,15 @@ public class ApplyRequestTests(DatabaseFixture fixture, CasterAppFactory factory
     }
 
     [Fact]
+    public async Task GetByRun_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, run, _) = await SeedApply();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/runs/{run.Id}/apply", Ct));
+    }
+
+    [Fact]
     public async Task Execute_by_a_member_holding_EditProject_queues_an_apply_for_a_planned_run()
     {
         var (project, run) = await SeedPlannedRun();
@@ -122,6 +140,18 @@ public class ApplyRequestTests(DatabaseFixture fixture, CasterAppFactory factory
     {
         var (project, run) = await SeedPlannedRun();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/runs/{run.Id}/actions/apply", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.False(await AnyApply(run.Id));
+    }
+
+    [Fact]
+    public async Task Execute_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, run) = await SeedPlannedRun();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).PostAsync($"api/runs/{run.Id}/actions/apply", null, Ct);
 

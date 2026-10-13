@@ -138,6 +138,15 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/directories/{directory.Id}/workspaces", Ct));
     }
 
+    [Fact]
+    public async Task GetByDirectory_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, directory, _) = await SeedWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/directories/{directory.Id}/workspaces", Ct));
+    }
+
     // ---- POST api/workspaces --------------------------------------------------------------------
 
     [Fact]
@@ -183,6 +192,18 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     {
         var (project, directory) = await SeedDirectory();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/workspaces", new { name = "refused", directoryId = directory.Id }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.False(await WorkspaceNamed("refused"));
+    }
+
+    [Fact]
+    public async Task Create_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync("api/workspaces", new { name = "refused", directoryId = directory.Id }, Ct);
 
@@ -275,6 +296,18 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     [Fact]
+    public async Task Edit_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, directory, workspace) = await SeedWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/workspaces/{workspace.Id}", new { name = "renamed", directoryId = directory.Id }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(workspace.Name, (await StoredWorkspace(workspace.Id)).Name);
+    }
+
+    [Fact]
     public async Task Edit_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, directory, workspace) = await SeedWorkspace();
@@ -341,6 +374,18 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     [Fact]
+    public async Task PartialEdit_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, workspace) = await SeedWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PatchAsJsonAsync($"api/workspaces/{workspace.Id}", new { name = "patched" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(workspace.Name, (await StoredWorkspace(workspace.Id)).Name);
+    }
+
+    [Fact]
     public async Task PartialEdit_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, workspace) = await SeedWorkspace();
@@ -394,6 +439,18 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     {
         var (project, _, workspace) = await SeedWorkspace();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/workspaces/{workspace.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.NotNull(await StoredWorkspace(workspace.Id));
+    }
+
+    [Fact]
+    public async Task Delete_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, workspace) = await SeedWorkspace();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/workspaces/{workspace.Id}", Ct);
 

@@ -42,6 +42,15 @@ public class PlanRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     }
 
     [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, _, plan) = await SeedPlan();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/plans/{plan.Id}", Ct));
+    }
+
+    [Fact]
     public async Task Get_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var (_, _, plan) = await SeedPlan();
@@ -84,6 +93,15 @@ public class PlanRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     {
         var (project, run, _) = await SeedPlan();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/runs/{run.Id}/plan", Ct));
+    }
+
+    [Fact]
+    public async Task GetByRun_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, run, _) = await SeedPlan();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
         await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/runs/{run.Id}/plan", Ct));
     }

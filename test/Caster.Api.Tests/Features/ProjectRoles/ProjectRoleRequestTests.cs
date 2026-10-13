@@ -49,14 +49,30 @@ public class ProjectRoleRequestTests(DatabaseFixture fixture, CasterAppFactory f
         Assert.Contains(TestData.ProjectRoles.Observer, ids);
     }
 
-    [Fact]
-    public async Task GetAll_lists_the_roles_for_a_caller_holding_ViewRoles()
+    [Theory]
+    [InlineData(SystemPermission.ViewRoles)]
+    [InlineData(SystemPermission.ViewProjects)]
+    public async Task GetAll_lists_the_roles_for_a_caller_holding_a_system_view_permission(SystemPermission permission)
     {
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewRoles).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(permission).SeedAsync();
 
         var response = await Client(actor).GetAsync("api/project-roles", Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
+        var ids = (await ReadAsync<ProjectRoleView[]>(response)).Select(x => x.Id).ToArray();
+        Assert.Contains(TestData.ProjectRoles.Manager, ids);
+        Assert.Contains(TestData.ProjectRoles.Member, ids);
+        Assert.Contains(TestData.ProjectRoles.Observer, ids);
+    }
+
+    [Fact]
+    public async Task GetAll_is_forbidden_for_a_caller_holding_only_ManageRoles()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageRoles).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/project-roles", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
     [Fact]

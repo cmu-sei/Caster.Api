@@ -35,6 +35,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinProject(project.Id);
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, project.Id.ToString(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -47,6 +48,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinProject(project.Id));
 
         await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -59,6 +61,20 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinProject(project.Id);
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, project.Id.ToString(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinProject_refuses_a_caller_holding_only_EditProjects()
+    {
+        var project = TestData.Project();
+        await Seed(project);
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.EditProjects));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinProject(project.Id));
+
+        await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -72,6 +88,34 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
 
         await harness.Groups.Received(1).AddToGroupAsync(
             HubHarness.ConnectionId, ProjectHubMethods.GetProjectAdminGroup(project.Id), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinProjectAdmin_adds_a_caller_holding_ViewProjects_to_the_projects_admin_group()
+    {
+        var project = TestData.Project();
+        await Seed(project);
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewProjects));
+
+        await hub.JoinProjectAdmin(project.Id);
+
+        await harness.Groups.Received(1).AddToGroupAsync(
+            HubHarness.ConnectionId, ProjectHubMethods.GetProjectAdminGroup(project.Id), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinProjectAdmin_refuses_a_caller_holding_only_ViewWorkspaces()
+    {
+        var project = TestData.Project();
+        await Seed(project);
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewWorkspaces));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinProjectAdmin(project.Id));
+
+        await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -84,6 +128,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinProjectAdmin(project.Id));
 
         await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -96,6 +141,33 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinGroup(group.Id);
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, group.Id.ToString(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinGroup_adds_a_caller_holding_ViewGroups_to_the_group()
+    {
+        var group = TestData.Group();
+        await Seed(group);
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewGroups));
+
+        await hub.JoinGroup(group.Id);
+
+        await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, group.Id.ToString(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinGroup_refuses_a_caller_holding_only_ManageGroups()
+    {
+        var group = TestData.Group();
+        await Seed(group);
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ManageGroups));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinGroup(group.Id));
+
+        await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -108,6 +180,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinGroup(group.Id));
 
         await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -119,6 +192,31 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinWorkspace(workspace.Id);
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, workspace.Id.ToString(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinWorkspace_adds_a_caller_holding_ViewProjects_to_the_workspaces_group()
+    {
+        var (_, workspace, _) = await SeedWorkspaceWithDesign();
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewProjects));
+
+        await hub.JoinWorkspace(workspace.Id);
+
+        await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, workspace.Id.ToString(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinWorkspace_refuses_a_caller_holding_only_EditProjects()
+    {
+        var (_, workspace, _) = await SeedWorkspaceWithDesign();
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.EditProjects));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinWorkspace(workspace.Id));
+
+        await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -130,6 +228,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinWorkspace(workspace.Id));
 
         await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -141,6 +240,31 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinDesign(design.Id);
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, design.Id.ToString(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinDesign_adds_a_caller_holding_ViewProjects_to_the_designs_group()
+    {
+        var (_, _, design) = await SeedWorkspaceWithDesign();
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewProjects));
+
+        await hub.JoinDesign(design.Id);
+
+        await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, design.Id.ToString(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinDesign_refuses_a_caller_holding_only_EditProjects()
+    {
+        var (_, _, design) = await SeedWorkspaceWithDesign();
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.EditProjects));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinDesign(design.Id));
+
+        await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -152,6 +276,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinDesign(design.Id));
 
         await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -162,6 +287,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinWorkspacesAdmin();
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, nameof(HubGroups.WorkspacesAdmin), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -172,6 +298,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinWorkspacesAdmin());
 
         await harness.Groups.DidNotReceive().AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -182,6 +309,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinVlansAdmin();
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, nameof(HubGroups.VlansAdmin), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -192,6 +320,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinVlansAdmin());
 
         await harness.Groups.DidNotReceiveWithAnyArgs().AddToGroupAsync(default, default, Ct);
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -202,6 +331,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinRolesAdmin();
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, nameof(HubGroups.RolesAdmin), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -212,6 +342,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinRolesAdmin());
 
         await harness.Groups.DidNotReceiveWithAnyArgs().AddToGroupAsync(default, default, Ct);
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -223,39 +354,83 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.LeaveProject(projectId);
 
         await harness.Groups.Received(1).RemoveFromGroupAsync(HubHarness.ConnectionId, projectId.ToString(), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
     }
 
     [Fact]
     public async Task GetPlanOutput_streams_the_stored_output_of_a_finished_plan_to_a_member_holding_ViewProject()
     {
         var (project, plan) = await SeedPlan();
-        var (hub, _) = Hub(new ClaimsPrincipalBuilder().WithProject(project.Id, ProjectPermission.ViewProject));
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithProject(project.Id, ProjectPermission.ViewProject));
 
         var output = await Collect(hub.GetPlanOutput(plan.Id, Ct));
 
         Assert.Equal([plan.Output], output);
+        harness.NothingAddressed();
+    }
+
+    [Theory]
+    [InlineData(SystemPermission.ViewProjects)]
+    [InlineData(SystemPermission.ViewWorkspaces)]
+    public async Task GetPlanOutput_streams_the_stored_output_to_a_caller_holding_a_system_view_permission(SystemPermission permission)
+    {
+        var (_, plan) = await SeedPlan();
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(permission));
+
+        var output = await Collect(hub.GetPlanOutput(plan.Id, Ct));
+
+        Assert.Equal([plan.Output], output);
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task GetPlanOutput_refuses_a_caller_holding_only_ManageWorkspaces()
+    {
+        var (_, plan) = await SeedPlan();
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ManageWorkspaces));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => Collect(hub.GetPlanOutput(plan.Id, Ct)));
+        harness.NothingAddressed();
     }
 
     [Fact]
     public async Task GetPlanOutput_refuses_a_caller_holding_ViewProject_only_on_another_project()
     {
         var (_, plan) = await SeedPlan();
-        var (hub, _) = Hub(new ClaimsPrincipalBuilder().WithProject(Guid.NewGuid(), ProjectPermission.ViewProject));
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithProject(Guid.NewGuid(), ProjectPermission.ViewProject));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => Collect(hub.GetPlanOutput(plan.Id, Ct)));
+        harness.NothingAddressed();
     }
 
     [Fact]
-    public async Task GetApplyOutput_streams_the_stored_output_to_a_caller_holding_ViewWorkspaces()
+    public async Task GetApplyOutput_streams_the_stored_output_to_a_member_holding_ViewProject()
     {
-        var (_, plan) = await SeedPlan();
+        var (project, plan) = await SeedPlan();
         var apply = TestData.Apply(await RunOf(plan));
         await Seed(apply);
-        var (hub, _) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewWorkspaces));
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithProject(project.Id, ProjectPermission.ViewProject));
 
         var output = await Collect(hub.GetApplyOutput(apply.Id, Ct));
 
         Assert.Equal([apply.Output], output);
+        harness.NothingAddressed();
+    }
+
+    [Theory]
+    [InlineData(SystemPermission.ViewWorkspaces)]
+    [InlineData(SystemPermission.ViewProjects)]
+    public async Task GetApplyOutput_streams_the_stored_output_to_a_caller_holding_a_system_view_permission(SystemPermission permission)
+    {
+        var (_, plan) = await SeedPlan();
+        var apply = TestData.Apply(await RunOf(plan));
+        await Seed(apply);
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(permission));
+
+        var output = await Collect(hub.GetApplyOutput(apply.Id, Ct));
+
+        Assert.Equal([apply.Output], output);
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -264,9 +439,10 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         var (_, plan) = await SeedPlan();
         var apply = TestData.Apply(await RunOf(plan));
         await Seed(apply);
-        var (hub, _) = Hub(new ClaimsPrincipalBuilder().WithProject(Guid.NewGuid(), ProjectPermission.ViewProject));
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithProject(Guid.NewGuid(), ProjectPermission.ViewProject));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => Collect(hub.GetApplyOutput(apply.Id, Ct)));
+        harness.NothingAddressed();
     }
 
     [Fact]
@@ -275,9 +451,10 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         var (_, plan) = await SeedPlan();
         var apply = TestData.Apply(await RunOf(plan));
         await Seed(apply);
-        var (hub, _) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ManageWorkspaces));
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ManageWorkspaces));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => Collect(hub.GetApplyOutput(apply.Id, Ct)));
+        harness.NothingAddressed();
     }
 
     // ---- helpers --------------------------------------------------------------------------------

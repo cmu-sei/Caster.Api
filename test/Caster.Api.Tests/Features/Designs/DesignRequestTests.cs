@@ -51,6 +51,15 @@ public class DesignRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     }
 
     [Fact]
+    public async Task Get_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, _, design) = await SeedDesign();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designs/{design.Id}", Ct));
+    }
+
+    [Fact]
     public async Task Get_is_forbidden_for_a_caller_holding_ViewProject_only_on_another_project()
     {
         var (_, _, design) = await SeedDesign();
@@ -98,6 +107,15 @@ public class DesignRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     }
 
     [Fact]
+    public async Task GetByDirectory_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var (_, directory, _) = await SeedDesign();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/directories/{directory.Id}/designs", Ct));
+    }
+
+    [Fact]
     public async Task Create_by_a_member_holding_EditProject_stores_the_design()
     {
         var (project, directory) = await SeedDirectory();
@@ -125,6 +143,18 @@ public class DesignRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     {
         var (project, directory) = await SeedDirectory();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/designs", new { name = "refused", directoryId = directory.Id }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.False(await DesignNamed("refused"));
+    }
+
+    [Fact]
+    public async Task Create_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync("api/designs", new { name = "refused", directoryId = directory.Id }, Ct);
 
@@ -190,6 +220,18 @@ public class DesignRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     }
 
     [Fact]
+    public async Task Edit_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, design) = await SeedDesign();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/designs/{design.Id}", new { name = "renamed" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(design.Name, (await StoredDesign(design.Id)).Name);
+    }
+
+    [Fact]
     public async Task Edit_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, design) = await SeedDesign();
@@ -237,6 +279,18 @@ public class DesignRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     }
 
     [Fact]
+    public async Task Disable_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, design) = await SeedDesign();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/designs/{design.Id}/actions/disable", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.True((await StoredDesign(design.Id)).Enabled);
+    }
+
+    [Fact]
     public async Task Enable_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
         var (_, _, design) = await SeedDesign(enabled: false);
@@ -274,6 +328,18 @@ public class DesignRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     {
         var (project, _, design) = await SeedDesign();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/designs/{design.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.NotNull(await StoredDesign(design.Id));
+    }
+
+    [Fact]
+    public async Task Delete_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, _, design) = await SeedDesign();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/designs/{design.Id}", Ct);
 

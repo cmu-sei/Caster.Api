@@ -80,11 +80,13 @@ public class GroupRequestTests(DatabaseFixture fixture, CasterAppFactory factory
 
     // ---- GET api/groups -------------------------------------------------------------------------
 
-    [Fact]
-    public async Task GetAll_lists_every_group_for_a_caller_holding_ViewGroups()
+    [Theory]
+    [InlineData(SystemPermission.ViewGroups)]
+    [InlineData(SystemPermission.ViewProjects)]
+    public async Task GetAll_lists_every_group_for_a_caller_holding_a_system_view_permission(SystemPermission permission)
     {
         var group = await SeedGroup();
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewGroups).SeedAsync();
+        var actor = await Actor().WithSystemPermissions(permission).SeedAsync();
 
         var response = await Client(actor).GetAsync("api/groups", Ct);
 
@@ -111,6 +113,16 @@ public class GroupRequestTests(DatabaseFixture fixture, CasterAppFactory factory
         var response = await Client(actor).GetAsync("api/groups", Ct);
 
         Assert.Equal([actor.GroupMembership.GroupId], (await ReadAsync<GroupView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetAll_is_forbidden_for_a_caller_holding_only_ManageGroups()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageGroups).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/groups", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
     [Fact]
@@ -268,6 +280,15 @@ public class GroupRequestTests(DatabaseFixture fixture, CasterAppFactory factory
     }
 
     [Fact]
+    public async Task GetMemberships_is_forbidden_for_a_caller_holding_only_ManageGroups()
+    {
+        var group = await SeedGroup();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageGroups).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/groups/{group.Id}/memberships", Ct));
+    }
+
+    [Fact]
     public async Task GetMemberships_is_forbidden_for_a_caller_managing_only_another_group()
     {
         var group = await SeedGroup();
@@ -285,6 +306,28 @@ public class GroupRequestTests(DatabaseFixture fixture, CasterAppFactory factory
         var response = await Client(actor).GetAsync($"api/groups/membership/{membership.Id}", Ct);
 
         Assert.Equal(membership.UserId, (await ReadAsync<GroupMembershipView>(response)).UserId);
+    }
+
+    [Fact]
+    public async Task GetMembership_returns_the_membership_to_a_caller_holding_ViewGroups()
+    {
+        var (_, membership) = await SeedGroupWithAMember();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewGroups).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/groups/membership/{membership.Id}", Ct);
+
+        Assert.Equal(membership.UserId, (await ReadAsync<GroupMembershipView>(response)).UserId);
+    }
+
+    [Fact]
+    public async Task GetMembership_is_forbidden_for_a_caller_holding_only_ManageGroups()
+    {
+        var (_, membership) = await SeedGroupWithAMember();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageGroups).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/groups/membership/{membership.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
     [Fact]
@@ -409,6 +452,30 @@ public class GroupRequestTests(DatabaseFixture fixture, CasterAppFactory factory
     }
 
     [Fact]
+    public async Task EditMembership_by_a_caller_holding_ManageGroups_stores_the_new_role()
+    {
+        var (group, membership) = await SeedGroupWithAMember();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageGroups).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/groups/memberships/{membership.Id}", new { role = "Manager" }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal(GroupMembershipRole.Manager, (await StoredMembership(group.Id, membership.UserId)).Role);
+    }
+
+    [Fact]
+    public async Task EditMembership_is_forbidden_for_a_caller_holding_only_ViewGroups()
+    {
+        var (group, membership) = await SeedGroupWithAMember();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewGroups).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/groups/memberships/{membership.Id}", new { role = "Manager" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal(GroupMembershipRole.Member, (await StoredMembership(group.Id, membership.UserId)).Role);
+    }
+
+    [Fact]
     public async Task EditMembership_is_forbidden_for_a_plain_member_of_the_group()
     {
         var (group, membership) = await SeedGroupWithAMember();
@@ -454,6 +521,30 @@ public class GroupRequestTests(DatabaseFixture fixture, CasterAppFactory factory
 
         await AssertStatus(HttpStatusCode.NoContent, response);
         Assert.Null(await StoredMembership(group.Id, membership.UserId));
+    }
+
+    [Fact]
+    public async Task DeleteMembership_by_a_caller_holding_ManageGroups_removes_the_membership()
+    {
+        var (group, membership) = await SeedGroupWithAMember();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageGroups).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/groups/memberships/{membership.Id}", Ct);
+
+        await AssertStatus(HttpStatusCode.NoContent, response);
+        Assert.Null(await StoredMembership(group.Id, membership.UserId));
+    }
+
+    [Fact]
+    public async Task DeleteMembership_is_forbidden_for_a_caller_holding_only_ViewGroups()
+    {
+        var (group, membership) = await SeedGroupWithAMember();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewGroups).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/groups/memberships/{membership.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.NotNull(await StoredMembership(group.Id, membership.UserId));
     }
 
     [Fact]
