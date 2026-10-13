@@ -27,6 +27,22 @@ public class ModuleVersion : IEntity
     public List<ModuleVariable> Variables { get; set; } = new List<ModuleVariable>();
     public List<ModuleOutput> Outputs { get; set; } = new List<ModuleOutput>();
 
+    /// <summary>
+    /// Names of the required variables (those without a default) that have no value.
+    /// </summary>
+    public string[] MissingRequiredVariables(IEnumerable<ModuleValue> values)
+    {
+        var set = (values ?? [])
+            .Where(x => !string.IsNullOrEmpty(x.Value))
+            .Select(x => x.Name)
+            .ToHashSet();
+
+        return Variables
+            .Where(v => !v.IsOptional && !set.Contains(v.Name))
+            .Select(v => v.Name)
+            .ToArray();
+    }
+
     public string ToSnippet(string name, IEnumerable<ModuleValue> values)
     {
         var snippet = $"module \"{name}\" {{\n" +

@@ -51,6 +51,7 @@ public class AddOrUpdateValues
                 throw new EntityNotFoundException<DesignModule>();
 
             designModule.AddOrUpdateValues(ModuleValue.ToDomain(request.Values));
+            await DesignModuleValidation.EnsureComplete(dbContext, designModule, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
 
             return mapper.Map<DesignModule>(designModule);

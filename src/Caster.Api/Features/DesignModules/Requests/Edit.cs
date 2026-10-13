@@ -65,6 +65,11 @@ public class Edit
         {
             RuleFor(x => x.DesignId).DesignExists(validationService);
             RuleFor(x => x.ModuleId).ModuleExists(validationService);
+            RuleFor(x => x.Name)
+                .NotEmpty()
+                .Matches(DesignModuleValidation.TerraformNamePattern)
+                .WithMessage(DesignModuleValidation.TerraformNameMessage);
+            RuleFor(x => x.ModuleVersion).NotEmpty();
         }
     }
 
@@ -83,6 +88,7 @@ public class Edit
                 throw new EntityNotFoundException<DesignModule>();
 
             mapper.Map(request, designModule);
+            await DesignModuleValidation.EnsureComplete(dbContext, designModule, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
 
             return mapper.Map<DesignModule>(designModule);
