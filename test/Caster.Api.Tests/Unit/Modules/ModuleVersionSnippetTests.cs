@@ -39,6 +39,17 @@ namespace Caster.Api.Tests.Unit.Modules
         }
 
         [Fact]
+        public void ToSnippet_Leaves_Out_Blank_Optional_Number()
+        {
+            var snippet = Version("v1.0.0").ToSnippet("vm", [
+                new ModuleValue { Name = "vm_name", Value = "web" },
+                new ModuleValue { Name = "cpus", Value = "" },
+            ]);
+
+            Assert.DoesNotContain("cpus", snippet);
+        }
+
+        [Fact]
         public void ToSnippet_Quotes_Set_String_Value()
         {
             var snippet = Version("v1.0.0").ToSnippet("vm", [new ModuleValue { Name = "vm_name", Value = "web" }]);

@@ -68,6 +68,13 @@ public class ModuleVersion : IEntity
                 continue;
             }
 
+            // A blank number, bool, list or map would be written as "name = ", which
+            // isn't valid HCL. Leaving it out lets the variable's default apply.
+            if (v.IsOptional && !v.RequiresQuotes && string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
+
             if (v.RequiresQuotes)
             {
                 value = $"\"{value}\"";
