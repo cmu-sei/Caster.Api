@@ -59,6 +59,11 @@ public class Create
         {
             RuleFor(x => x.DesignId).DesignExists(validationService);
             RuleFor(x => x.ModuleId).ModuleExists(validationService);
+            RuleFor(x => x.Name)
+                .NotEmpty()
+                .Matches(DesignModuleValidation.TerraformNamePattern)
+                .WithMessage(DesignModuleValidation.TerraformNameMessage);
+            RuleFor(x => x.ModuleVersion).NotEmpty();
         }
     }
 
@@ -70,6 +75,8 @@ public class Create
         public override async Task<DesignModule> HandleRequest(Command request, CancellationToken cancellationToken)
         {
             var designModule = mapper.Map<Domain.Models.DesignModule>(request);
+
+            await DesignModuleValidation.EnsureComplete(dbContext, designModule, cancellationToken);
 
             dbContext.DesignModules.Add(designModule);
             await dbContext.SaveChangesAsync(cancellationToken);
