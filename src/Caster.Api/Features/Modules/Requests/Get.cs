@@ -52,7 +52,7 @@ namespace Caster.Api.Features.Modules
                 if (module == null)
                     throw new EntityNotFoundException<Module>();
 
-                module.Versions = module.Versions.OrderByDescending(x => x.DateCreated).ToList();
+                module.Versions = ModuleVersionOrder.HighestFirst(module.Versions);
 
                 return mapper.Map<Module>(module);
             }

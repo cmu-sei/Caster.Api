@@ -103,6 +103,11 @@ namespace Caster.Api.Features.Modules
                     .ProjectTo<Module>(mapper.ConfigurationProvider, request.IncludeVersionCount ? (dest => dest.VersionsCount) : null)
                     .ToArrayAsync(cancellationToken);
 
+                foreach (var module in modules.Where(m => m.Versions != null))
+                {
+                    module.Versions = Domain.Models.ModuleVersionOrder.HighestFirst(module.Versions, v => v.Name, v => v.DateCreated);
+                }
+
                 return modules;
             }
         }

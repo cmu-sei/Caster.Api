@@ -73,6 +73,7 @@ namespace Caster.Api.Features.Workspaces
         {
             public CommandValidator(IValidationService validationService, TerraformOptions options)
             {
+                RuleFor(x => x.Name).NotAReservedName("Workspace");
                 RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
                 RuleFor(x => x.Parallelism.Value)
                     .ParalellismValidation(options)
@@ -105,22 +106,33 @@ namespace Caster.Api.Features.Workspaces
 
             private async Task<Domain.Models.Workspace> SetCascadedProperties(Domain.Models.Workspace workspace, Command request, CancellationToken ct)
             {
-                if (!request.Parallelism.HasValue && string.IsNullOrEmpty(request.TerraformVersion))
+                // Each property cascades on its own. A single guard across all of them meant
+                // that supplying any one value skipped the cascade for the others.
+                var cascadeVersion = string.IsNullOrEmpty(request.TerraformVersion);
+                var cascadeParallelism = !request.Parallelism.HasValue;
+                var cascadeThreshold = !request.AzureDestroyFailureThreshold.HasValue;
+
+                if (!cascadeVersion && !cascadeParallelism && !cascadeThreshold)
                 {
-                    // Load parent directories from database
-                    var directory = await dbContext.GetDirectoryWithAncestors(workspace.DirectoryId, ct);
+                    return workspace;
+                }
 
-                    workspace.TerraformVersion = !string.IsNullOrEmpty(request.TerraformVersion) ?
-                        request.TerraformVersion :
-                        GetTerraformVersion(directory);
+                // Load parent directories from database
+                var directory = await dbContext.GetDirectoryWithAncestors(workspace.DirectoryId, ct);
 
-                    workspace.Parallelism = request.Parallelism.HasValue ?
-                        request.Parallelism.Value :
-                        GetParallelism(directory);
+                if (cascadeVersion)
+                {
+                    workspace.TerraformVersion = GetTerraformVersion(directory);
+                }
 
-                    workspace.AzureDestroyFailureThreshold = request.AzureDestroyFailureThreshold.HasValue ?
-                        request.AzureDestroyFailureThreshold.Value :
-                        GetAzureDestroyThreshold(directory);
+                if (cascadeParallelism)
+                {
+                    workspace.Parallelism = GetParallelism(directory);
+                }
+
+                if (cascadeThreshold)
+                {
+                    workspace.AzureDestroyFailureThreshold = GetAzureDestroyThreshold(directory);
                 }
 
                 return workspace;
