@@ -26,6 +26,9 @@ namespace Caster.Api.Tests.Unit.Modules
     /// </summary>
     [Trait("Category", "Unit")]
     [Trait("Category", "ModuleSources")]
+    // Both classes clone under the one shared temp root, and the end-to-end
+    // hygiene tests count its children, so they must not run in parallel.
+    [Collection(GitModuleTempRoot.Name)]
     public class GitModuleRepositoryProviderTests : IDisposable
     {
         private static readonly string CatalogData =
@@ -459,6 +462,174 @@ namespace Caster.Api.Tests.Unit.Modules
 
             Assert.Contains("variables.tf.json", exception.Message);
             Assert.Equal(0, await _db.Modules.CountAsync());
+        }
+
+        #endregion
+
+        #region Per-module tags
+
+        [Fact]
+        public async Task SyncModules_PerModuleTag_VersionsOnlyThatModule()
+        {
+            GivenTags("v0.1.0", "network-segment/v0.2.0");
+            _git.SourceTree = BuildMonorepoTree();
+
+            await _sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, CancellationToken.None);
+
+            var segment = await _db.Modules.Include(x => x.Versions)
+                .SingleAsync(x => x.Path == "catalog/network-segment");
+            var machine = await _db.Modules.Include(x => x.Versions)
+                .SingleAsync(x => x.Path == "catalog/machine-blank");
+
+            Assert.Equal(
+                ["network-segment/v0.2.0", "v0.1.0"],
+                segment.Versions.Select(x => x.Name).OrderBy(x => x, StringComparer.Ordinal));
+            Assert.Equal(["v0.1.0"], machine.Versions.Select(x => x.Name));
+        }
+
+        [Fact]
+        public async Task SyncModules_PerModuleTag_SnippetReferencesTheFullTag()
+        {
+            GivenTags("network-segment/v1.2.0");
+            _git.SourceTree = BuildMonorepoTree();
+
+            await _sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, CancellationToken.None);
+
+            var version = (await _db.Modules.Include(x => x.Versions).SingleAsync()).Versions.Single();
+            var snippet = version.ToSnippet("lan", [new Caster.Api.Domain.Models.ModuleValue { Name = "name", Value = "lan" }]);
+
+            // The ref is the git tag itself, slash and all; go-getter passes it
+            // to git unchanged.
+            Assert.Contains(
+                "source = \"git::file:///srv/git/catalog.git//network-segment?ref=network-segment/v1.2.0\"",
+                snippet);
+        }
+
+        [Fact]
+        public async Task SyncModules_PerModuleTagForAnotherModule_IsSkippedBySingleModuleSync()
+        {
+            GivenTags("v0.1.0", "machine-blank/v0.2.0");
+            _git.SourceTree = BuildMonorepoTree();
+
+            await _sut.SyncModuleAsync(
+                Source(ModuleSourceLayout.Subdirectories),
+                "network-segment",
+                CancellationToken.None);
+
+            // machine-blank's tag cannot hold a network-segment version, so it
+            // is not cloned at all.
+            Assert.Equal(["v0.1.0"], _git.ClonedTags);
+            Assert.Equal(["v0.1.0"], await _db.ModuleVersions.Select(x => x.Name).ToListAsync());
+        }
+
+        [Fact]
+        public async Task SyncModules_RootLayout_TreatsASlashTagAsPlain()
+        {
+            GivenTags("release/v1.0.0");
+            _git.SourceTree = BuildRootLayoutTree();
+
+            await _sut.SyncModulesAsync(Source(ModuleSourceLayout.Root), false, CancellationToken.None);
+
+            Assert.Equal("release/v1.0.0", (await _db.ModuleVersions.SingleAsync()).Name);
+        }
+
+        [Fact]
+        public async Task SyncModules_SecondSyncWithUnchangedPerModuleTags_SkipsTheClone()
+        {
+            GivenTags("v0.1.0", "network-segment/v0.2.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+
+            await _sut.SyncModulesAsync(source, false, CancellationToken.None);
+            Assert.Equal(2, _git.CloneCallCount);
+
+            // machine-blank lacks network-segment's tag, which must not read
+            // as out of date.
+            await _sut.SyncModulesAsync(source, false, CancellationToken.None);
+
+            Assert.Equal(2, _git.CloneCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_NewPerModuleTag_IsPickedUpWithoutForceUpdate()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+
+            await _sut.SyncModulesAsync(source, false, CancellationToken.None);
+
+            GivenTags("machine-blank/v0.2.0");
+            await _sut.SyncModulesAsync(source, false, CancellationToken.None);
+
+            var machine = await _db.Modules.Include(x => x.Versions)
+                .SingleAsync(x => x.Path == "catalog/machine-blank");
+
+            Assert.Equal(
+                ["machine-blank/v0.2.0", "v0.1.0"],
+                machine.Versions.Select(x => x.Name).OrderBy(x => x, StringComparer.Ordinal));
+        }
+
+        [Fact]
+        public async Task SyncModules_ModuleReleasedOnlyThroughItsOwnTag_IsDiscoveredWithoutForceUpdate()
+        {
+            // v0.1.0 holds network-segment alone; machine-blank first ships
+            // under its own tag. Every existing Module is current, so only the
+            // unknown tag prefix can reveal the new one.
+            var early = Path.Combine(_scratch, "early");
+            Directory.CreateDirectory(Path.Combine(early, "network-segment"));
+            CopyModule("network-segment", Path.Combine(early, "network-segment"));
+            _git.SourceTreesByTag["v0.1.0"] = early;
+            _git.SourceTree = BuildMonorepoTree();
+            GivenTags("v0.1.0");
+            var source = Source(ModuleSourceLayout.Subdirectories);
+
+            await _sut.SyncModulesAsync(source, false, CancellationToken.None);
+            Assert.Equal(1, await _db.Modules.CountAsync());
+
+            GivenTags("machine-blank/v1.0.0");
+            await _sut.SyncModulesAsync(source, false, CancellationToken.None);
+
+            var machine = await _db.Modules.Include(x => x.Versions)
+                .SingleAsync(x => x.Path == "catalog/machine-blank");
+            Assert.Equal(["machine-blank/v1.0.0"], machine.Versions.Select(x => x.Name));
+        }
+
+        [Fact]
+        public async Task SyncModules_MetadataComesFromTheHighestVersionNotTheLastTagByName()
+        {
+            // Ordinal order would read "v0.1.0" after "network-segment/v2.0.0"
+            // and let the older caster.json win.
+            var old = BuildMonorepoTree();
+            File.WriteAllText(
+                Path.Combine(old, "network-segment", "caster.json"),
+                "{\"displayName\": \"Old Segment\"}");
+            _git.SourceTreesByTag["v0.1.0"] = old;
+
+            var current = Path.Combine(_scratch, "current");
+            Directory.CreateDirectory(Path.Combine(current, "network-segment"));
+            CopyModule("network-segment", Path.Combine(current, "network-segment"));
+            _git.SourceTreesByTag["network-segment/v2.0.0"] = current;
+
+            GivenTags("v0.1.0", "network-segment/v2.0.0");
+
+            await _sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, CancellationToken.None);
+
+            var module = await _db.Modules.SingleAsync(x => x.Path == "catalog/network-segment");
+            Assert.Equal("Network Segment", module.Name);
+            Assert.Equal(["v0.1.0", "network-segment/v2.0.0"], _git.ClonedTags);
+        }
+
+        [Theory]
+        [InlineData(ModuleSourceLayout.Subdirectories, "network-segment/v1.2.0", "network-segment")]
+        [InlineData(ModuleSourceLayout.Subdirectories, "v1.2.0", null)]
+        [InlineData(ModuleSourceLayout.Subdirectories, "network-segment-v1.2.0", null)]
+        [InlineData(ModuleSourceLayout.Subdirectories, "/v1.2.0", null)]
+        [InlineData(ModuleSourceLayout.Subdirectories, "network-segment/", null)]
+        [InlineData(ModuleSourceLayout.Root, "network-segment/v1.2.0", null)]
+        public void GetTagModule_ReadsTheModuleFromASlashPrefix(ModuleSourceLayout layout, string tag, string expected)
+        {
+            Assert.Equal(expected, GitModuleRepositoryProvider.GetTagModule(Source(layout), tag));
         }
 
         #endregion

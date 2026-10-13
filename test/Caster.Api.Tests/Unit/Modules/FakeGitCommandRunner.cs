@@ -24,6 +24,12 @@ namespace Caster.Api.Tests.Unit.Modules
         /// <summary>Directory tree copied into the clone destination.</summary>
         public string SourceTree { get; set; }
 
+        /// <summary>Per-tag trees that override <see cref="SourceTree"/>, for repos whose content changes between tags.</summary>
+        public Dictionary<string, string> SourceTreesByTag { get; } = [];
+
+        /// <summary>Tags cloned, in the order the provider asked for them.</summary>
+        public List<string> ClonedTags { get; } = [];
+
         /// <summary>When set, CloneTagAsync throws this instead of copying.</summary>
         public Exception CloneFailure { get; set; }
 
@@ -45,6 +51,7 @@ namespace Caster.Api.Tests.Unit.Modules
         {
             CloneCallCount++;
             CloneDestinations.Add(destinationPath);
+            ClonedTags.Add(tag);
 
             if (CloneFailure != null)
             {
@@ -56,7 +63,7 @@ namespace Caster.Api.Tests.Unit.Modules
                 throw CloneFailure;
             }
 
-            CopyTree(SourceTree, destinationPath);
+            CopyTree(SourceTreesByTag.GetValueOrDefault(tag, SourceTree), destinationPath);
 
             // A real clone leaves a .git directory behind; include one so the
             // provider is seen to skip it when enumerating module roots.

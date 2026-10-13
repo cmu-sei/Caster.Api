@@ -33,13 +33,18 @@ public static class ModuleVersionOrder
     private record ParsedVersion(Version Core, string PreRelease)
     {
         // Accepts "1", "1.2", "1.2.3" or "1.2.3.4", with an optional leading v,
-        // pre-release ("-rc1") and build metadata ("+abc", ignored).
+        // pre-release ("-rc1") and build metadata ("+abc", ignored). A
+        // per-module tag's "module/" prefix is ignored, so
+        // "network-segment/v1.10.0" sorts above "network-segment/v1.2.0".
         public static ParsedVersion Parse(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
                 return null;
 
             var text = name.Trim();
+            var slash = text.LastIndexOf('/');
+            if (slash >= 0)
+                text = text[(slash + 1)..];
             if (text.StartsWith('v') || text.StartsWith('V'))
                 text = text[1..];
 

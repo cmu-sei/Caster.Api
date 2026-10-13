@@ -72,7 +72,8 @@ public enum ModuleSourceLayout
     /// Every immediate subdirectory holding a <c>variables.tf.json</c> or
     /// <c>outputs.tf.json</c> is its own Module root. One clone yields many
     /// Modules, and the generated source address uses Terraform's
-    /// <c>//subdir</c> syntax.
+    /// <c>//subdir</c> syntax. A plain tag versions every Module; a tag of
+    /// the form <c>&lt;subdir&gt;/&lt;version&gt;</c> versions only that one.
     /// </summary>
     Subdirectories = 1,
 }

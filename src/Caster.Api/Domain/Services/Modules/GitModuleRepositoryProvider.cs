@@ -83,10 +83,34 @@ public class GitModuleRepositoryProvider(
 
         var drafts = new Dictionary<string, ModuleDraft>(StringComparer.Ordinal);
 
-        foreach (var tag in tags)
+        // Lowest version first, so the highest tag is read last and its
+        // metadata is what the Designer shows. Ordinal order would not do:
+        // "v1.10.0" sorts before "v1.9.0", and "network-segment/v2.0.0"
+        // before every plain "v" tag.
+        var readOrder = ModuleVersionOrder.HighestFirst(tags, t => t, _ => DateTime.MinValue);
+        readOrder.Reverse();
+
+        foreach (var tag in readOrder)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await ReadTagAsync(source, tag, subdirectoryFilter, drafts, cancellationToken);
+
+            // A per-module tag only ever describes its own subdirectory, so
+            // narrow the read to it, and skip the clone outright when a
+            // single-module request asked for a different one.
+            var tagModule = GetTagModule(source, tag);
+            var filter = subdirectoryFilter;
+
+            if (tagModule != null)
+            {
+                if (filter != null && !string.Equals(filter, tagModule, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                filter = tagModule;
+            }
+
+            await ReadTagAsync(source, tag, filter, drafts, cancellationToken);
         }
 
         if (drafts.Count == 0)
@@ -134,8 +158,8 @@ public class GitModuleRepositoryProvider(
                     drafts[root.Path] = draft;
                 }
 
-                // Later tags overwrite earlier ones, so the highest tag's
-                // metadata is what the Designer shows.
+                // Later tags overwrite earlier ones; SyncAsync reads the
+                // highest last.
                 draft.Name = root.Name;
                 draft.Description = root.Description;
 
@@ -153,6 +177,29 @@ public class GitModuleRepositoryProvider(
         {
             TryDeleteDirectory(workingDirectory);
         }
+    }
+
+    /// <summary>
+    /// In the Subdirectories layout a tag of the form <c>&lt;subdir&gt;/&lt;version&gt;</c>,
+    /// such as <c>network-segment/v1.2.0</c>, versions only the Module in that
+    /// subdirectory, so one repository can release its Modules independently.
+    /// Returns that subdirectory, or null for a plain tag, which versions every
+    /// Module. A slash, not a hyphen, separates the two because Module names
+    /// and pre-release versions both contain hyphens. The Root layout has one
+    /// Module, so every tag is plain there.
+    /// </summary>
+    public static string GetTagModule(ModuleSourceOptions source, string tag)
+    {
+        if (source.Layout != ModuleSourceLayout.Subdirectories)
+        {
+            return null;
+        }
+
+        // Subdirectories are immediate children, so the module name cannot
+        // itself contain a slash; anything after the first one is the version.
+        var slash = tag.IndexOf('/');
+
+        return slash > 0 && slash < tag.Length - 1 ? tag[..slash] : null;
     }
 
     private IEnumerable<ModuleRoot> EnumerateModuleRoots(
@@ -326,8 +373,9 @@ public class GitModuleRepositoryProvider(
 
     /// <summary>
     /// Cheap change check: tags are immutable by convention, so if every Module
-    /// already registered for this source carries exactly the remote's tags,
-    /// there is nothing to clone. Costs one ls-remote and one query.
+    /// already registered for this source carries exactly the remote tags that
+    /// apply to it (the plain tags plus its own per-module tags), there is
+    /// nothing to clone. Costs one ls-remote and one query.
     /// </summary>
     private async Task<bool> IsUpToDateAsync(
         ModuleSourceOptions source,
@@ -339,7 +387,7 @@ public class GitModuleRepositoryProvider(
         var existing = await db.Modules
             .AsNoTracking()
             .Where(m => m.Path == source.Name || m.Path.StartsWith(prefix))
-            .Select(m => m.Versions.Select(v => v.Name).ToList())
+            .Select(m => new { m.Path, VersionNames = m.Versions.Select(v => v.Name).ToList() })
             .ToListAsync(cancellationToken);
 
         if (existing.Count == 0)
@@ -347,9 +395,33 @@ public class GitModuleRepositoryProvider(
             return false;
         }
 
-        return existing.All(versionNames => versionNames
-            .OrderBy(x => x, StringComparer.Ordinal)
-            .SequenceEqual(tags, StringComparer.Ordinal));
+        var subdirectories = existing
+            .Select(m => m.Path.Length > prefix.Length ? m.Path[prefix.Length..] : null)
+            .Where(x => x != null)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // A per-module tag for a subdirectory with no Module yet is either a
+        // Module added since the last sync or a tag that names nothing; only a
+        // clone can tell which.
+        if (tags.Select(t => GetTagModule(source, t)).Any(m => m != null && !subdirectories.Contains(m)))
+        {
+            return false;
+        }
+
+        return existing.All(module =>
+        {
+            var subdirectory = module.Path.Length > prefix.Length ? module.Path[prefix.Length..] : null;
+
+            var expected = tags.Where(t =>
+            {
+                var tagModule = GetTagModule(source, t);
+                return tagModule == null || string.Equals(tagModule, subdirectory, StringComparison.OrdinalIgnoreCase);
+            });
+
+            return module.VersionNames
+                .OrderBy(x => x, StringComparer.Ordinal)
+                .SequenceEqual(expected, StringComparer.Ordinal);
+        });
     }
 
     /// <summary>
