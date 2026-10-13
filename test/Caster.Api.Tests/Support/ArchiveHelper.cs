@@ -3,8 +3,11 @@
 
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Caster.Api.Tests.Support;
 
@@ -26,5 +29,13 @@ public static class ArchiveHelper
         }
 
         return new MultipartFormDataContent { { new ByteArrayContent(buffer.ToArray()), "archive", "import.zip" } };
+    }
+
+    /// <summary>The entry names of the zip an export endpoint answered with.</summary>
+    public static async Task<string[]> EntryNames(HttpResponseMessage response, CancellationToken ct)
+    {
+        using var zip = new ZipArchive(await response.Content.ReadAsStreamAsync(ct), ZipArchiveMode.Read);
+
+        return [.. zip.Entries.Select(x => x.FullName)];
     }
 }

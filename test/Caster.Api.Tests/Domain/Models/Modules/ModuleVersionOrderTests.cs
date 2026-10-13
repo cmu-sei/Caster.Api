@@ -5,25 +5,23 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Caster.Api.Domain.Models;
+using Caster.Api.Tests.Support;
 using Xunit;
 
-namespace Caster.Api.Tests.Unit.Modules
+namespace Caster.Api.Tests.Domain.Models.Modules
 {
     [Trait("Category", "Unit")]
     [Trait("Category", "Modules")]
     public class ModuleVersionOrderTests
     {
-        private static ModuleVersion Version(string name, DateTime? created = null) => new()
+        /// <summary>A version of its own module, imported at <paramref name="created"/>.</summary>
+        private static ModuleVersion Version(string name, DateTime created)
         {
-            Name = name,
-            UrlLink = "https://example.com/modules/vm.git",
-            DateCreated = created ?? DateTime.UtcNow,
-            Variables =
-            [
-                new ModuleVariable { Name = "vm_name", VariableType = "string" },
-                new ModuleVariable { Name = "cpus", VariableType = "number", DefaultValue = "2" },
-            ]
-        };
+            var version = TestData.ModuleVersion(TestData.Module(), name);
+            version.DateCreated = created;
+
+            return version;
+        }
 
         [Fact]
         public void HighestFirst_Orders_By_Version_Not_Import_Date()

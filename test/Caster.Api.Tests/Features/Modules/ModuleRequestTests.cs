@@ -52,6 +52,28 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
         await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/modules/{module.Id}", Ct));
     }
 
+    /// <summary>
+    /// The versions are listed by version number, highest first, and a tag that is no version number last, whatever
+    /// order they were imported in: the Designer and the file editor default to the first one.
+    /// </summary>
+    [Fact]
+    public async Task Get_lists_the_versions_highest_first_whatever_order_they_were_imported_in()
+    {
+        var module = TestData.Module();
+        var older = TestData.ModuleVersion(module, "v1.2.0");
+        older.DateCreated = TestData.DefaultDateCreated.AddDays(2);
+        var newer = TestData.ModuleVersion(module, "v1.10.0");
+        newer.DateCreated = TestData.DefaultDateCreated.AddDays(1);
+        var branch = TestData.ModuleVersion(module, "main");
+        branch.DateCreated = TestData.DefaultDateCreated.AddDays(3);
+        await Seed(module, older, newer, branch);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewModules).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/modules/{module.Id}", Ct);
+
+        Assert.Equal(["v1.10.0", "v1.2.0", "main"], (await ReadAsync<ModuleView>(response)).Versions.Select(x => x.Name));
+    }
+
     /// <summary>A module id that is not a Guid is answered with a 500.</summary>
     [Fact]
     public async Task Get_with_a_malformed_id_answers_with_a_server_error()
@@ -85,6 +107,17 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageModules).SeedAsync();
 
         await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync("api/modules", Ct));
+    }
+
+    /// <summary>Listing the modules with their versions lists each module with no versions.</summary>
+    [Fact]
+    public async Task GetAll_with_includeVersions_lists_each_module_without_its_versions()
+    {
+        var (module, _) = await SeedModule();
+
+        var response = await RootClient.GetAsync("api/modules?includeVersions=true", Ct);
+
+        Assert.Null(Assert.Single(await ReadAsync<ModuleView[]>(response), x => x.Id == module.Id).Versions);
     }
 
     /// <summary>Listing a module's versions is answered with a 500.</summary>
@@ -157,9 +190,9 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     {
         var path = $"terraform-modules/repository-{Guid.NewGuid():N}";
         Factory.OutboundHttp
-            .Respond($"{TestConfiguration.GitlabApiUrl}projects/{GitlabProjectId}?private_token=", Json(
+            .Respond($"{TestConfiguration.GitlabApiUrl}projects/{GitlabProjectId}", Json(
                 $$"""{"id":{{GitlabProjectId}},"name":"imported","path_with_namespace":"{{path}}","http_url_to_repo":"https://gitlab.test/imported.git?ref=master"}"""))
-            .Respond($"{TestConfiguration.GitlabApiUrl}projects/{GitlabProjectId}/releases?private_token=", Json("[]"));
+            .Respond($"{TestConfiguration.GitlabApiUrl}projects/{GitlabProjectId}/releases", Json("[]"));
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageModules).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync("api/repository/modules", new { id = GitlabProjectId.ToString() }, Ct);

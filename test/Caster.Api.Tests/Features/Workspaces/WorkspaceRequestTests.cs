@@ -176,6 +176,35 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Equal("1.5.7", (await ReadAsync<WorkspaceView>(response)).TerraformVersion);
     }
 
+    /// <summary>Each setting cascades from the directory on its own: naming a version does not stop the parallelism cascading.</summary>
+    [Fact]
+    public async Task Create_with_a_terraform_version_takes_the_parallelism_its_directory_names()
+    {
+        var project = TestData.Project();
+        var directory = TestData.Directory(project);
+        directory.Parallelism = 7;
+        await Seed(project, directory);
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/workspaces", new { name = "inherits", directoryId = directory.Id, terraformVersion = "1.5.7" }, Ct);
+
+        var created = await ReadAsync<WorkspaceView>(response);
+        var stored = await StoredWorkspace(created.Id);
+        Assert.Equal("1.5.7", stored.TerraformVersion);
+        Assert.Equal(7, stored.Parallelism);
+    }
+
+    [Fact]
+    public async Task Create_answers_a_bad_request_for_a_name_an_archive_reserves()
+    {
+        var (_, directory) = await SeedDirectory();
+
+        var response = await RootClient.PostAsJsonAsync("api/workspaces", new { name = "__Caster__", directoryId = directory.Id }, Ct);
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.False(await WorkspaceNamed("__Caster__"));
+    }
+
     [Fact]
     public async Task Create_by_a_caller_holding_EditProjects_stores_the_workspace()
     {
@@ -350,6 +379,17 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         var stored = await StoredWorkspace(workspace.Id);
         Assert.Equal("1.5.7", stored.TerraformVersion);
         Assert.Equal(workspace.Name, stored.Name);
+    }
+
+    [Fact]
+    public async Task PartialEdit_answers_a_bad_request_for_a_name_an_archive_reserves()
+    {
+        var (_, _, workspace) = await SeedWorkspace();
+
+        var response = await RootClient.PatchAsJsonAsync($"api/workspaces/{workspace.Id}", new { name = "__Workspaces__" }, Ct);
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal(workspace.Name, (await StoredWorkspace(workspace.Id)).Name);
     }
 
     [Fact]

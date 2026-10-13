@@ -6,12 +6,12 @@ using System.Text;
 using Caster.Api.Domain.Models;
 using Xunit;
 
-namespace Caster.Api.Tests.Unit.Serialization
+namespace Caster.Api.Tests.Infrastructure.Serialization
 {
     /// <summary>
     /// A Terraform module variable's default is read into a string, whatever JSON type it
     /// had. The value is written straight into generated HCL, so the spelling has to be
-    /// what Terraform accepts -- lower-case for booleans. See CRU-2054.
+    /// what Terraform accepts -- lower-case for booleans.
     /// </summary>
     [Trait("Category", "Unit")]
     [Trait("Category", "Serialization")]

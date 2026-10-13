@@ -2,14 +2,17 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services;
 using Caster.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Directory = Caster.Api.Domain.Models.Directory;
 using DirectoryView = Caster.Api.Features.Directories.Directory;
 using File = Caster.Api.Domain.Models.File;
@@ -27,6 +30,15 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
 
     /// <summary>Content no seeded file has, so a read-back proves the import wrote it.</summary>
     private const string ImportedContent = "# imported";
+
+    /// <summary>The directory the settings archives are exported from.</summary>
+    private const string SourceDirectoryName = "infrastructure";
+
+    /// <summary>A Terraform version the host has: <c>TestConfiguration</c> gives <c>Terraform:BinaryPath</c> a folder for it.</summary>
+    private const string InstalledVersion = "1.5.7";
+
+    /// <summary>A well-formed Terraform version <c>Terraform:BinaryPath</c> has no folder for.</summary>
+    private const string NotInstalledVersion = "1.9.9";
 
     // ---- GET api/directories/{id} ---------------------------------------------------------------
 
@@ -334,6 +346,29 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         await AssertProblem(HttpStatusCode.BadRequest, response);
     }
 
+    /// <summary>A directory's name becomes a path segment of every archive it is exported in, where this one is reserved.</summary>
+    [Fact]
+    public async Task Create_answers_a_bad_request_for_a_name_an_archive_reserves()
+    {
+        var project = await SeedProject();
+
+        var response = await RootClient.PostAsJsonAsync("api/directories", new { name = "__Workspaces__", projectId = project.Id }, Ct);
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.False(await DirectoryNamed("__Workspaces__"));
+    }
+
+    [Fact]
+    public async Task Edit_answers_a_bad_request_for_a_name_that_climbs_out_of_its_parent()
+    {
+        var (_, directory) = await SeedDirectory();
+
+        var response = await RootClient.PutAsJsonAsync($"api/directories/{directory.Id}", new { name = ".." }, Ct);
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal(directory.Name, (await StoredDirectory(directory.Id)).Name);
+    }
+
     // ---- PUT/PATCH api/directories/{id} ---------------------------------------------------------
 
     [Fact]
@@ -577,6 +612,31 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
 
     // ---- export and import ----------------------------------------------------------------------
 
+    /// <summary>An export carries the settings manifest unless the caller asks it not to.</summary>
+    [Fact]
+    public async Task Export_writes_the_settings_manifest_by_default()
+    {
+        var (_, directory) = await SeedDirectory();
+        await Seed(TestData.File(directory));
+
+        var response = await RootClient.GetAsync($"api/directories/{directory.Id}/actions/export?archiveType=zip", Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Contains(ArchiveService.ManifestEntryName, await ArchiveHelper.EntryNames(response, Ct));
+    }
+
+    [Fact]
+    public async Task Export_with_includeSettings_false_writes_no_settings_manifest()
+    {
+        var (_, directory) = await SeedDirectory();
+        await Seed(TestData.File(directory, ImportedFileName));
+
+        var response = await RootClient.GetAsync($"api/directories/{directory.Id}/actions/export?archiveType=zip&includeSettings=false", Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal([ImportedFileName], await ArchiveHelper.EntryNames(response, Ct));
+    }
+
     [Fact]
     public async Task Export_returns_a_zip_to_a_member_holding_ViewProject()
     {
@@ -773,6 +833,57 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Equal(file.Content, await StoredContent(directory.Id, ImportedFileName));
     }
 
+    [Fact]
+    public async Task Import_creates_a_missing_workspace_and_child_directory_with_the_settings_the_archive_carries()
+    {
+        var (_, target) = await SeedDirectory(SourceDirectoryName);
+
+        var response = await RootClient.PostAsync(ImportUrl(target), await SettingsArchive(SourceDirectory()), Ct);
+
+        var result = await ReadAsync<ImportResultView>(response);
+        Assert.Empty(result.SkippedSettings);
+        Assert.Empty(result.Warnings);
+        var stored = await ReadBack(db => db.Directories
+            .Include(x => x.Workspaces)
+            .Include(x => x.Children)
+            .SingleAsync(x => x.Id == target.Id, Ct));
+        var workspace = Assert.Single(stored.Workspaces);
+        Assert.Equal("default", workspace.Name);
+        Assert.Equal(InstalledVersion, workspace.TerraformVersion);
+        Assert.Equal(2, workspace.Parallelism);
+        Assert.Equal(5, workspace.AzureDestroyFailureThreshold);
+        var child = Assert.Single(stored.Children);
+        Assert.Equal("child", child.Name);
+        Assert.Equal(InstalledVersion, child.TerraformVersion);
+        Assert.Equal(7, child.Parallelism);
+    }
+
+    [Fact]
+    public async Task Import_answers_a_warning_for_an_archive_exported_from_a_directory_of_another_name()
+    {
+        var (_, target) = await SeedDirectory("elsewhere");
+
+        var response = await RootClient.PostAsync(ImportUrl(target), await SettingsArchive(SourceDirectory()), Ct);
+
+        var result = await ReadAsync<ImportResultView>(response);
+        Assert.Equal([$"This archive was exported from '{SourceDirectoryName}', which does not match 'elsewhere'."], result.Warnings);
+    }
+
+    [Fact]
+    public async Task Import_leaves_a_version_the_host_does_not_have_unpinned_and_answers_it_as_skipped()
+    {
+        var (_, target) = await SeedDirectory(SourceDirectoryName);
+
+        var response = await RootClient.PostAsync(ImportUrl(target), await SettingsArchive(SourceDirectory(NotInstalledVersion)), Ct);
+
+        var result = await ReadAsync<ImportResultView>(response);
+        Assert.Equal(2, result.SkippedSettings.Length);
+        Assert.All(result.SkippedSettings, x => Assert.Contains(NotInstalledVersion, x, StringComparison.Ordinal));
+        var child = await ReadBack(db => db.Directories.SingleAsync(x => x.ParentId == target.Id, Ct));
+        Assert.Null(child.TerraformVersion);
+        Assert.Equal(7, child.Parallelism);
+    }
+
     /// <summary>A member holding only ImportProject is refused an import.</summary>
     // Same case as ProjectRequestTests.Import_is_forbidden_for_a_caller_holding_only_ImportProject.
     [Fact]
@@ -787,6 +898,42 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     // ---- helpers --------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A directory as an export reads it, never saved here: a workspace and a child directory, each holding a file
+    /// and carrying settings off their defaults.
+    /// </summary>
+    private static Directory SourceDirectory(string terraformVersion = InstalledVersion)
+    {
+        var project = TestData.Project();
+        var directory = TestData.Directory(project, SourceDirectoryName);
+        var workspace = TestData.Workspace(directory, "default");
+        workspace.TerraformVersion = terraformVersion;
+        workspace.Parallelism = 2;
+        workspace.AzureDestroyFailureThreshold = 5;
+        workspace.Files.Add(TestData.File(directory, "workspace.tf", ImportedContent));
+        directory.Workspaces.Add(workspace);
+        var child = TestData.Directory(project, "child", directory);
+        child.TerraformVersion = terraformVersion;
+        child.Parallelism = 7;
+        child.Files.Add(TestData.File(child, ImportedFileName, ImportedContent));
+        directory.Children.Add(child);
+
+        return directory;
+    }
+
+    /// <summary><paramref name="source"/> exported as a zip by the host's own <c>IArchiveService</c>, as the export endpoint writes it.</summary>
+    private async Task<MultipartFormDataContent> SettingsArchive(Directory source)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var archive = await scope.ServiceProvider.GetRequiredService<IArchiveService>()
+            .ArchiveDirectory(source, ArchiveType.zip, includeIds: false, includeSettings: true);
+
+        using var buffer = new MemoryStream();
+        await archive.Data.CopyToAsync(buffer, Ct);
+
+        return new MultipartFormDataContent { { new ByteArrayContent(buffer.ToArray()), "archive", archive.Name } };
+    }
 
     private static string ImportUrl(Directory directory) => $"api/directories/{directory.Id}/actions/import";
 
@@ -818,10 +965,10 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         return project;
     }
 
-    private async Task<(Project Project, Directory Directory)> SeedDirectory()
+    private async Task<(Project Project, Directory Directory)> SeedDirectory(string name = "test-directory")
     {
         var project = TestData.Project();
-        var directory = TestData.Directory(project);
+        var directory = TestData.Directory(project, name);
         await Seed(project, directory);
 
         return (project, directory);

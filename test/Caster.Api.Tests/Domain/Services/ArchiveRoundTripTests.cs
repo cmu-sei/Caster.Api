@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -17,7 +18,7 @@ using Xunit;
 using Directory = Caster.Api.Domain.Models.Directory;
 using File = Caster.Api.Domain.Models.File;
 
-namespace Caster.Api.Tests.Unit.Services
+namespace Caster.Api.Tests.Domain.Services
 {
     [Trait("Category", "Unit")]
     [Trait("Category", "Archive")]
@@ -145,21 +146,10 @@ namespace Caster.Api.Tests.Unit.Services
 
             var archive = await service.ArchiveProject(BuildProject(MultibyteContent), ArchiveType.tgz, includeIds: false, includeSettings: true);
 
-            var checkedEntries = 0;
+            var fileEntries = TarEntries(archive.Data).Where(x => x.Name.EndsWith(".tf", StringComparison.Ordinal)).ToList();
 
-            using var gzipStream = new GZipInputStream(archive.Data);
-            using var tarStream = new TarInputStream(gzipStream, Encoding.UTF8);
-
-            while (tarStream.GetNextEntry() is TarEntry entry)
-            {
-                if (entry.Name.EndsWith(".tf", StringComparison.Ordinal))
-                {
-                    Assert.Equal(expectedLength, entry.Size);
-                    checkedEntries++;
-                }
-            }
-
-            Assert.Equal(2, checkedEntries);
+            Assert.Equal(2, fileEntries.Count);
+            Assert.All(fileEntries, x => Assert.Equal(expectedLength, x.Size));
         }
 
         [Fact]
@@ -301,11 +291,11 @@ namespace Caster.Api.Tests.Unit.Services
             Assert.DoesNotContain(extracted.Entity.Directories, x => x.Name.Contains("__Caster__", StringComparison.Ordinal));
             Assert.DoesNotContain(extracted.Entity.Directories, x => x.Name == "manifest.json");
 
-            foreach (var directory in extracted.Entity.Directories)
+            Assert.All(extracted.Entity.Directories, directory =>
             {
                 Assert.DoesNotContain(directory.Files, x => x.Name == "manifest.json");
                 Assert.DoesNotContain(directory.Children, x => x.Name == "manifest.json");
-            }
+            });
         }
 
         [Fact]
@@ -388,6 +378,91 @@ namespace Caster.Api.Tests.Unit.Services
         }
 
         [Fact]
+        public void An_Out_Of_Range_Azure_Threshold_Is_Dropped_And_Reported()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var manifest = @"{
+                ""schemaVersion"": 1,
+                ""directories"": { ""Infrastructure"": { ""azureDestroyFailureThreshold"": 11, ""parallelism"": 4 } }
+            }";
+
+            var stream = BuildZip(
+                ("__Caster__/manifest.json", Encoding.UTF8.GetBytes(manifest)),
+                ("Infrastructure/main.tf", Encoding.UTF8.GetBytes(AsciiContent)));
+
+            var extracted = service.ExtractProject(stream, "upload.zip");
+
+            var directory = SingleDirectory(extracted.Entity);
+            Assert.Null(directory.AzureDestroyFailureThreshold);
+            Assert.Equal(4, directory.Parallelism);
+            Assert.Equal(["Directory 'Infrastructure': Azure destroy failure threshold of 11 is outside of the allowed range and was ignored."], extracted.SkippedSettings);
+        }
+
+        [Fact]
+        public void Settings_For_A_Directory_The_Archive_Does_Not_Hold_Are_Skipped_And_Reported()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var manifest = @"{
+                ""schemaVersion"": 1,
+                ""directories"": { ""Missing"": { ""parallelism"": 4 } }
+            }";
+
+            var stream = BuildZip(
+                ("__Caster__/manifest.json", Encoding.UTF8.GetBytes(manifest)),
+                ("Infrastructure/main.tf", Encoding.UTF8.GetBytes(AsciiContent)));
+
+            var extracted = service.ExtractProject(stream, "upload.zip");
+
+            Assert.Null(SingleDirectory(extracted.Entity).Parallelism);
+            Assert.Equal(["Directory 'Missing': not present in the archive's contents."], extracted.SkippedSettings);
+        }
+
+        [Fact]
+        public void Settings_For_A_Workspace_The_Archive_Does_Not_Hold_Are_Skipped_And_Reported()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var manifest = @"{
+                ""schemaVersion"": 1,
+                ""workspaces"": { ""Infrastructure/__Workspaces__/missing"": { ""parallelism"": 2 } }
+            }";
+
+            var stream = BuildZip(
+                ("__Caster__/manifest.json", Encoding.UTF8.GetBytes(manifest)),
+                ("Infrastructure/main.tf", Encoding.UTF8.GetBytes(AsciiContent)),
+                ("Infrastructure/__Workspaces__/default/workspace.tf", Encoding.UTF8.GetBytes(AsciiContent)));
+
+            var extracted = service.ExtractProject(stream, "upload.zip");
+
+            Assert.Null(Assert.Single(SingleDirectory(extracted.Entity).Workspaces).Parallelism);
+            Assert.Equal(["Workspace 'Infrastructure/__Workspaces__/missing': not present in the archive's contents."], extracted.SkippedSettings);
+        }
+
+        /// <summary>A manifest from a newer Caster is still applied as far as this one reads it, with a warning.</summary>
+        [Fact]
+        public void A_Manifest_Of_A_Newer_Schema_Is_Applied_With_A_Warning()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var manifest = @"{
+                ""schemaVersion"": 2,
+                ""directories"": { ""Infrastructure"": { ""parallelism"": 4 } }
+            }";
+
+            var stream = BuildZip(
+                ("__Caster__/manifest.json", Encoding.UTF8.GetBytes(manifest)),
+                ("Infrastructure/main.tf", Encoding.UTF8.GetBytes(AsciiContent)));
+
+            var extracted = service.ExtractProject(stream, "upload.zip");
+
+            Assert.Equal(4, SingleDirectory(extracted.Entity).Parallelism);
+            Assert.Equal(["The archive's settings manifest uses schema version 2, which is newer than this system supports. Some settings may not be restored."], extracted.Warnings);
+            Assert.Empty(extracted.SkippedSettings);
+        }
+
+        [Fact]
         public void An_Unreadable_Manifest_Does_Not_Fail_The_Import()
         {
             var service = NewArchiveService(InstalledVersion);
@@ -450,6 +525,22 @@ namespace Caster.Api.Tests.Unit.Services
         }
 
         #endregion
+
+        /// <summary>The entries of a tar.gz archive as its headers declare them, read to the end.</summary>
+        private static List<TarEntry> TarEntries(Stream archive)
+        {
+            using var gzipStream = new GZipInputStream(archive);
+            using var tarStream = new TarInputStream(gzipStream, Encoding.UTF8);
+
+            var entries = new List<TarEntry>();
+
+            while (tarStream.GetNextEntry() is TarEntry entry)
+            {
+                entries.Add(entry);
+            }
+
+            return entries;
+        }
 
         private static Stream BuildZip(params (string Name, byte[] Content)[] entries)
         {

@@ -5,10 +5,13 @@ using System;
 using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Tests.Support;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using DesignModuleValidation = Caster.Api.Features.DesignModules.DesignModuleValidation;
 using DesignModuleView = Caster.Api.Features.DesignModules.DesignModule;
 
 namespace Caster.Api.Tests.Features.DesignModules;
@@ -21,6 +24,12 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
 {
     /// <summary>An empty values list: the create and edit bodies carry one, and a missing one fails (see below).</summary>
     private static readonly object[] NoValues = [];
+
+    /// <summary>The version of <see cref="SeedModuleWithARequiredVariable"/>.</summary>
+    private const string RequiredVersion = "1.0.0";
+
+    /// <summary>The variable that version declares without a default.</summary>
+    private const string RequiredVariable = "vm_name";
 
     [Fact]
     public async Task Get_returns_the_design_module_to_a_member_holding_ViewProject()
@@ -204,6 +213,96 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
     }
 
     [Fact]
+    public async Task Create_answers_a_bad_request_for_a_version_the_module_does_not_have()
+    {
+        var (_, design) = await SeedDesign();
+        var module = await SeedModule();
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/designModules", new { designId = design.Id, moduleId = module.Id, name = "web", moduleVersion = "9.9.9", values = NoValues }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal(["Module version '9.9.9' does not exist"], Errors(problem, "ModuleVersion"));
+        Assert.False(await AnyDesignModule(design.Id));
+    }
+
+    [Fact]
+    public async Task Create_answers_a_bad_request_without_a_value_for_a_required_variable()
+    {
+        var (_, design) = await SeedDesign();
+        var module = await SeedModuleWithARequiredVariable();
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/designModules", new { designId = design.Id, moduleId = module.Id, name = "web", moduleVersion = RequiredVersion, values = NoValues }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal([$"Required values are missing: {RequiredVariable}"], Errors(problem, "Values"));
+        Assert.False(await AnyDesignModule(design.Id));
+    }
+
+    /// <summary>A <c>${var.x}</c> reference counts as a value: it is set when Terraform plans.</summary>
+    [Fact]
+    public async Task Create_accepts_a_variable_reference_as_the_value_of_a_required_variable()
+    {
+        var (_, design) = await SeedDesign();
+        var module = await SeedModuleWithARequiredVariable();
+
+        var response = await RootClient.PostAsJsonAsync("api/designModules", new
+        {
+            designId = design.Id,
+            moduleId = module.Id,
+            name = "web",
+            moduleVersion = RequiredVersion,
+            values = new[] { new { name = RequiredVariable, value = "${var.name}" } }
+        }, Ct);
+
+        var created = await ReadAsync<DesignModuleView>(response);
+        Assert.Equal("${var.name}", Assert.Single((await StoredDesignModule(created.Id)).Values).Value);
+    }
+
+    [Fact]
+    public async Task Create_answers_a_bad_request_for_a_name_another_module_of_the_design_has()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/designModules", new { designId = design.Id, moduleId = designModule.ModuleId, name = designModule.Name, moduleVersion = "1.0.0", values = NoValues }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal([$"This design already has a module named '{designModule.Name}'"], Errors(problem, "Name"));
+        Assert.Equal([designModule.Id], await DesignModuleIds(design.Id));
+    }
+
+    /// <summary>A module's name becomes a Terraform block label, which takes no space.</summary>
+    [Fact]
+    public async Task Create_answers_a_bad_request_for_a_name_terraform_rejects()
+    {
+        var (_, design) = await SeedDesign();
+        var module = await SeedModule();
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/designModules", new { designId = design.Id, moduleId = module.Id, name = "Blank Machine", moduleVersion = "1.0.0", values = NoValues }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal([DesignModuleValidation.TerraformNameMessage], Errors(problem, "Name"));
+        Assert.False(await AnyDesignModule(design.Id));
+    }
+
+    [Fact]
+    public async Task Create_answers_a_bad_request_without_a_version()
+    {
+        var (_, design) = await SeedDesign();
+        var module = await SeedModule();
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/designModules", new { designId = design.Id, moduleId = module.Id, name = "web", values = NoValues }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal(["'Module Version' must not be empty."], Errors(problem, "ModuleVersion"));
+        Assert.False(await AnyDesignModule(design.Id));
+    }
+
+    [Fact]
     public async Task Edit_by_a_member_holding_EditProject_stores_the_new_version()
     {
         var (project, design, designModule) = await SeedDesignModule();
@@ -214,6 +313,62 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
 
         await AssertStatus(HttpStatusCode.OK, response);
         Assert.Equal("2.0.0", (await StoredDesignModule(designModule.Id)).ModuleVersion);
+    }
+
+    [Fact]
+    public async Task Edit_answers_a_bad_request_for_a_version_the_module_does_not_have()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = designModule.ModuleId, name = designModule.Name, moduleVersion = "9.9.9", values = NoValues }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal(["Module version '9.9.9' does not exist"], Errors(problem, "ModuleVersion"));
+        Assert.Equal("1.0.0", (await StoredDesignModule(designModule.Id)).ModuleVersion);
+    }
+
+    [Fact]
+    public async Task Edit_answers_a_bad_request_for_a_name_terraform_rejects()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = designModule.ModuleId, name = "Blank Machine", moduleVersion = "1.0.0", values = NoValues }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal([DesignModuleValidation.TerraformNameMessage], Errors(problem, "Name"));
+        Assert.Equal(designModule.Name, (await StoredDesignModule(designModule.Id)).Name);
+    }
+
+    [Fact]
+    public async Task Edit_answers_a_bad_request_for_a_name_another_module_of_the_design_has()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+        var other = TestData.DesignModule(design, await SeedModule(), "other");
+        await Seed(other);
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = designModule.ModuleId, name = "other", moduleVersion = "1.0.0", values = NoValues }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal(["This design already has a module named 'other'"], Errors(problem, "Name"));
+        Assert.Equal(designModule.Name, (await StoredDesignModule(designModule.Id)).Name);
+    }
+
+    /// <summary>An edit that sends no values keeps the stored ones, and the required variable stays set.</summary>
+    [Fact]
+    public async Task Edit_without_values_keeps_the_stored_value_of_a_required_variable()
+    {
+        var designModule = await SeedDesignModuleWithItsRequiredValue();
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = designModule.DesignId, moduleId = designModule.ModuleId, name = "renamed", moduleVersion = RequiredVersion, values = NoValues }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredDesignModule(designModule.Id);
+        Assert.Equal("renamed", stored.Name);
+        Assert.Equal("web", Assert.Single(stored.Values, x => x.Name == RequiredVariable).Value);
     }
 
     [Fact]
@@ -403,6 +558,19 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
+    [Fact]
+    public async Task AddOrUpdateValues_answers_a_bad_request_for_a_blank_value_of_a_required_variable()
+    {
+        var designModule = await SeedDesignModuleWithItsRequiredValue();
+
+        var response = await RootClient.PostAsJsonAsync(
+            $"api/designModules/{designModule.Id}/values", new { values = new[] { new { name = RequiredVariable, value = "" } } }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.Equal([$"Required values are missing: {RequiredVariable}"], Errors(problem, "Values"));
+        Assert.Equal("web", Assert.Single((await StoredDesignModule(designModule.Id)).Values, x => x.Name == RequiredVariable).Value);
+    }
+
     /// <summary>A values body without <c>values</c> is answered with a 500.</summary>
     // Same case as Create_without_values_answers_with_a_server_error.
     [Fact]
@@ -484,10 +652,25 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         return (project, design);
     }
 
+    /// <summary>
+    /// A module with the two versions the bodies above name, neither with a required variable, so that Create,
+    /// Edit and AddOrUpdateValues find the version they check for and nothing missing.
+    /// </summary>
     private async Task<Module> SeedModule()
     {
         var module = TestData.Module();
-        await Seed(module);
+        await Seed(module, TestData.ModuleVersion(module, "1.0.0"), TestData.ModuleVersion(module, "2.0.0"));
+
+        return module;
+    }
+
+    /// <summary>A module whose one version, <see cref="RequiredVersion"/>, requires <see cref="RequiredVariable"/>.</summary>
+    private async Task<Module> SeedModuleWithARequiredVariable()
+    {
+        var module = TestData.Module();
+        var version = TestData.ModuleVersion(module, RequiredVersion);
+        version.Variables = [new ModuleVariable { Name = RequiredVariable, VariableType = "string" }];
+        await Seed(module, version);
 
         return module;
     }
@@ -501,6 +684,26 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
 
         return (project, design, designModule);
     }
+
+    /// <summary>A design module of <see cref="SeedModuleWithARequiredVariable"/>'s module, its required variable set to "web".</summary>
+    private async Task<DesignModule> SeedDesignModuleWithItsRequiredValue()
+    {
+        var (_, design) = await SeedDesign();
+        var module = await SeedModuleWithARequiredVariable();
+        var designModule = TestData.DesignModule(design, module);
+        designModule.ModuleVersion = RequiredVersion;
+        designModule.Values = [new ModuleValue { Name = RequiredVariable, Value = "web" }];
+        await Seed(designModule);
+
+        return designModule;
+    }
+
+    /// <summary>The messages a 400 lists for <paramref name="field"/>.</summary>
+    private static string[] Errors(ProblemDetails problem, string field) =>
+        [.. ((JsonElement)problem.Extensions["errors"]).GetProperty(field).EnumerateArray().Select(x => x.GetString())];
+
+    private Task<Guid[]> DesignModuleIds(Guid designId) =>
+        ReadBack(db => db.DesignModules.Where(x => x.DesignId == designId).Select(x => x.Id).ToArrayAsync(Ct));
 
     private async Task<DesignModule> StoredDesignModule(Guid id)
     {
