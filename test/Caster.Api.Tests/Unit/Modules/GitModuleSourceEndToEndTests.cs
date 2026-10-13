@@ -32,6 +32,9 @@ namespace Caster.Api.Tests.Unit.Modules
     /// </remarks>
     [Trait("Category", "Unit")]
     [Trait("Category", "ModuleSources")]
+    // Both classes clone under the one shared temp root, and the end-to-end
+    // hygiene tests count its children, so they must not run in parallel.
+    [Collection(GitModuleTempRoot.Name)]
     public class GitModuleSourceEndToEndTests : IDisposable
     {
         private static readonly string CatalogData =
