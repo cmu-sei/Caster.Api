@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -69,6 +70,16 @@ namespace Caster.Api.Features.Projects
             /// they were locked or the current user does not have permission to lock them
             /// </summary>
             public string[] LockedFiles { get; set; }
+
+            /// <summary>
+            /// A list of settings carried by the archive that could not be applied
+            /// </summary>
+            public string[] SkippedSettings { get; set; }
+
+            /// <summary>
+            /// A list of non-fatal problems found with the archive
+            /// </summary>
+            public string[] Warnings { get; set; }
         }
 
         public class Handler(
@@ -94,22 +105,38 @@ namespace Caster.Api.Features.Projects
                 if (project == null)
                     throw new EntityNotFoundException<Project>();
 
-                Domain.Models.Project extractedProject;
+                ArchiveExtractResult<Domain.Models.Project> extracted;
 
                 using (var memStream = new System.IO.MemoryStream())
                 {
                     await request.Archive.CopyToAsync(memStream, cancellationToken);
                     memStream.Position = 0;
-                    extractedProject = archiveService.ExtractProject(memStream, request.Archive.FileName);
+                    extracted = archiveService.ExtractProject(memStream, request.Archive.FileName);
                 }
 
-                var importResult = await importService.ImportProject(project, extractedProject, request.PreserveIds, cancellationToken);
+                var importResult = await importService.ImportProject(project, extracted.Entity, request.PreserveIds, cancellationToken);
+
+                importResult.SkippedSettings = extracted.SkippedSettings;
+                importResult.Warnings = GetWarnings(extracted, project.Name);
 
                 var entries = dbContext.GetUpdatedEntries();
                 await dbContext.SaveChangesAsync(cancellationToken);
                 await this.PublishEvents(entries);
 
                 return mapper.Map<ImportProjectResult>(importResult);
+            }
+
+            private static List<string> GetWarnings(ArchiveExtractResult extracted, string targetName)
+            {
+                var warnings = new List<string>(extracted.Warnings);
+                var sourceName = extracted.Manifest?.Source?.Name;
+
+                if (!string.IsNullOrEmpty(sourceName) && !sourceName.Equals(targetName, StringComparison.Ordinal))
+                {
+                    warnings.Add($"This archive was exported from '{sourceName}', which does not match '{targetName}'.");
+                }
+
+                return warnings;
             }
 
             private async Task PublishEvents(EntityEntry[] entries)

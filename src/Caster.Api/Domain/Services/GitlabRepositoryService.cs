@@ -31,7 +31,6 @@ namespace Caster.Api.Domain.Services
         private readonly IOptionsMonitor<TerraformOptions> _terraformOptions;
         private readonly IHttpClientFactory _httpClientFactory;
         private HttpClient _httpClient;
-        private string _token;
 
         public GitlabRepositoryService(
             CasterContext db,
@@ -64,7 +63,6 @@ namespace Caster.Api.Domain.Services
                 updateCutoffDate = dbDateModified == null ? DateTime.MinValue : (DateTime)dbDateModified;
             }
             _httpClient = _httpClientFactory.CreateClient("gitlab");
-            _token = _terraformOptions.CurrentValue.GitlabToken;
             var groupId = _terraformOptions.CurrentValue.GitlabGroupId;
 
             if (!groupId.HasValue)
@@ -73,7 +71,7 @@ namespace Caster.Api.Domain.Services
                 throw new ArgumentNullException(groupIdName, $"{groupIdName} must be set in order to retrieve Modules");
             }
 
-            var response = await _httpClient.GetAsync($"groups/{groupId}/projects?private_token={_token}&include_subgroups=true");
+            var response = await _httpClient.GetAsync($"groups/{groupId}/projects?include_subgroups=true");
             ValidateResponse(response);
             var json = await response.Content.ReadAsByteArrayAsync();
 
@@ -116,9 +114,8 @@ namespace Caster.Api.Domain.Services
         {
             var requestTime = DateTime.UtcNow;
             _httpClient = _httpClientFactory.CreateClient("gitlab");
-            _token = _terraformOptions.CurrentValue.GitlabToken;
             // get module info from Gitlab and insert/update the database
-            var response = await _httpClient.GetAsync($"projects/{id}?private_token={_token}");
+            var response = await _httpClient.GetAsync($"projects/{id}");
             var json = await response.Content.ReadAsByteArrayAsync();
 
             var gitlabModule = JsonSerializer.Deserialize<GitlabModule>(
@@ -152,7 +149,7 @@ namespace Caster.Api.Domain.Services
         {
             // get the releases/versions
             var versions = new List<Domain.Models.ModuleVersion>();
-            var response = await _httpClient.GetAsync($"projects/{id}/releases?private_token={_token}");
+            var response = await _httpClient.GetAsync($"projects/{id}/releases");
             var json = await response.Content.ReadAsByteArrayAsync();
             var releases = JsonSerializer.Deserialize<GitlabRelease[]>(
                 json,
@@ -188,7 +185,7 @@ namespace Caster.Api.Domain.Services
 
         private async Task<List<ModuleOutput>> GetOutputsAsync(int id, string versionName, CancellationToken cancellationToken)
         {
-            var response = await _httpClient.GetAsync($"projects/{id}/repository/files/outputs.tf.json/raw?ref={versionName}&private_token={_token}");
+            var response = await _httpClient.GetAsync($"projects/{id}/repository/files/outputs.tf.json/raw?ref={versionName}");
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
@@ -202,7 +199,7 @@ namespace Caster.Api.Domain.Services
         private async Task<List<Domain.Models.ModuleVariable>> GetVariablesAsync(int id, string versionName, CancellationToken cancellationToken)
         {
             // get the module variables
-            var response = await _httpClient.GetAsync($"projects/{id}/repository/files/variables.tf.json/raw?ref={versionName}&private_token={_token}");
+            var response = await _httpClient.GetAsync($"projects/{id}/repository/files/variables.tf.json/raw?ref={versionName}");
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {

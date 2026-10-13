@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
+using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Data
@@ -46,6 +47,25 @@ namespace Caster.Api.Data
                     var moduleVersion = await this.ModuleVersions
                         .Where(x => x.Name == designModule.ModuleVersion && x.ModuleId == designModule.ModuleId)
                         .FirstOrDefaultAsync();
+
+                    if (moduleVersion == null && !string.IsNullOrEmpty(designModule.ModuleVersion))
+                    {
+                        throw new ConflictException(
+                            $"Module {designModule.Name} in Design {design.Name} uses version {designModule.ModuleVersion}, which no longer exists");
+                    }
+
+                    // Design modules added before a version was saved on create have none.
+                    // Use the highest, which is also what the Designer shows them as.
+                    if (moduleVersion == null)
+                    {
+                        var versions = await this.ModuleVersions
+                            .Where(x => x.ModuleId == designModule.ModuleId)
+                            .ToListAsync();
+
+                        moduleVersion = ModuleVersionOrder.HighestFirst(versions).FirstOrDefault()
+                            ?? throw new ConflictException(
+                                $"Module {designModule.Name} in Design {design.Name} has no versions to use");
+                    }
 
                     contentBuilder.Append($"{moduleVersion.ToSnippet(designModule.Name, designModule.Values)}\n");
                 }
