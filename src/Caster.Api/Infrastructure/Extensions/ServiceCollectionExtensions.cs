@@ -17,6 +17,7 @@ using Caster.Api.Infrastructure.Swashbuckle.SchemaFilters;
 using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Extensions.Http;
 using Player.Vm.Api;
@@ -97,11 +98,21 @@ namespace Caster.Api.Infrastructure.Extensions
 
         private static void AddGitlabClient(this IServiceCollection services, ClientOptions clientOptions, TerraformOptions terraformOptions)
         {
-            services.AddHttpClient("gitlab", client =>
+            services.AddHttpClient("gitlab", (sp, client) =>
             {
                 // Workaround to avoid TaskCanceledException after several retries. TODO: find a better way to handle this.
                 client.Timeout = Timeout.InfiniteTimeSpan;
                 client.BaseAddress = new Uri(terraformOptions.GitlabApiUrl);
+
+                // A header rather than the private_token query parameter keeps the
+                // token out of request urls, which proxies and access logs record.
+                // Read per client so a reloaded token is picked up.
+                var token = sp.GetRequiredService<IOptionsMonitor<TerraformOptions>>().CurrentValue.GitlabToken;
+
+                if (!string.IsNullOrEmpty(token))
+                {
+                    client.DefaultRequestHeaders.Add("PRIVATE-TOKEN", token);
+                }
             }).AddPolicyHandler((sp, _) => GetPolicy(sp, clientOptions.MaxRetryDelaySeconds, "Gitlab Api"));
         }
 
