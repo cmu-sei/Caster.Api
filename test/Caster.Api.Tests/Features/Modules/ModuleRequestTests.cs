@@ -96,10 +96,87 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     [Fact]
     public async Task GetAll_lists_the_modules_for_a_caller_holding_ViewModules()
     {
+        var (module, _) = await SeedModule();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewModules).SeedAsync();
 
-        await AssertStatus(HttpStatusCode.OK, await Client(actor).GetAsync("api/modules", Ct));
+        var response = await Client(actor).GetAsync("api/modules", Ct);
+
+        Assert.Equal([module.Id], (await ReadAsync<ModuleView[]>(response)).Select(x => x.Id));
     }
+
+    [Fact]
+    public async Task GetAll_lists_the_modules_for_a_member_holding_only_EditProject_on_a_project()
+    {
+        var (module, _) = await SeedModule();
+        var actor = await Actor().OnNewProject(ProjectPermission.EditProject).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/modules", Ct);
+
+        Assert.Equal([module.Id], (await ReadAsync<ModuleView[]>(response)).Select(x => x.Id));
+    }
+
+    // ---- GET api/modules?designId=: the catalog, then the design's project ----------------------
+
+    [Fact]
+    public async Task GetAll_for_a_design_lists_its_modules_to_a_member_holding_ViewProject_on_its_project()
+    {
+        var (project, design, module) = await SeedModuleOfADesign();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/modules?designId={design.Id}&forceUpdate=true", Ct);
+
+        Assert.Equal([module.Id], (await ReadAsync<ModuleView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetAll_for_a_design_lists_its_modules_to_a_caller_holding_ViewModules_and_ViewProjects()
+    {
+        var (_, design, module) = await SeedModuleOfADesign();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewModules, SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/modules?designId={design.Id}&forceUpdate=true", Ct);
+
+        Assert.Equal([module.Id], (await ReadAsync<ModuleView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetAll_for_a_design_is_forbidden_for_a_member_holding_ViewProject_only_on_another_project()
+    {
+        var (_, design, _) = await SeedModuleOfADesign();
+        var actor = await Actor().OnNewProject(ProjectPermission.ViewProject).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/modules?designId={design.Id}&forceUpdate=true", Ct));
+    }
+
+    [Fact]
+    public async Task GetAll_for_a_design_is_forbidden_for_a_member_holding_only_EditProject_on_its_project()
+    {
+        var (project, design, _) = await SeedModuleOfADesign();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/modules?designId={design.Id}&forceUpdate=true", Ct));
+    }
+
+    /// <summary>ViewModules opens the catalog but not a design: the design's project is checked too.</summary>
+    [Fact]
+    public async Task GetAll_for_a_design_is_forbidden_for_a_caller_holding_only_ViewModules()
+    {
+        var (_, design, _) = await SeedModuleOfADesign();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewModules).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/modules?designId={design.Id}&forceUpdate=true", Ct));
+    }
+
+    /// <summary>ViewProjects opens the design but not the catalog, which needs a project membership or ViewModules.</summary>
+    [Fact]
+    public async Task GetAll_for_a_design_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        var (_, design, _) = await SeedModuleOfADesign();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/modules?designId={design.Id}&forceUpdate=true", Ct));
+    }
+
 
     [Fact]
     public async Task GetAll_is_forbidden_for_a_caller_holding_only_ManageModules()
@@ -265,6 +342,18 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
     }
 
     private static byte[] Json(string json) => Encoding.UTF8.GetBytes(json);
+
+    /// <summary>A module used by one design, of a new project; and a module no design uses.</summary>
+    private async Task<(Project Project, Design Design, Module Module)> SeedModuleOfADesign()
+    {
+        var project = TestData.Project();
+        var directory = TestData.Directory(project);
+        var design = TestData.Design(directory);
+        var (module, _) = await SeedModule();
+        await Seed(project, directory, design, TestData.DesignModule(design, module), TestData.Module("unused-module"));
+
+        return (project, design, module);
+    }
 
     private async Task<(Module Module, ModuleVersion Version)> SeedModule()
     {

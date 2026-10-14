@@ -100,8 +100,8 @@ namespace Caster.Api.Tests.Features.Files
         [InlineData(null)]
         public async Task Edit_refuses_a_name_that_is_not_a_plain_file_name(string name)
         {
-            var validator = new Edit.CommandValidator(_validationService);
-            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = name, DirectoryId = Guid.NewGuid() };
+            var validator = new Edit.CommandValidator();
+            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command, TestContext.Current.CancellationToken);
 
@@ -111,8 +111,8 @@ namespace Caster.Api.Tests.Features.Files
         [Fact]
         public async Task Edit_accepts_a_plain_file_name()
         {
-            var validator = new Edit.CommandValidator(_validationService);
-            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = "main.tf", DirectoryId = Guid.NewGuid() };
+            var validator = new Edit.CommandValidator();
+            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = "main.tf" };
 
             var result = await validator.ValidateAsync(command, TestContext.Current.CancellationToken);
 
@@ -126,7 +126,7 @@ namespace Caster.Api.Tests.Features.Files
         [InlineData("")]
         public async Task PartialEdit_refuses_a_name_that_is_not_a_plain_file_name(string name)
         {
-            var validator = new PartialEdit.CommandValidator(_validationService);
+            var validator = new PartialEdit.CommandValidator();
             var command = new PartialEdit.Command() { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command, TestContext.Current.CancellationToken);
@@ -139,7 +139,7 @@ namespace Caster.Api.Tests.Features.Files
         [InlineData(null)] // Name is optional on a partial edit
         public async Task PartialEdit_accepts_a_plain_file_name_or_none(string name)
         {
-            var validator = new PartialEdit.CommandValidator(_validationService);
+            var validator = new PartialEdit.CommandValidator();
             var command = new PartialEdit.Command() { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command, TestContext.Current.CancellationToken);

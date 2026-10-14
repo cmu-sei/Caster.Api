@@ -41,7 +41,7 @@ public class GitlabModuleTests
     [Fact]
     public void GetModuleVariables_reads_every_variable_of_a_module()
     {
-        var variables = GitlabModuleVariableResponse.GetModuleVariables(Encoding.UTF8.GetBytes(Variables));
+        var variables = ModuleVariableResponse.GetModuleVariables(Encoding.UTF8.GetBytes(Variables));
 
         Assert.Equal(7, variables.Count());
     }

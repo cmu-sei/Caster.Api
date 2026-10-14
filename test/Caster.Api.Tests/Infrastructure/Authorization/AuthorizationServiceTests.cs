@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Tests.Support;
+using File = Caster.Api.Domain.Models.File;
 
 namespace Caster.Api.Tests.Infrastructure.Authorization;
 
@@ -73,6 +74,47 @@ public class AuthorizationServiceTests(DatabaseFixture fixture) : DatabaseTestBa
             Db, new ClaimsPrincipalBuilder().WithProject(first).WithProject(second, ProjectPermission.ViewProject).Build());
 
         Assert.Equal(new[] { first, second }.Order(), service.GetAuthorizedProjectIds().Order());
+    }
+
+    /// <summary>
+    /// A null or empty list of system permissions grants nothing at the system tier, so a caller holding
+    /// ViewProject on project A is answered by the project claim: yes for a file of A, no for a file of B, and
+    /// no where there is no resource to resolve.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData(new SystemPermission[0])]
+    public async Task An_empty_system_requirement_falls_back_to_the_project_claim_for_a_file_of_that_project_only(SystemPermission[] systemPermissions)
+    {
+        var graph = await SeedGraph();
+        var service = AuthorizationHarness.CreateCasterAuthorizationService(
+            Db, new ClaimsPrincipalBuilder().WithProject(graph.ProjectA.Id, ProjectPermission.ViewProject).Build());
+
+        Assert.True(await service.Authorize<File>(graph.FileA.Id, systemPermissions, [ProjectPermission.ViewProject], Ct));
+        Assert.False(await service.Authorize<File>(graph.FileB.Id, systemPermissions, [ProjectPermission.ViewProject], Ct));
+        Assert.False(await service.Authorize(systemPermissions, Ct));
+    }
+
+    /// <summary>A null or empty list of system permissions grants a caller with no claims nothing, with or without a resource.</summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData(new SystemPermission[0])]
+    public async Task An_empty_system_requirement_grants_nothing_to_a_caller_without_a_project_claim(SystemPermission[] systemPermissions)
+    {
+        var graph = await SeedGraph();
+        var service = AuthorizationHarness.CreateCasterAuthorizationService(Db, ClaimsPrincipalBuilder.Anonymous());
+
+        Assert.False(await service.Authorize<File>(graph.FileA.Id, systemPermissions, [ProjectPermission.ViewProject], Ct));
+        Assert.False(await service.Authorize<File>(graph.FileB.Id, systemPermissions, [ProjectPermission.ViewProject], Ct));
+        Assert.False(await service.Authorize(systemPermissions, Ct));
+    }
+
+    private async Task<TwoProjectGraph> SeedGraph()
+    {
+        var savedBy = TestData.User();
+        await Seed(savedBy);
+
+        return await TwoProjectGraph.SeedAsync(Db, savedBy.Id, Ct);
     }
 
     private async Task<(Project Project, Run Run, Plan Plan)> SeedPlannedRun()

@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -451,6 +452,62 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Equal(foreignDirectory.Id, (await StoredWorkspace(workspace.Id)).DirectoryId);
     }
 
+    // ---- PUT/PATCH api/workspaces/{id}: the stored workspace decides ------------------------------
+
+    /// <summary>
+    /// The workspace on the route is authorized, not the workspace or directory the body names, and nothing of
+    /// the route's workspace or its files changes.
+    /// </summary>
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task Edit_and_PartialEdit_authorize_the_route_even_when_the_body_names_an_authorized_directory(string method)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Send(actor, method, $"api/workspaces/{graph.WorkspaceB.Id}",
+            new { id = graph.WorkspaceA.Id, name = "stolen", directoryId = graph.DirectoryA.Id });
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        var stored = await StoredWorkspace(graph.WorkspaceB.Id);
+        Assert.Equal(graph.DirectoryB.Id, stored.DirectoryId);
+        Assert.Equal("workspace-b", stored.Name);
+        Assert.Equal(TwoProjectGraph.State, stored.State);
+        Assert.Equal(TwoProjectGraph.StateBackup, stored.StateBackup);
+        Assert.Equal(graph.DirectoryB.Id, (await StoredFile(graph.FileB.Id)).DirectoryId);
+    }
+
+    /// <summary>
+    /// A <c>directoryId</c> in the body, of another project's directory, of no directory, null or left out,
+    /// is ignored: the workspace is renamed where it is, and keeps its state and its files.
+    /// </summary>
+    [Theory]
+    [InlineData("PUT", "foreign")]
+    [InlineData("PATCH", "foreign")]
+    [InlineData("PUT", "missing")]
+    [InlineData("PATCH", "missing")]
+    [InlineData("PUT", "null")]
+    [InlineData("PATCH", "null")]
+    [InlineData("PUT", "omitted")]
+    [InlineData("PATCH", "omitted")]
+    public async Task Edit_and_PartialEdit_ignore_legacy_directory_fields(string method, string parent)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+        var body = WithLegacyField(new Dictionary<string, object> { ["name"] = "renamed" }, "directoryId", parent, graph.DirectoryB.Id);
+
+        var response = await Send(actor, method, $"api/workspaces/{graph.WorkspaceA.Id}", body);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredWorkspace(graph.WorkspaceA.Id);
+        Assert.Equal("renamed", stored.Name);
+        Assert.Equal(graph.DirectoryA.Id, stored.DirectoryId);
+        Assert.Equal(TwoProjectGraph.State, stored.State);
+        Assert.Equal(TwoProjectGraph.StateBackup, stored.StateBackup);
+        Assert.Equal(graph.DirectoryA.Id, (await StoredFile(graph.FileA.Id)).DirectoryId);
+    }
+
     // ---- DELETE api/workspaces/{id} -------------------------------------------------------------
 
     [Fact]
@@ -583,6 +640,33 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     // ---- helpers --------------------------------------------------------------------------------
+
+    private Task<TwoProjectGraph> SeedGraph() => TwoProjectGraph.SeedAsync(Db, Root.Id, Ct);
+
+    private Task<HttpResponseMessage> Send(TestActor actor, string method, string url, object body) =>
+        Client(actor).SendAsync(new HttpRequestMessage(new HttpMethod(method), url) { Content = JsonContent.Create(body) }, Ct);
+
+    /// <summary>
+    /// <paramref name="body"/> with <paramref name="field"/> set as an old client would send it: the id of a row
+    /// of another project (<c>foreign</c>), an id nothing has (<c>missing</c>), <c>null</c>, or left out
+    /// (<c>omitted</c>).
+    /// </summary>
+    private static Dictionary<string, object> WithLegacyField(Dictionary<string, object> body, string field, string scenario, Guid foreignId)
+    {
+        if (scenario != "omitted")
+        {
+            body[field] = scenario switch { "foreign" => foreignId, "missing" => Guid.NewGuid(), _ => null };
+        }
+
+        return body;
+    }
+
+    private async Task<Caster.Api.Domain.Models.File> StoredFile(Guid id)
+    {
+        await using var context = NewContext();
+
+        return await context.Files.IgnoreQueryFilters().SingleAsync(x => x.Id == id, Ct);
+    }
 
     private async Task<(Project Project, Directory Directory)> SeedDirectory()
     {

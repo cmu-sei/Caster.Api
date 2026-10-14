@@ -13,11 +13,9 @@ using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Files.Interfaces;
-using CodeAnalysis = Microsoft.CodeAnalysis;
 using System.Text.Json.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using FluentValidation;
-using Caster.Api.Features.Shared.Services;
 using Caster.Api.Features.Shared.Validators;
 
 namespace Caster.Api.Features.Files
@@ -25,45 +23,18 @@ namespace Caster.Api.Features.Files
     public class PartialEdit
     {
         [DataContract(Name = "PartialEditFileCommand")]
-        public class Command : FileUpdateRequest, IRequest<File>, IFileCommand
+        public class Command : FileFields, IRequest<File>, IFileCommand
         {
             [JsonIgnore]
             public Guid Id { get; set; }
-
-            /// <summary>
-            /// Name of the file.
-            /// </summary>
-            [DataMember]
-            public string Name { get; set; }
-
-            /// <summary>
-            /// ID of the directory this file is under.
-            /// </summary>
-            [DataMember]
-            public Guid? DirectoryId { get; set; }
-
-
-            /// <summary>
-            /// An optional Workspace to assign this File to.
-            /// </summary>
-            [DataMember]
-            public CodeAnalysis.Optional<Guid?> WorkspaceId { get; set; }
-
-            /// <summary>
-            /// The full contents of the file.
-            /// </summary>
-            [DataMember]
-            public override string Content { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidationService validationService)
+            public CommandValidator()
             {
                 // A null Name is not mapped onto the File, so it only needs to be valid when supplied.
                 RuleFor(x => x.Name).FileNameValidation().When(x => x.Name != null);
-                RuleFor(x => x.DirectoryId.Value).DirectoryExists(validationService).When(x => x.DirectoryId.HasValue);
-                RuleFor(x => x.WorkspaceId.Value.Value).WorkspaceExists(validationService).When(x => x.WorkspaceId.HasValue && x.WorkspaceId.Value.HasValue);
             }
         }
 

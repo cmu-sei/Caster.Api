@@ -134,6 +134,20 @@ public class TestActorTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
     }
 
     [Fact]
+    public async Task OnProjectThroughNewGroup_with_the_seeded_manager_role_grants_every_project_permission_to_its_member()
+    {
+        var project = await SeedProject();
+
+        var actor = await Actor().OnProjectThroughNewGroup(project, TestData.ProjectRoles.Manager).SeedAsync();
+
+        var claim = Assert.Single(ProjectClaims(await ClaimsOf(actor)));
+        Assert.Equal(project.Id, claim.ProjectId);
+        Assert.Equal(Enum.GetValues<ProjectPermission>().Order(), claim.Permissions.Order());
+        Assert.Equal(TestData.ProjectRoles.Manager, actor.ProjectMembership.RoleId);
+        Assert.NotNull(actor.ProjectMembership.GroupId);
+    }
+
+    [Fact]
     public async Task InGroup_as_a_manager_grants_ManageMembership_on_that_group()
     {
         var group = TestData.Group();

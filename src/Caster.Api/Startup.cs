@@ -209,6 +209,7 @@ namespace Caster.Api
 
             services.AddApiClients(_clientOptions, _terraformOptions);
             services.AddTerraformServices(_terraformOptions);
+            services.AddModuleRepositoryServices();
 
             services.AddScoped<IClaimsTransformation, AuthorizationClaimsTransformer>();
             services.AddScoped<IUserClaimsService, UserClaimsService>();

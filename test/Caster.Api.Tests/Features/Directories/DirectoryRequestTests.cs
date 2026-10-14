@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -33,6 +34,15 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
 
     /// <summary>The directory the settings archives are exported from.</summary>
     private const string SourceDirectoryName = "infrastructure";
+
+    /// <summary>Every directory with its files and their content.</summary>
+    private const string ListingWithFiles = "api/directories?includeRelated=true&includeFileContent=true";
+
+    /// <summary>The title of the 409 a move under a parent of another project answers.</summary>
+    private const string ParentInAnotherProjectTitle = "Parent and child Directories must be in the same Project";
+
+    /// <summary>The title of the 409 a move under the directory itself, or under one of its descendants, answers.</summary>
+    private const string ParentBelowItselfTitle = "A Directory cannot be its own parent or a child of its descendants";
 
     /// <summary>A Terraform version the host has: <c>TestConfiguration</c> gives <c>Terraform:BinaryPath</c> a folder for it.</summary>
     private const string InstalledVersion = "1.5.7";
@@ -259,6 +269,147 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         var response = await Client(actor).GetAsync("api/directories", Ct);
 
         Assert.Empty(await ReadAsync<DirectoryView[]>(response));
+    }
+
+    /// <summary>A direct membership whose role grants ViewProject lists that project's directories, with their files and content, and not those of a project whose role grants nothing.</summary>
+    [Fact]
+    public async Task GetAll_lists_a_projects_directories_and_their_files_to_a_member_whose_role_grants_ViewProject()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.ViewProject]).OnProject(graph.ProjectB, []).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ListingWithFiles, Ct);
+
+        var directories = await ReadAsync<DirectoryView[]>(response);
+        Assert.Equal(DirectoriesOf(graph).Order(), directories.Select(x => x.Id).Order());
+        Assert.All(directories, x => Assert.Equal(graph.ProjectA.Id, x.ProjectId));
+        var files = directories.SelectMany(x => x.Files).ToArray();
+        Assert.Equal(new[] { graph.FileA.Id, graph.AnotherFileA.Id }.Order(), files.Select(x => x.Id).Order());
+        Assert.All(files, x => Assert.NotNull(x.Content));
+    }
+
+    /// <summary>A direct membership whose role grants EditProject but not ViewProject lists nothing.</summary>
+    [Fact]
+    public async Task GetAll_lists_nothing_to_a_member_whose_role_grants_only_EditProject()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).OnProject(graph.ProjectB, []).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ListingWithFiles, Ct);
+
+        Assert.Empty(await ReadAsync<DirectoryView[]>(response));
+    }
+
+    /// <summary>A direct membership whose role grants nothing lists nothing.</summary>
+    [Fact]
+    public async Task GetAll_lists_nothing_to_a_member_whose_role_grants_nothing()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, []).OnProject(graph.ProjectB, []).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ListingWithFiles, Ct);
+
+        Assert.Empty(await ReadAsync<DirectoryView[]>(response));
+    }
+
+    /// <summary>A direct membership whose role grants every permission (the seeded Manager role) lists that project's directories.</summary>
+    [Fact]
+    public async Task GetAll_lists_a_projects_directories_and_their_files_to_a_member_whose_role_grants_every_permission()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, roleId: TestData.ProjectRoles.Manager).OnProject(graph.ProjectB, []).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ListingWithFiles, Ct);
+
+        var directories = await ReadAsync<DirectoryView[]>(response);
+        Assert.Equal(DirectoriesOf(graph).Order(), directories.Select(x => x.Id).Order());
+        Assert.All(directories, x => Assert.Equal(graph.ProjectA.Id, x.ProjectId));
+        var files = directories.SelectMany(x => x.Files).ToArray();
+        Assert.Equal(new[] { graph.FileA.Id, graph.AnotherFileA.Id }.Order(), files.Select(x => x.Id).Order());
+        Assert.All(files, x => Assert.NotNull(x.Content));
+    }
+
+    /// <summary>A membership held through a group, whose role grants ViewProject, lists that project's directories.</summary>
+    [Fact]
+    public async Task GetAll_lists_a_projects_directories_and_their_files_to_a_member_of_a_group_whose_role_grants_ViewProject()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProjectThroughNewGroup(graph.ProjectA, ProjectPermission.ViewProject).OnProject(graph.ProjectB, []).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ListingWithFiles, Ct);
+
+        var directories = await ReadAsync<DirectoryView[]>(response);
+        Assert.Equal(DirectoriesOf(graph).Order(), directories.Select(x => x.Id).Order());
+        Assert.All(directories, x => Assert.Equal(graph.ProjectA.Id, x.ProjectId));
+        var files = directories.SelectMany(x => x.Files).ToArray();
+        Assert.Equal(new[] { graph.FileA.Id, graph.AnotherFileA.Id }.Order(), files.Select(x => x.Id).Order());
+        Assert.All(files, x => Assert.NotNull(x.Content));
+    }
+
+    /// <summary>A membership held through a group, whose role grants EditProject but not ViewProject, lists nothing.</summary>
+    [Fact]
+    public async Task GetAll_lists_nothing_to_a_member_of_a_group_whose_role_grants_only_EditProject()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProjectThroughNewGroup(graph.ProjectA, ProjectPermission.EditProject).OnProject(graph.ProjectB, []).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ListingWithFiles, Ct);
+
+        Assert.Empty(await ReadAsync<DirectoryView[]>(response));
+    }
+
+    /// <summary>A membership held through a group, whose role grants nothing, lists nothing.</summary>
+    [Fact]
+    public async Task GetAll_lists_nothing_to_a_member_of_a_group_whose_role_grants_nothing()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProjectThroughNewGroup(graph.ProjectA, []).OnProject(graph.ProjectB, []).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ListingWithFiles, Ct);
+
+        Assert.Empty(await ReadAsync<DirectoryView[]>(response));
+    }
+
+    /// <summary>A membership held through a group, whose role grants every permission (the seeded Manager role), lists that project's directories.</summary>
+    [Fact]
+    public async Task GetAll_lists_a_projects_directories_and_their_files_to_a_member_of_a_group_whose_role_grants_every_permission()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProjectThroughNewGroup(graph.ProjectA, TestData.ProjectRoles.Manager).OnProject(graph.ProjectB, []).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ListingWithFiles, Ct);
+
+        var directories = await ReadAsync<DirectoryView[]>(response);
+        Assert.Equal(DirectoriesOf(graph).Order(), directories.Select(x => x.Id).Order());
+        Assert.All(directories, x => Assert.Equal(graph.ProjectA.Id, x.ProjectId));
+        var files = directories.SelectMany(x => x.Files).ToArray();
+        Assert.Equal(new[] { graph.FileA.Id, graph.AnotherFileA.Id }.Order(), files.Select(x => x.Id).Order());
+        Assert.All(files, x => Assert.NotNull(x.Content));
+    }
+
+    [Fact]
+    public async Task GetAll_lists_nothing_to_a_caller_on_no_project()
+    {
+        await SeedGraph();
+        var actor = await Actor().SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/directories", Ct);
+
+        Assert.Empty(await ReadAsync<DirectoryView[]>(response));
+    }
+
+    /// <summary>The seeded Observer role's system ViewProjects lists every project's directories without a membership.</summary>
+    [Fact]
+    public async Task GetAll_lists_every_projects_directories_to_a_caller_holding_the_Observer_role()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().WithRole(TestData.Roles.Observer).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/directories", Ct);
+
+        var directories = await ReadAsync<DirectoryView[]>(response);
+        Assert.Equal(DirectoriesOf(graph).Append(graph.DirectoryB.Id).Order(), directories.Select(x => x.Id).Order());
+        Assert.Contains(directories, x => x.ProjectId == graph.ProjectB.Id);
     }
 
     // ---- POST api/directories -------------------------------------------------------------------
@@ -532,6 +683,142 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
 
         await AssertStatus(HttpStatusCode.OK, response);
         Assert.Equal($"{foreignParent.Id}/{directory.Id}/", (await StoredDirectory(directory.Id)).Path);
+    }
+
+    // ---- PUT/PATCH api/directories/{id}: a parent of the same project, never itself or below ------
+
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task Edit_and_PartialEdit_reject_a_parent_in_another_project_before_changing_any_path_for_a_member_holding_EditProject(string method)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Send(actor, method, $"api/directories/{graph.ChildA.Id}", new { name = "changed", parentId = graph.DirectoryB.Id });
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(ParentInAnotherProjectTitle, problem.Title);
+        await AssertChildUnchanged(graph);
+    }
+
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task Edit_and_PartialEdit_reject_a_parent_in_another_project_before_changing_any_path_for_a_caller_holding_EditProjects(string method)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Send(actor, method, $"api/directories/{graph.ChildA.Id}", new { name = "changed", parentId = graph.DirectoryB.Id });
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(ParentInAnotherProjectTitle, problem.Title);
+        await AssertChildUnchanged(graph);
+    }
+
+    /// <summary>The directory on the route is authorized, not the directory or parent the body names.</summary>
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task Edit_and_PartialEdit_cannot_authorize_a_directory_of_another_project_with_a_body_parent(string method)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Send(actor, method, $"api/directories/{graph.DirectoryB.Id}",
+            new { id = graph.ChildA.Id, name = "changed", parentId = graph.DirectoryA.Id });
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        var stored = await StoredDirectory(graph.DirectoryB.Id);
+        Assert.Null(stored.ParentId);
+        Assert.Equal(graph.ProjectB.Id, stored.ProjectId);
+        Assert.Equal(graph.DirectoryB.Path, stored.Path);
+        Assert.Equal("B", stored.Name);
+        await AssertChildUnchanged(graph);
+    }
+
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task Edit_and_PartialEdit_reject_the_directory_itself_as_its_parent(string method)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Send(actor, method, $"api/directories/{graph.ChildA.Id}", new { name = "changed", parentId = graph.ChildA.Id });
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(ParentBelowItselfTitle, problem.Title);
+        await AssertChildUnchanged(graph);
+    }
+
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task Edit_and_PartialEdit_reject_a_descendant_as_the_parent(string method)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Send(actor, method, $"api/directories/{graph.ChildA.Id}", new { name = "changed", parentId = graph.GrandchildA.Id });
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(ParentBelowItselfTitle, problem.Title);
+        await AssertChildUnchanged(graph);
+    }
+
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task Edit_and_PartialEdit_move_the_directory_within_its_project_and_its_descendants_paths_with_it(string method)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Send(actor, method, $"api/directories/{graph.ChildA.Id}", new { name = "changed", parentId = graph.AlternateA.Id });
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredDirectory(graph.ChildA.Id);
+        Assert.Equal(graph.AlternateA.Id, stored.ParentId);
+        Assert.Equal(graph.ProjectA.Id, stored.ProjectId);
+        Assert.Equal("changed", stored.Name);
+        Assert.Equal($"{graph.AlternateA.Path}{graph.ChildA.Id}/", stored.Path);
+        Assert.Equal($"{stored.Path}{graph.GrandchildA.Id}/", (await StoredDirectory(graph.GrandchildA.Id)).Path);
+    }
+
+    /// <summary>An explicit null parent on a partial edit detaches the directory, and its descendants' paths follow.</summary>
+    [Fact]
+    public async Task PartialEdit_with_an_explicit_null_parent_makes_the_directory_top_level_and_moves_its_descendants_paths()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PatchAsJsonAsync($"api/directories/{graph.ChildA.Id}",
+            new Dictionary<string, object> { ["name"] = "changed", ["parentId"] = null }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredDirectory(graph.ChildA.Id);
+        Assert.Null(stored.ParentId);
+        Assert.Equal($"{graph.ChildA.Id}/", stored.Path);
+        Assert.Equal($"{stored.Path}{graph.GrandchildA.Id}/", (await StoredDirectory(graph.GrandchildA.Id)).Path);
+    }
+
+    /// <summary>A partial edit that leaves the parent out leaves the directory, and its descendants, where they are.</summary>
+    [Fact]
+    public async Task PartialEdit_without_a_parent_keeps_the_directory_and_its_descendants_where_they_are()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PatchAsJsonAsync($"api/directories/{graph.ChildA.Id}",
+            new Dictionary<string, object> { ["name"] = "changed" }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredDirectory(graph.ChildA.Id);
+        Assert.Equal(graph.DirectoryA.Id, stored.ParentId);
+        Assert.Equal(graph.ChildA.Path, stored.Path);
+        Assert.Equal($"{stored.Path}{graph.GrandchildA.Id}/", (await StoredDirectory(graph.GrandchildA.Id)).Path);
     }
 
     // ---- DELETE api/directories/{id} ------------------------------------------------------------
@@ -898,6 +1185,27 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     // ---- helpers --------------------------------------------------------------------------------
+
+    private Task<TwoProjectGraph> SeedGraph() => TwoProjectGraph.SeedAsync(Db, Root.Id, Ct);
+
+    /// <summary>Project A's four directories.</summary>
+    private static Guid[] DirectoriesOf(TwoProjectGraph graph) =>
+        [graph.DirectoryA.Id, graph.ChildA.Id, graph.GrandchildA.Id, graph.AlternateA.Id];
+
+    /// <summary>ChildA is still under DirectoryA in project A, by its old name, and neither its path nor GrandchildA's moved.</summary>
+    private async Task AssertChildUnchanged(TwoProjectGraph graph)
+    {
+        var stored = await StoredDirectory(graph.ChildA.Id);
+        Assert.Equal(graph.DirectoryA.Id, stored.ParentId);
+        Assert.Equal(graph.ProjectA.Id, stored.ProjectId);
+        Assert.Equal("child", stored.Name);
+        Assert.Equal(graph.ChildA.Path, stored.Path);
+        Assert.Equal(graph.GrandchildA.Path, (await StoredDirectory(graph.GrandchildA.Id)).Path);
+    }
+
+    private Task<HttpResponseMessage> Send(TestActor actor, string method, string url, object body) =>
+        Client(actor).SendAsync(new HttpRequestMessage(new HttpMethod(method), url) { Content = JsonContent.Create(body) }, Ct);
+
 
     /// <summary>
     /// A directory as an export reads it, never saved here: a workspace and a child directory, each holding a file

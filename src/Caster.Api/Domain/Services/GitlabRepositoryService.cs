@@ -193,7 +193,7 @@ namespace Caster.Api.Domain.Services
             }
 
             var json = await response.Content.ReadAsByteArrayAsync();
-            return GitlabModuleOutputResponse.GetModuleOutputs(json);
+            return ModuleOutputResponse.GetModuleOutputs(json);
         }
 
         private async Task<List<Domain.Models.ModuleVariable>> GetVariablesAsync(int id, string versionName, CancellationToken cancellationToken)
@@ -207,7 +207,7 @@ namespace Caster.Api.Domain.Services
             }
 
             var responseJson = await response.Content.ReadAsByteArrayAsync();
-            return GitlabModuleVariableResponse.GetModuleVariables(responseJson);
+            return ModuleVariableResponse.GetModuleVariables(responseJson);
         }
 
         private void ValidateResponse(HttpResponseMessage responseMessage)

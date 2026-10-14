@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -33,6 +34,12 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
 
     /// <summary>The title of the 409 <c>Rename</c> answers when another user holds the file's lock.</summary>
     private const string RenameWhileHeldTitle = "Cannot rename a file while it's being edited or locked by another user.";
+
+    /// <summary>The name of a file a refused or conflicting create would have stored.</summary>
+    private const string InjectedName = "injected.tf";
+
+    /// <summary>The title of the 409 <c>Create</c> answers for a workspace that is not in the file's directory.</summary>
+    private const string WorkspaceOfAnotherDirectoryTitle = "File and Workspace must be in the same Directory";
 
     // ---- GET api/files/{id}, export, versions ---------------------------------------------------
 
@@ -195,6 +202,146 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/files/versions/{version.Id}", Ct));
     }
 
+    // ---- file history, deleted files included -------------------------------------------------
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetFileVersions_lists_the_saved_version_without_content_to_a_member_holding_ViewProject_including_a_deleted_file(bool deleted)
+    {
+        var (project, file, versionId) = await SeedSavedFile(deleted);
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/files/{file.Id}/versions", Ct);
+
+        var version = Assert.Single(await ReadAsync<FileVersionView[]>(response));
+        Assert.Equal(versionId, version.Id);
+        Assert.Equal(file.Id, version.FileId);
+        Assert.Null(version.Content);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetFileVersions_lists_the_saved_version_without_content_to_a_caller_holding_ViewProjects_including_a_deleted_file(bool deleted)
+    {
+        var (_, file, versionId) = await SeedSavedFile(deleted);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/files/{file.Id}/versions", Ct);
+
+        var version = Assert.Single(await ReadAsync<FileVersionView[]>(response));
+        Assert.Equal(versionId, version.Id);
+        Assert.Equal(file.Id, version.FileId);
+        Assert.Null(version.Content);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetFileVersion_returns_the_saved_version_with_its_content_to_a_member_holding_ViewProject_including_a_deleted_file(bool deleted)
+    {
+        var (project, file, versionId) = await SeedSavedFile(deleted);
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/files/versions/{versionId}", Ct);
+
+        var version = await ReadAsync<FileVersionView>(response);
+        Assert.Equal(file.Id, version.FileId);
+        Assert.Equal(file.Content, version.Content);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetFileVersion_returns_the_saved_version_with_its_content_to_a_caller_holding_ViewProjects_including_a_deleted_file(bool deleted)
+    {
+        var (_, file, versionId) = await SeedSavedFile(deleted);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/files/versions/{versionId}", Ct);
+
+        var version = await ReadAsync<FileVersionView>(response);
+        Assert.Equal(file.Id, version.FileId);
+        Assert.Equal(file.Content, version.Content);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetFileVersions_is_forbidden_for_a_member_holding_ViewProject_only_on_another_project_including_a_deleted_file(bool deleted)
+    {
+        var (_, file, _) = await SeedSavedFile(deleted);
+        var actor = await Actor().OnNewProject(ProjectPermission.ViewProject).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/files/{file.Id}/versions", Ct));
+    }
+
+    /// <summary>Every version of a file of another project is refused: a saved one, a tagged one, one of a deleted file.</summary>
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(false, TwoProjectGraph.SharedTag)]
+    [InlineData(true, null)]
+    public async Task GetFileVersion_is_forbidden_for_a_member_holding_ViewProject_only_on_another_project_including_tagged_and_deleted_versions(bool deleted, string tag)
+    {
+        var (_, _, versionId) = await SeedSavedFile(deleted, tag);
+        var actor = await Actor().OnNewProject(ProjectPermission.ViewProject).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/files/versions/{versionId}", Ct));
+    }
+
+    [Fact]
+    public async Task GetFileVersion_is_forbidden_for_a_member_holding_only_EditProject()
+    {
+        var (project, _, versionId) = await SeedSavedFile(deleted: false);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/files/versions/{versionId}", Ct));
+    }
+
+    /// <summary>A version id that does not exist resolves to no project, so a member is refused before it is looked up.</summary>
+    [Fact]
+    public async Task GetFileVersion_of_an_unknown_version_is_forbidden_for_a_member_holding_ViewProject()
+    {
+        var (project, _, _) = await SeedSavedFile(deleted: false);
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/files/versions/{Guid.NewGuid()}", Ct));
+    }
+
+    [Fact]
+    public async Task GetFileVersion_of_an_unknown_version_is_not_found_for_a_caller_holding_ViewProjects()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.NotFound, await Client(actor).GetAsync($"api/files/versions/{Guid.NewGuid()}", Ct));
+    }
+
+    /// <summary>
+    /// A version's project is the project of the version's own file: a version of project B's file whose id
+    /// is also the id of a file of the caller's project A is refused.
+    /// </summary>
+    [Fact]
+    public async Task GetFileVersion_is_forbidden_for_a_version_of_another_project_whose_id_is_a_file_of_the_callers_project()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.ViewProject]).SeedAsync();
+        await Seed(new FileVersion { Id = graph.FileA.Id, FileId = graph.FileB.Id, Name = "foreign.tf", Content = "foreign" });
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/files/versions/{graph.FileA.Id}", Ct));
+    }
+
+    [Fact]
+    public async Task Get_returns_a_deleted_file_to_a_member_holding_ViewProject()
+    {
+        var (project, file, _) = await SeedSavedFile(deleted: true);
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/files/{file.Id}", Ct);
+
+        Assert.Equal(file.Id, (await ReadAsync<FileView>(response)).Id);
+    }
+
     // ---- GET api/files, GET api/directories/{id}/files ------------------------------------------
 
     [Fact]
@@ -262,6 +409,66 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
         await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/directories/{directory.Id}/files", Ct));
+    }
+
+    [Fact]
+    public async Task GetByDirectory_lists_only_the_directorys_live_files_without_their_content()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/directories/{graph.DirectoryA.Id}/files?includeDeleted=false&includeContent=false", Ct);
+
+        var files = await ReadAsync<FileView[]>(response);
+        Assert.Equal(new[] { graph.FileA.Id, graph.AnotherFileA.Id }.Order(), files.Select(x => x.Id).Order());
+        Assert.All(files, file => Assert.Equal(graph.DirectoryA.Id, file.DirectoryId));
+        Assert.All(files, file => Assert.Null(file.Content));
+        await AssertGraphFilesUnchanged();
+    }
+
+    [Fact]
+    public async Task GetByDirectory_with_includeContent_lists_only_the_directorys_live_files_with_their_content()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/directories/{graph.DirectoryA.Id}/files?includeDeleted=false&includeContent=true", Ct);
+
+        var files = await ReadAsync<FileView[]>(response);
+        Assert.Equal(new[] { graph.FileA.Id, graph.AnotherFileA.Id }.Order(), files.Select(x => x.Id).Order());
+        Assert.All(files, file => Assert.Equal(graph.DirectoryA.Id, file.DirectoryId));
+        Assert.All(files, file => Assert.Equal(file.Name, file.Content));
+        await AssertGraphFilesUnchanged();
+    }
+
+    [Fact]
+    public async Task GetByDirectory_with_includeDeleted_lists_the_directorys_deleted_files_too_without_their_content()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/directories/{graph.DirectoryA.Id}/files?includeDeleted=true&includeContent=false", Ct);
+
+        var files = await ReadAsync<FileView[]>(response);
+        Assert.Equal(new[] { graph.FileA.Id, graph.AnotherFileA.Id, graph.DeletedFileA.Id }.Order(), files.Select(x => x.Id).Order());
+        Assert.All(files, file => Assert.Equal(graph.DirectoryA.Id, file.DirectoryId));
+        Assert.All(files, file => Assert.Null(file.Content));
+        await AssertGraphFilesUnchanged();
+    }
+
+    [Fact]
+    public async Task GetByDirectory_with_includeDeleted_and_includeContent_lists_the_directorys_live_and_deleted_files_with_their_content()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/directories/{graph.DirectoryA.Id}/files?includeDeleted=true&includeContent=true", Ct);
+
+        var files = await ReadAsync<FileView[]>(response);
+        Assert.Equal(new[] { graph.FileA.Id, graph.AnotherFileA.Id, graph.DeletedFileA.Id }.Order(), files.Select(x => x.Id).Order());
+        Assert.All(files, file => Assert.Equal(graph.DirectoryA.Id, file.DirectoryId));
+        Assert.All(files, file => Assert.Equal(file.Name, file.Content));
+        await AssertGraphFilesUnchanged();
     }
 
     // ---- POST api/files -------------------------------------------------------------------------
@@ -340,6 +547,131 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var created = await ReadAsync<FileView>(response);
         var broadcast = Assert.Single(Factory.Hub<ProjectHub>().ToGroup(project.Id), x => x.Method == "FileCreated");
         Assert.Equal(created.Id, Assert.IsType<FileView>(broadcast.Arguments[0]).Id);
+    }
+
+    // ---- POST api/files: the workspace must be in the file's directory ---------------------------
+
+    [Fact]
+    public async Task Create_with_a_workspace_of_another_directory_of_its_project_is_a_conflict_for_a_member_holding_EditProject()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files",
+            new { name = InjectedName, content = "injected", directoryId = graph.DirectoryA.Id, workspaceId = graph.AlternateWorkspaceA.Id }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(WorkspaceOfAnotherDirectoryTitle, problem.Title);
+        await AssertGraphFilesUnchanged();
+        Assert.False(await FileNamed(InjectedName));
+    }
+
+    [Fact]
+    public async Task Create_with_a_workspace_of_another_directory_of_its_project_is_a_conflict_for_a_caller_holding_EditProjects()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files",
+            new { name = InjectedName, content = "injected", directoryId = graph.DirectoryA.Id, workspaceId = graph.AlternateWorkspaceA.Id }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(WorkspaceOfAnotherDirectoryTitle, problem.Title);
+        await AssertGraphFilesUnchanged();
+        Assert.False(await FileNamed(InjectedName));
+    }
+
+    [Fact]
+    public async Task Create_with_a_workspace_of_another_project_is_a_conflict_for_a_member_holding_EditProject()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files",
+            new { name = InjectedName, content = "injected", directoryId = graph.DirectoryA.Id, workspaceId = graph.WorkspaceB.Id }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(WorkspaceOfAnotherDirectoryTitle, problem.Title);
+        await AssertGraphFilesUnchanged();
+        Assert.False(await FileNamed(InjectedName));
+    }
+
+    [Fact]
+    public async Task Create_with_a_workspace_of_another_project_is_a_conflict_for_a_caller_holding_EditProjects()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files",
+            new { name = InjectedName, content = "injected", directoryId = graph.DirectoryA.Id, workspaceId = graph.WorkspaceB.Id }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(WorkspaceOfAnotherDirectoryTitle, problem.Title);
+        await AssertGraphFilesUnchanged();
+        Assert.False(await FileNamed(InjectedName));
+    }
+
+    [Fact]
+    public async Task Create_with_the_workspace_of_its_directory_stores_the_file_in_that_workspace()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files",
+            new { name = "new.tf", content = "new", directoryId = graph.DirectoryA.Id, workspaceId = graph.WorkspaceA.Id }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        var created = await ReadAsync<FileView>(response);
+        var stored = await StoredFile(created.Id);
+        Assert.Equal(graph.DirectoryA.Id, stored.DirectoryId);
+        Assert.Equal(graph.WorkspaceA.Id, stored.WorkspaceId);
+        Assert.Equal("new", stored.Content);
+        Assert.Single(await StoredVersions(created.Id));
+    }
+
+    [Fact]
+    public async Task Create_without_a_workspace_stores_a_file_of_the_directory_alone()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files",
+            new { name = "new.tf", content = "new", directoryId = graph.DirectoryA.Id, workspaceId = (Guid?)null }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        var created = await ReadAsync<FileView>(response);
+        var stored = await StoredFile(created.Id);
+        Assert.Equal(graph.DirectoryA.Id, stored.DirectoryId);
+        Assert.Null(stored.WorkspaceId);
+        Assert.Equal("new", stored.Content);
+        Assert.Single(await StoredVersions(created.Id));
+    }
+
+    /// <summary>The directory is authorized before the workspace the body names is looked up.</summary>
+    [Fact]
+    public async Task Create_naming_a_workspace_that_does_not_exist_is_forbidden_in_a_directory_of_another_project()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files",
+            new { name = "new.tf", directoryId = graph.DirectoryB.Id, workspaceId = Guid.NewGuid() }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertGraphFilesUnchanged();
+    }
+
+    [Fact]
+    public async Task Create_naming_a_workspace_that_does_not_exist_is_not_found()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files",
+            new { name = "new.tf", directoryId = graph.DirectoryA.Id, workspaceId = Guid.NewGuid() }, Ct);
+
+        await AssertProblem(HttpStatusCode.NotFound, response);
+        await AssertGraphFilesUnchanged();
     }
 
     // ---- PUT/PATCH api/files/{id}, rename -------------------------------------------------------
@@ -584,6 +916,79 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var response = await Client(actor).PostAsJsonAsync($"api/files/{file.Id}/actions/rename", new { name = "renamed.tf" }, Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
+    }
+
+    // ---- PUT/PATCH api/files/{id}: the stored file decides ----------------------------------------
+
+    /// <summary>
+    /// A <c>directoryId</c> and <c>workspaceId</c> in the body, of another project's directory and workspace,
+    /// of nothing, null or left out, are ignored: the file's name and content change and it stays where it
+    /// is, one version is added, and the other project's workspace still holds only its own file.
+    /// </summary>
+    [Theory]
+    [InlineData("PUT", "foreign")]
+    [InlineData("PATCH", "foreign")]
+    [InlineData("PUT", "missing")]
+    [InlineData("PATCH", "missing")]
+    [InlineData("PUT", "null")]
+    [InlineData("PATCH", "null")]
+    [InlineData("PUT", "omitted")]
+    [InlineData("PATCH", "omitted")]
+    public async Task Edit_and_PartialEdit_change_content_without_moving_ownership_or_injecting_into_a_foreign_workspace(string method, string parent)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+        await LockFileFor(graph.FileA, actor);
+        var body = new Dictionary<string, object> { ["name"] = "renamed.tf", ["content"] = "changed" };
+        WithLegacyField(body, "directoryId", parent, graph.DirectoryB.Id);
+        WithLegacyField(body, "workspaceId", parent, graph.WorkspaceB.Id);
+
+        var response = await Send(actor, method, $"api/files/{graph.FileA.Id}", body);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredFile(graph.FileA.Id);
+        Assert.Equal("renamed.tf", stored.Name);
+        Assert.Equal("changed", stored.Content);
+        Assert.Equal(graph.DirectoryA.Id, stored.DirectoryId);
+        Assert.Equal(graph.WorkspaceA.Id, stored.WorkspaceId);
+        Assert.Equal(TwoProjectGraph.VersionCount + 1, await ReadBack(db => db.FileVersions.CountAsync(Ct)));
+        Assert.Equal(graph.FileB.Id, Assert.Single(await StoredWorkspaceFiles(graph.WorkspaceB.Id, graph.DirectoryB.Id)).Id);
+    }
+
+    /// <summary>The file on the route is authorized, not the file, directory or workspace the body names.</summary>
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task Edit_and_PartialEdit_cannot_use_body_ownership_to_authorize_a_foreign_file(string method)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Send(actor, method, $"api/files/{graph.FileB.Id}",
+            new { id = graph.FileA.Id, name = InjectedName, content = "injected", directoryId = graph.DirectoryA.Id, workspaceId = graph.WorkspaceA.Id });
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        var stored = await StoredFile(graph.FileB.Id);
+        Assert.Equal("b.tf", stored.Name);
+        Assert.Equal("b.tf", stored.Content);
+        Assert.Equal(graph.DirectoryB.Id, stored.DirectoryId);
+        Assert.Equal(graph.WorkspaceB.Id, stored.WorkspaceId);
+        Assert.Equal(TwoProjectGraph.VersionCount, await ReadBack(db => db.FileVersions.CountAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task Edit_of_a_deleted_file_by_a_member_holding_EditProject_is_not_found()
+    {
+        var (project, file, _) = await SeedSavedFile(deleted: true);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/files/{file.Id}", new { name = "changed.tf", content = "changed" }, Ct);
+
+        await AssertProblem(HttpStatusCode.NotFound, response);
+        var stored = await StoredFile(file.Id);
+        Assert.True(stored.IsDeleted);
+        Assert.Equal(file.Content, stored.Content);
+        Assert.Single(await StoredVersions(file.Id));
     }
 
     // ---- DELETE api/files/{id} ------------------------------------------------------------------
@@ -1273,6 +1678,149 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.True(await context.FileVersions.AnyAsync(x => x.FileId == file.Id && x.Tag == "v1" && x.TaggedById == actor.Id, Ct));
     }
 
+    /// <summary>A member holding ViewProject on the file's project is refused tagging it, and no version is added.</summary>
+    [Fact]
+    public async Task Tag_is_forbidden_for_a_member_holding_only_ViewProject()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag", new { tag = TwoProjectGraph.SharedTag, fileIds = new[] { graph.FileA.Id } }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertGraphFilesUnchanged();
+    }
+
+    [Fact]
+    public async Task Tag_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnNewProject(ProjectPermission.EditProject).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag", new { tag = TwoProjectGraph.SharedTag, fileIds = new[] { graph.FileA.Id } }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertGraphFilesUnchanged();
+    }
+
+    /// <summary>Every file is authorized: one file of a project the caller holds nothing on refuses the whole batch.</summary>
+    [Fact]
+    public async Task Tag_is_forbidden_when_one_of_the_files_is_in_another_project()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag",
+            new { tag = TwoProjectGraph.SharedTag, fileIds = new[] { graph.FileA.Id, graph.FileB.Id } }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertGraphFilesUnchanged();
+    }
+
+    /// <summary>A file id that does not exist resolves to no project, so a member is refused the batch.</summary>
+    [Fact]
+    public async Task Tag_is_forbidden_when_one_of_the_files_does_not_exist()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag",
+            new { tag = TwoProjectGraph.SharedTag, fileIds = new[] { graph.FileA.Id, Guid.NewGuid() } }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertGraphFilesUnchanged();
+    }
+
+    [Fact]
+    public async Task Tag_of_an_empty_list_is_forbidden()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag", new { tag = TwoProjectGraph.SharedTag, fileIds = Array.Empty<Guid>() }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertGraphFilesUnchanged();
+    }
+
+    [Fact]
+    public async Task Tag_without_a_list_of_files_is_forbidden()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag", new { tag = TwoProjectGraph.SharedTag, fileIds = (Guid[])null }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertGraphFilesUnchanged();
+    }
+
+    /// <summary>
+    /// A file named twice is tagged once, and the answer holds only the requested file's versions with the
+    /// tag, not those of AnotherFileA, which carries the same tag.
+    /// </summary>
+    [Fact]
+    public async Task Tag_by_a_member_holding_EditProject_tags_a_repeated_file_once_and_answers_only_its_versions()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag",
+            new { tag = TwoProjectGraph.SharedTag, fileIds = new[] { graph.FileA.Id, graph.FileA.Id } }, Ct);
+
+        var versions = await ReadAsync<FileVersionView[]>(response);
+        Assert.Equal([graph.FileA.Id], versions.Select(x => x.FileId.Value).Distinct());
+        Assert.All(versions, version => Assert.Null(version.Content));
+        Assert.Equal(TwoProjectGraph.VersionCount + 1, await ReadBack(db => db.FileVersions.CountAsync(Ct)));
+    }
+
+    /// <summary>
+    /// A caller holding EditProjects tags files of two projects; the answer holds the versions with the tag of
+    /// those two files only (FileB's earlier one included), never AnotherFileA's.
+    /// </summary>
+    [Fact]
+    public async Task Tag_by_a_caller_holding_EditProjects_tags_files_of_two_projects_and_answers_only_their_versions()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag",
+            new { tag = TwoProjectGraph.SharedTag, fileIds = new[] { graph.FileA.Id, graph.FileB.Id } }, Ct);
+
+        var versions = await ReadAsync<FileVersionView[]>(response);
+        Assert.Equal(new[] { graph.FileA.Id, graph.FileB.Id }.Order(), versions.Select(x => x.FileId.Value).Distinct().Order());
+        Assert.All(versions, version => Assert.Null(version.Content));
+        Assert.Equal(TwoProjectGraph.VersionCount + 2, await ReadBack(db => db.FileVersions.CountAsync(Ct)));
+    }
+
+    /// <summary>Each file is authorized in turn on the request's one context, and each gets its tagged version.</summary>
+    [Fact]
+    public async Task Tag_by_a_member_holding_EditProject_tags_two_files_of_the_project()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag",
+            new { tag = "batch", fileIds = new[] { graph.FileA.Id, graph.AnotherFileA.Id } }, Ct);
+
+        Assert.Equal(2, (await ReadAsync<FileVersionView[]>(response)).Length);
+        Assert.Equal(TwoProjectGraph.VersionCount + 2, await ReadBack(db => db.FileVersions.CountAsync(Ct)));
+    }
+
+    /// <summary>Every file is looked up before any is tagged, so a missing one leaves the others untagged.</summary>
+    [Fact]
+    public async Task Tag_by_a_caller_holding_EditProjects_of_a_file_that_does_not_exist_is_not_found()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag",
+            new { tag = TwoProjectGraph.SharedTag, fileIds = new[] { graph.FileA.Id, Guid.NewGuid() } }, Ct);
+
+        await AssertProblem(HttpStatusCode.NotFound, response);
+        await AssertGraphFilesUnchanged();
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private async Task<(Project Project, Directory Directory)> SeedDirectory()
@@ -1335,5 +1883,89 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         await using var context = NewContext();
 
         return await context.Files.AnyAsync(x => x.Name == name, Ct);
+    }
+
+    private Task<TwoProjectGraph> SeedGraph() => TwoProjectGraph.SeedAsync(Db, Root.Id, Ct);
+
+    /// <summary>
+    /// A file of a new project saved once by <see cref="ApiTestBase.Root"/>, deleted when asked, and tagged
+    /// <paramref name="tag"/> when one is given; answers the id of its version carrying <paramref name="tag"/>
+    /// (the saved one when none is given).
+    /// </summary>
+    private async Task<(Project Project, File File, Guid VersionId)> SeedSavedFile(bool deleted, string tag = null)
+    {
+        var (project, directory) = await SeedDirectory();
+        var file = TestData.File(directory);
+        file.Save(Root.Id, canLock: true, bypassLock: true);
+        file.IsDeleted = deleted;
+        await Seed(file);
+        await TagStored(file, tag);
+
+        var versionId = await ReadBack(db => db.FileVersions.Where(x => x.FileId == file.Id && x.Tag == tag).Select(x => x.Id).SingleAsync(Ct));
+
+        return (project, file, versionId);
+    }
+
+    /// <summary>Tags the stored <paramref name="file"/> as Root, unless <paramref name="tag"/> is null.</summary>
+    private async Task TagStored(File file, string tag)
+    {
+        if (tag is null)
+        {
+            return;
+        }
+
+        await using var context = NewContext();
+        var stored = await context.Files.IgnoreQueryFilters().SingleAsync(x => x.Id == file.Id, Ct);
+        stored.Tag(tag, Root.Id, TestData.DefaultDateCreated);
+        await context.SaveChangesAsync(Ct);
+    }
+
+    /// <summary>Gives <paramref name="holder"/> the edit lock of the stored <paramref name="file"/>.</summary>
+    private async Task LockFileFor(File file, TestActor holder)
+    {
+        await using var context = NewContext();
+        var stored = await context.Files.SingleAsync(x => x.Id == file.Id, Ct);
+        stored.Lock(holder.Id, canLock: false);
+        await context.SaveChangesAsync(Ct);
+    }
+
+    /// <summary>The graph's files and versions are as it seeded them: none added, none removed.</summary>
+    private async Task AssertGraphFilesUnchanged()
+    {
+        Assert.Equal(TwoProjectGraph.FileCount, await ReadBack(db => db.Files.IgnoreQueryFilters().CountAsync(Ct)));
+        Assert.Equal(TwoProjectGraph.VersionCount, await ReadBack(db => db.FileVersions.CountAsync(Ct)));
+    }
+
+    private async Task<FileVersion[]> StoredVersions(Guid fileId)
+    {
+        await using var context = NewContext();
+
+        return await context.FileVersions.Where(x => x.FileId == fileId).ToArrayAsync(Ct);
+    }
+
+    /// <summary>The files the stored workspace's runs would be given, as <c>CasterContext.GetWorkspaceFiles</c> gathers them.</summary>
+    private async Task<List<File>> StoredWorkspaceFiles(Guid workspaceId, Guid directoryId)
+    {
+        await using var context = NewContext();
+        var workspace = await context.Workspaces.SingleAsync(x => x.Id == workspaceId, Ct);
+        var directory = await context.Directories.SingleAsync(x => x.Id == directoryId, Ct);
+
+        return await context.GetWorkspaceFiles(workspace, directory);
+    }
+
+    private Task<HttpResponseMessage> Send(TestActor actor, string method, string url, object body) =>
+        Client(actor).SendAsync(new HttpRequestMessage(new HttpMethod(method), url) { Content = JsonContent.Create(body) }, Ct);
+
+    /// <summary>
+    /// Sets <paramref name="field"/> of <paramref name="body"/> as an old client would send it: the id of a row
+    /// of another project (<c>foreign</c>), an id nothing has (<c>missing</c>), <c>null</c>, or left out
+    /// (<c>omitted</c>).
+    /// </summary>
+    private static void WithLegacyField(Dictionary<string, object> body, string field, string scenario, Guid foreignId)
+    {
+        if (scenario != "omitted")
+        {
+            body[field] = scenario switch { "foreign" => foreignId, "missing" => Guid.NewGuid(), _ => null };
+        }
     }
 }

@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
@@ -437,6 +438,80 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         Assert.Equal(foreignDesign.Id, (await StoredDesignModule(designModule.Id)).DesignId);
     }
 
+    // ---- PUT api/designModules/{id}: the stored design module decides ---------------------------
+
+    /// <summary>
+    /// A <c>designId</c> in the body, of another project's design, of nothing, null or left out, is ignored:
+    /// the module stays in its design, and its name, version and values change.
+    /// </summary>
+    [Theory]
+    [InlineData("foreign")]
+    [InlineData("missing")]
+    [InlineData("null")]
+    [InlineData("omitted")]
+    public async Task Edit_ignores_legacy_design_fields_and_still_updates_values(string parent)
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+        var body = new Dictionary<string, object>
+        {
+            ["name"] = "changed",
+            ["moduleId"] = graph.Module.Id,
+            ["moduleVersion"] = "v2",
+            ["values"] = new[] { new { name = "input", value = "changed" } }
+        };
+        WithLegacyField(body, "designId", parent, graph.DesignB.Id);
+
+        var response = await Client(actor).PutAsJsonAsync($"api/designModules/{graph.DesignModuleA.Id}", body, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var stored = await StoredDesignModule(graph.DesignModuleA.Id);
+        Assert.Equal(graph.DesignA.Id, stored.DesignId);
+        Assert.Equal("changed", stored.Name);
+        Assert.Equal("v2", stored.ModuleVersion);
+        Assert.Equal("changed", Assert.Single(stored.Values).Value);
+    }
+
+    /// <summary>The design module on the route is authorized before any value changes, whatever the body names.</summary>
+    [Fact]
+    public async Task Edit_authorizes_the_route_before_changing_values()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/designModules/{graph.DesignModuleB.Id}", new
+        {
+            designModuleId = graph.DesignModuleA.Id,
+            designId = graph.DesignA.Id,
+            moduleId = graph.Module.Id,
+            name = "changed",
+            moduleVersion = "v2",
+            values = new[] { new { name = "input", value = "changed" } }
+        }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        var stored = await StoredDesignModule(graph.DesignModuleB.Id);
+        Assert.Equal(graph.DesignB.Id, stored.DesignId);
+        Assert.Equal("victim", stored.Name);
+        Assert.Equal("v1", stored.ModuleVersion);
+        Assert.Equal("victim", Assert.Single(stored.Values).Value);
+    }
+
+    /// <summary>A create still takes the design its body names.</summary>
+    [Fact]
+    public async Task Create_adds_the_module_to_the_design_its_body_names()
+    {
+        var graph = await SeedGraph();
+        var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/designModules",
+            new { designId = graph.DesignA.Id, moduleId = graph.Module.Id, name = "created", moduleVersion = "v1", values = NoValues }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        var created = await ReadAsync<DesignModuleView>(response);
+        Assert.Equal(graph.DesignA.Id, (await StoredDesignModule(created.Id)).DesignId);
+    }
+
     [Fact]
     public async Task Disable_by_a_member_holding_EditProject_stores_the_module_disabled()
     {
@@ -640,6 +715,21 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
 
         await AssertProblem(HttpStatusCode.Forbidden, response);
         Assert.NotNull(await StoredDesignModule(designModule.Id));
+    }
+
+    private Task<TwoProjectGraph> SeedGraph() => TwoProjectGraph.SeedAsync(Db, Root.Id, Ct);
+
+    /// <summary>
+    /// Sets <paramref name="field"/> of <paramref name="body"/> as an old client would send it: the id of a row
+    /// of another project (<c>foreign</c>), an id nothing has (<c>missing</c>), <c>null</c>, or left out
+    /// (<c>omitted</c>).
+    /// </summary>
+    private static void WithLegacyField(Dictionary<string, object> body, string field, string scenario, Guid foreignId)
+    {
+        if (scenario != "omitted")
+        {
+            body[field] = scenario switch { "foreign" => foreignId, "missing" => Guid.NewGuid(), _ => null };
+        }
     }
 
     private async Task<(Project Project, Design Design)> SeedDesign()

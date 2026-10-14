@@ -158,6 +158,17 @@ public sealed class TestActorBuilder(CasterContext db, CancellationToken ct)
     }
 
     /// <summary>
+    /// As <see cref="OnProjectThroughNewGroup(Project, ProjectPermission[])"/>, with the group's membership on
+    /// <paramref name="project"/> taking an existing role, such as <c>TestData.ProjectRoles.Manager</c>.
+    /// </summary>
+    public TestActorBuilder OnProjectThroughNewGroup(Project project, Guid roleId)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        _projects.Add(Pending(project.Id, null, roleId, throughGroup: true));
+        return this;
+    }
+
+    /// <summary>
     /// Puts the actor in <paramref name="group"/>, which must already be saved. A Manager holds
     /// <c>GroupPermission.ManageMembership</c> on it; a Member holds nothing.
     /// </summary>

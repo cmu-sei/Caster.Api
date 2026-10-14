@@ -56,8 +56,8 @@ namespace Caster.Api.Tests.Features.Workspaces
         [InlineData("__Caster__")]
         public async Task Test_Edit_Rejects_Reserved_Workspace_Names(string name)
         {
-            var validator = new Edit.CommandValidator(_validationService, _options);
-            var command = new Edit.Command { Id = Guid.NewGuid(), Name = name, DirectoryId = Guid.NewGuid() };
+            var validator = new Edit.CommandValidator(_options);
+            var command = new Edit.Command { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command, TestContext.Current.CancellationToken);
 
@@ -70,7 +70,7 @@ namespace Caster.Api.Tests.Features.Workspaces
         [InlineData("..")]
         public async Task Test_PartialEdit_Rejects_Reserved_Workspace_Names(string name)
         {
-            var validator = new PartialEdit.CommandValidator(_validationService, _options);
+            var validator = new PartialEdit.CommandValidator(_options);
             var command = new PartialEdit.Command { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command, TestContext.Current.CancellationToken);
@@ -83,7 +83,7 @@ namespace Caster.Api.Tests.Features.Workspaces
         [InlineData(null)] // Name is optional on a partial edit
         public async Task Test_PartialEdit_Allows_An_Ordinary_Or_Absent_Workspace_Name(string name)
         {
-            var validator = new PartialEdit.CommandValidator(_validationService, _options);
+            var validator = new PartialEdit.CommandValidator(_options);
             var command = new PartialEdit.Command { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command, TestContext.Current.CancellationToken);

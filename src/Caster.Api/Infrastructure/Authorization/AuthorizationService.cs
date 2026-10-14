@@ -242,6 +242,7 @@ public class AuthorizationService(
     private async Task<Guid?> HandleFile(Guid id, CancellationToken cancellationToken)
     {
         return await dbContext.Files
+            .IgnoreQueryFilters()
             .Where(x => x.Id == id)
             .Select(x => (Guid?)x.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
@@ -249,9 +250,10 @@ public class AuthorizationService(
 
     private async Task<Guid?> HandleFileVersion(Guid id, CancellationToken cancellationToken)
     {
-        return await dbContext.Files
+        return await dbContext.FileVersions
+            .IgnoreQueryFilters()
             .Where(x => x.Id == id)
-            .Select(x => (Guid?)x.Directory.ProjectId)
+            .Select(x => (Guid?)x.File.Directory.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
     }
 

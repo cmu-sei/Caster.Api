@@ -52,7 +52,7 @@ namespace Caster.Api.Tests.Features.Shared.Behaviors
         public static IEnumerable<object[]> CommandsWithVersion(string version) =>
         [
             [new WorkspaceRequests.Create.Command { Name = "valid", DirectoryId = Guid.NewGuid(), TerraformVersion = version }],
-            [new WorkspaceRequests.Edit.Command { Id = Guid.NewGuid(), Name = "valid", DirectoryId = Guid.NewGuid(), TerraformVersion = version }],
+            [new WorkspaceRequests.Edit.Command { Id = Guid.NewGuid(), Name = "valid", TerraformVersion = version }],
             [new WorkspaceRequests.PartialEdit.Command { Id = Guid.NewGuid(), TerraformVersion = version }],
             [new DirectoryRequests.Create.Command { Name = "valid", ProjectId = Guid.NewGuid(), TerraformVersion = version }],
             [new DirectoryRequests.Edit.Command { Id = Guid.NewGuid(), Name = "valid", TerraformVersion = version }],
@@ -94,7 +94,7 @@ namespace Caster.Api.Tests.Features.Shared.Behaviors
             var commands = new object[]
             {
                 new WorkspaceRequests.Create.Command { Name = name, DirectoryId = Guid.NewGuid() },
-                new WorkspaceRequests.Edit.Command { Id = Guid.NewGuid(), Name = name, DirectoryId = Guid.NewGuid() },
+                new WorkspaceRequests.Edit.Command { Id = Guid.NewGuid(), Name = name },
                 new WorkspaceRequests.PartialEdit.Command { Id = Guid.NewGuid(), Name = name },
             };
 
@@ -127,7 +127,7 @@ namespace Caster.Api.Tests.Features.Shared.Behaviors
         [Fact]
         public async Task Test_Workspace_Edit_Requires_Name()
         {
-            var errors = await Validate(new WorkspaceRequests.Edit.Command { Id = Guid.NewGuid(), Name = null, DirectoryId = Guid.NewGuid() });
+            var errors = await Validate(new WorkspaceRequests.Edit.Command { Id = Guid.NewGuid(), Name = null });
 
             Assert.True(errors.ContainsKey("Name"));
         }
