@@ -192,8 +192,8 @@ namespace Caster.Api.Tests.Unit.Validators
         [InlineData("__Caster__")]
         public async Task Test_Edit_Rejects_Reserved_Workspace_Names(string name)
         {
-            var validator = new Caster.Api.Features.Workspaces.Edit.CommandValidator(_validationService, _options);
-            var command = new Caster.Api.Features.Workspaces.Edit.Command { Id = Guid.NewGuid(), Name = name, DirectoryId = Guid.NewGuid() };
+            var validator = new Caster.Api.Features.Workspaces.Edit.CommandValidator(_options);
+            var command = new Caster.Api.Features.Workspaces.Edit.Command { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command);
 

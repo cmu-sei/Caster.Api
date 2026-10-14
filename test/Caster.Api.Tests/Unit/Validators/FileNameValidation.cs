@@ -99,8 +99,8 @@ namespace Caster.Api.Tests.Unit.Validators
         [InlineData(null)]
         public async Task Test_Edit_Rejects_Invalid_File_Names(string name)
         {
-            var validator = new Edit.CommandValidator(_validationService);
-            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = name, DirectoryId = Guid.NewGuid() };
+            var validator = new Edit.CommandValidator();
+            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command);
 
@@ -110,8 +110,8 @@ namespace Caster.Api.Tests.Unit.Validators
         [Fact]
         public async Task Test_Edit_Allows_Valid_File_Names()
         {
-            var validator = new Edit.CommandValidator(_validationService);
-            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = "main.tf", DirectoryId = Guid.NewGuid() };
+            var validator = new Edit.CommandValidator();
+            var command = new Edit.Command() { Id = Guid.NewGuid(), Name = "main.tf" };
 
             var result = await validator.ValidateAsync(command);
 
@@ -125,7 +125,7 @@ namespace Caster.Api.Tests.Unit.Validators
         [InlineData("")]
         public async Task Test_PartialEdit_Rejects_Invalid_File_Names(string name)
         {
-            var validator = new PartialEdit.CommandValidator(_validationService);
+            var validator = new PartialEdit.CommandValidator();
             var command = new PartialEdit.Command() { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command);
@@ -138,7 +138,7 @@ namespace Caster.Api.Tests.Unit.Validators
         [InlineData(null)] // Name is optional on a partial edit
         public async Task Test_PartialEdit_Allows_Valid_File_Names(string name)
         {
-            var validator = new PartialEdit.CommandValidator(_validationService);
+            var validator = new PartialEdit.CommandValidator();
             var command = new PartialEdit.Command() { Id = Guid.NewGuid(), Name = name };
 
             var result = await validator.ValidateAsync(command);

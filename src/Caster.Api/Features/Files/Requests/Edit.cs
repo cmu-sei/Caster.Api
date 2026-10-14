@@ -16,7 +16,6 @@ using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Files.Interfaces;
 using System.Text.Json.Serialization;
 using FluentValidation;
-using Caster.Api.Features.Shared.Services;
 using Caster.Api.Features.Shared.Validators;
 
 namespace Caster.Api.Features.Files
@@ -24,43 +23,17 @@ namespace Caster.Api.Features.Files
     public class Edit
     {
         [DataContract(Name = "EditFileCommand")]
-        public class Command : FileUpdateRequest, IRequest<File>, IFileCommand
+        public class Command : FileFields, IRequest<File>, IFileCommand
         {
             [JsonIgnore]
             public Guid Id { get; set; }
-
-            /// <summary>
-            /// Name of the file.
-            /// </summary>
-            [DataMember]
-            public string Name { get; set; }
-
-            /// <summary>
-            /// ID of the directory this file is under.
-            /// </summary>
-            [DataMember]
-            public Guid DirectoryId { get; set; }
-
-            /// <summary>
-            /// An optional Workspace to assign this File to
-            /// </summary>
-            [DataMember]
-            public Guid? WorkspaceId { get; set; }
-
-            /// <summary>
-            /// The full contents of the file.
-            /// </summary>
-            [DataMember]
-            public override string Content { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
         {
-            public CommandValidator(IValidationService validationService)
+            public CommandValidator()
             {
                 RuleFor(x => x.Name).FileNameValidation();
-                RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
-                RuleFor(x => x.WorkspaceId.Value).WorkspaceExists(validationService).When(x => x.WorkspaceId.HasValue);
             }
         }
 
