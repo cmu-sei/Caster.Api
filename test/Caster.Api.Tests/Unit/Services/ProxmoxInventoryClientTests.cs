@@ -283,6 +283,132 @@ namespace Caster.Api.Tests.Unit.Services
             Assert.True(snapshot.Datastores.Available);
         }
 
+        /// <summary>
+        /// local plus a second ISO storage, for the IsoLocations tests.
+        /// </summary>
+        private const string TwoIsoStoragesBody = """
+        { "data": [
+          { "storage": "local-lvm", "type": "lvmthin", "content": "rootdir,images", "vgname": "pve" },
+          { "storage": "local", "type": "dir", "content": "vztmpl,backup,iso,snippets", "path": "/var/lib/vz" },
+          { "storage": "iso-stock", "type": "dir", "content": "iso", "path": "/var/lib/vz-stock" }
+        ] }
+        """;
+
+        private const string StockIsoBody = """
+        { "data": [
+          { "content": "iso", "format": "iso", "size": 62914560, "ctime": 1780672824, "volid": "iso-stock:iso/alpine-virt-3.19.2-x86_64.iso" }
+        ] }
+        """;
+
+        private static Func<HttpRequestMessage, HttpResponseMessage> TwoIsoStorages() =>
+            request => request.RequestUri.AbsolutePath.Contains("/storage/iso-stock/content")
+                ? Json(StockIsoBody)
+                : Responder(storage: TwoIsoStoragesBody)(request);
+
+        private static InfrastructureOptions IsoLocations(params string[] locations)
+        {
+            var options = Options();
+            options.IsoLocations = locations;
+            return options;
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_NoIsoLocations_ReadsEveryIsoStorage()
+        {
+            var snapshot = await Read(TwoIsoStorages());
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.Equal(4, snapshot.Isos.Entries.Length);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_IsoLocationStorage_ReadsOnlyThatStorage()
+        {
+            var requested = new List<string>();
+
+            var snapshot = await Read(Track(requested, TwoIsoStorages()), IsoLocations("iso-stock"));
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.Equal(["iso-stock:iso/alpine-virt-3.19.2-x86_64.iso"], snapshot.Isos.Entries.Select(x => x.Id));
+
+            // the other ISO storage is not even asked
+            Assert.DoesNotContain(requested, x => x.Contains("storage/local/content"));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_IsoLocationVolIdPrefix_KeepsOnlyMatchingIsos()
+        {
+            // TopoMojo's shared ISOs, in a storage that also holds a workspace's upload and unscoped ISOs
+            var snapshot = await Read(Responder(isos: """
+            { "data": [
+              { "content": "iso", "format": "iso", "size": 1, "volid": "local:iso/00000000-0000-0000-0000-000000000000__alpine.iso" },
+              { "content": "iso", "format": "iso", "size": 1, "volid": "local:iso/00000000-0000-0000-0000-000000000000#legacy.iso" },
+              { "content": "iso", "format": "iso", "size": 1, "volid": "local:iso/0123456789abcdef0123456789abcdef__upload.pdf.iso" },
+              { "content": "iso", "format": "iso", "size": 1, "volid": "local:iso/TinyCore-current.iso" }
+            ] }
+            """), IsoLocations(
+                "local:iso/00000000-0000-0000-0000-000000000000__",
+                "local:iso/00000000-0000-0000-0000-000000000000#"));
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.Equal(
+                [
+                    "local:iso/00000000-0000-0000-0000-000000000000#legacy.iso",
+                    "local:iso/00000000-0000-0000-0000-000000000000__alpine.iso"
+                ],
+                snapshot.Isos.Entries.Select(x => x.Id).Order(StringComparer.Ordinal));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_IsoLocationStorageAndPrefix_Combine()
+        {
+            var snapshot = await Read(TwoIsoStorages(), IsoLocations("iso-stock", "local:iso/TinyCore"));
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.Equal(
+                ["iso-stock:iso/alpine-virt-3.19.2-x86_64.iso", "local:iso/TinyCore-current.iso"],
+                snapshot.Isos.Entries.Select(x => x.Id).Order(StringComparer.Ordinal));
+        }
+
+        [Theory]
+        [InlineData("nope")]
+        [InlineData("local-lvm")] // a storage, but not one with ISO content
+        [InlineData("nope:iso/stock-")]
+        public async Task GetInventoryAsync_UnknownIsoLocation_IsUnavailableNotEmpty(string location)
+        {
+            var snapshot = await Read(DefaultResponder(), IsoLocations("local", location));
+
+            Assert.False(snapshot.Isos.Available);
+            Assert.Empty(snapshot.Isos.Entries);
+            Assert.Contains($"\"{location}\"", snapshot.Isos.Error);
+            Assert.Contains("Storages with ISO content: local.", snapshot.Isos.Error);
+
+            // and the other categories are unaffected
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.True(snapshot.Datastores.Available);
+        }
+
+        [Theory]
+        [InlineData("local/stock")]
+        [InlineData(":iso/stock")]
+        public async Task GetInventoryAsync_IsoLocationFolder_SaysWhichFormsWork(string location)
+        {
+            var snapshot = await Read(DefaultResponder(), IsoLocations(location));
+
+            Assert.False(snapshot.Isos.Available);
+            Assert.Contains("storage name", snapshot.Isos.Error);
+            Assert.Contains("start of a volid", snapshot.Isos.Error);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_BlankIsoLocations_AreIgnored()
+        {
+            var snapshot = await Read(DefaultResponder(), IsoLocations("", "  "));
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.Equal(3, snapshot.Isos.Entries.Length);
+        }
+
         [Fact]
         public async Task GetInventoryAsync_StorageListFails_TakesDownIsosAndDatastoresOnly()
         {

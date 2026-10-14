@@ -60,6 +60,19 @@ public class InfrastructureOptions
     public bool InsecureSkipVerify { get; set; }
 
     /// <summary>
+    /// Where the ISO list is read from, so it can offer the stock ISOs rather than
+    /// everything uploaded alongside them. Empty reads every ISO storage.
+    /// <para>
+    /// For proxmox each entry is a storage name with ISO content, e.g.
+    /// <c>iso-stock</c>, or the start of a volid, e.g.
+    /// <c>local:iso/00000000-0000-0000-0000-000000000000__</c> for the ISOs
+    /// TopoMojo shares with every workspace. Proxmox ISO names have no folders.
+    /// Ignored by vsphere, which cannot list ISOs yet.
+    /// </para>
+    /// </summary>
+    public string[] IsoLocations { get; set; } = [];
+
+    /// <summary>
     /// How often the background cache is refreshed, in minutes.
     /// </summary>
     public int RefreshMinutes { get; set; } = 30;

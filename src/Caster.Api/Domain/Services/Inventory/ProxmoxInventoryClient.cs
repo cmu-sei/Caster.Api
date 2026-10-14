@@ -391,6 +391,24 @@ public class ProxmoxInventoryClient(
             .Where(x => !string.IsNullOrWhiteSpace(x.Storage) && HasContent(x.Content, IsoContent))
             .ToArray();
 
+        var locations = IsoLocation.Parse(options.IsoLocations);
+
+        if (locations.Length > 0)
+        {
+            // A location that matches nothing would quietly drop its ISOs from
+            // the list, so it fails the category instead, naming what is wrong.
+            var wrong = locations
+                .Where(x => x.Storage is null || !isoStorages.Any(s => string.Equals(s.Storage, x.Storage, StringComparison.Ordinal)))
+                .ToArray();
+
+            if (wrong.Length > 0)
+                return InventoryCategoryResult.Unavailable(IsoLocationsError(wrong, isoStorages));
+
+            isoStorages = isoStorages
+                .Where(x => locations.Any(l => string.Equals(l.Storage, x.Storage, StringComparison.Ordinal)))
+                .ToArray();
+        }
+
         var queryableNodes = QueryableNodes(nodes.Values);
 
         if (isoStorages.Length == 0 || queryableNodes.Length == 0)
@@ -419,6 +437,9 @@ public class ProxmoxInventoryClient(
                     if (string.IsNullOrWhiteSpace(item.VolId) || entries.ContainsKey(item.VolId))
                         continue;
 
+                    if (locations.Length > 0 && !locations.Any(x => x.Includes(storage.Storage, item.VolId)))
+                        continue;
+
                     var properties = new Dictionary<string, string>();
                     AddIfPresent(properties, "storage", storage.Storage);
                     AddIfPresent(properties, "node", node);
@@ -445,6 +466,54 @@ public class ProxmoxInventoryClient(
         }
 
         return InventoryCategoryResult.Ok(Ordered(entries.Values));
+    }
+
+    private static string IsoLocationsError(IsoLocation[] wrong, ProxmoxStorage[] isoStorages)
+    {
+        var available = isoStorages.Length == 0
+            ? "There are no storages with ISO content."
+            : $"Storages with ISO content: {string.Join(", ", isoStorages.Select(x => x.Storage))}.";
+
+        // "local/stock" is the natural thing to try, but Proxmox ISO names have no folders.
+        var form = wrong.Any(x => x.Storage is null)
+            ? " Each entry is a storage name, e.g. \"local\", or the start of a volid, e.g. \"local:iso/stock-\"."
+            : "";
+
+        return $"Infrastructure:IsoLocations names {string.Join(", ", wrong.Select(x => $"\"{x.Entry}\""))}, which is not a Proxmox storage with ISO content. {available}{form}";
+    }
+
+    /// <summary>
+    /// One Infrastructure:IsoLocations entry: a storage name ("local"), or the
+    /// start of a volid ("local:iso/00000000-0000-0000-0000-000000000000__").
+    /// Proxmox ISO names have no folders, so a prefix is how a set of ISOs in a
+    /// shared storage is told apart, the way TopoMojo scopes its uploads.
+    /// </summary>
+    private sealed record IsoLocation(string Entry, string Storage, string VolIdPrefix)
+    {
+        public static IsoLocation[] Parse(string[] entries) =>
+            (entries ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Select(From)
+                .ToArray();
+
+        private static IsoLocation From(string entry)
+        {
+            var colon = entry.IndexOf(':');
+
+            if (colon > 0)
+                return new IsoLocation(entry, entry[..colon], entry);
+
+            // A bare name with a path in it is neither form.
+            return entry.Contains('/') || colon == 0
+                ? new IsoLocation(entry, null, null)
+                : new IsoLocation(entry, entry, null);
+        }
+
+        public bool Includes(string storage, string volId) =>
+            string.Equals(Storage, storage, StringComparison.Ordinal)
+            && (VolIdPrefix is null || volId.StartsWith(VolIdPrefix, StringComparison.Ordinal));
     }
 
     /// <summary>
