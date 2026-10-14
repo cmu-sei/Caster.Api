@@ -24,37 +24,41 @@ namespace Caster.Api.Domain.Services.Topology;
 /// NIC's own <c>references</c> are tried instead, within the same module.
 /// Only resource types listed in <see cref="Types"/> are drawn; everything
 /// else in the plan is ignored.
+///
+/// A Proxmox NIC with a VLAN tag on a plain bridge is on a different segment
+/// from an untagged NIC on that bridge, so the tag is part of its key:
+/// <c>vmbr0.10</c>, the way Linux names the VLAN interface.
 /// </remarks>
 public static partial class PlanTopologyParser
 {
-    private sealed record MachineType(string Block, string Attribute, string[] Label, (string Name, string Path)[] Properties);
+    private sealed record MachineType(string Block, string Attribute, string Vlan, string[] Label, (string Name, string Path)[] Properties);
 
-    private sealed record NetworkType(string[] Keys, string[] Label);
+    private sealed record NetworkType(string[] Keys, string[] Label, string Vlan = null);
 
     private static readonly Dictionary<string, MachineType> Machines = new(StringComparer.Ordinal)
     {
         ["proxmox_virtual_environment_vm"] = new(
-            "network_device", "bridge", ["name"],
+            "network_device", "bridge", "vlan_id", ["name"],
             [("cpus", "cpu.0.cores"), ("memory_mb", "memory.0.dedicated"), ("node", "node_name")]),
         ["proxmox_vm_qemu"] = new(
-            "network", "bridge", ["name"],
+            "network", "bridge", "tag", ["name"],
             [("cpus", "cores"), ("memory_mb", "memory"), ("node", "target_node")]),
         ["vsphere_virtual_machine"] = new(
-            "network_interface", "network_id", ["name"],
+            "network_interface", "network_id", null, ["name"],
             [("cpus", "num_cpus"), ("memory_mb", "memory")]),
     };
 
     private static readonly Dictionary<string, NetworkType> Networks = new(StringComparer.Ordinal)
     {
         // A NIC's bridge is the vnet id; the alias is the readable name.
-        ["proxmox_sdn_vnet"] = new(["id"], ["alias", "id"]),
+        ["proxmox_sdn_vnet"] = new(["id"], ["alias", "id"], "tag"),
         ["proxmox_virtual_environment_network_linux_bridge"] = new(["name"], ["name"]),
         // network_id is the managed object id: dvportgroup-123, network-202.
-        ["vsphere_distributed_port_group"] = new(["id"], ["name"]),
+        ["vsphere_distributed_port_group"] = new(["id"], ["name"], "vlan_id"),
         ["vsphere_network"] = new(["id"], ["name"]),
         // A host port group is never a NIC's network_id; VMs reach it through a
         // vsphere_network data source, which is folded into it below.
-        ["vsphere_host_port_group"] = new([], ["name"]),
+        ["vsphere_host_port_group"] = new([], ["name"], "vlan_id"),
     };
 
     /// <summary>The resource types the parser draws, for the UI's legend and the docs.</summary>
@@ -77,7 +81,7 @@ public static partial class PlanTopologyParser
             var type = Networks[instance.Type];
 
             networks.Add(instance);
-            topology.Nodes.Add(new TopologyNode
+            var network = new TopologyNode
             {
                 Id = instance.Address,
                 Kind = TopologyNodeKind.Network,
@@ -85,7 +89,14 @@ public static partial class PlanTopologyParser
                 Label = FirstString(instance.Values, type.Label) ?? instance.Name,
                 Module = instance.Module,
                 Action = instance.Action,
-            });
+            };
+
+            if (Vlan(instance.Values, type.Vlan) is { } tag)
+            {
+                network.Properties["vlan"] = tag;
+            }
+
+            topology.Nodes.Add(network);
 
             foreach (var key in type.Keys)
             {
@@ -133,9 +144,14 @@ public static partial class PlanTopologyParser
             for (var i = 0; i < nics.Count; i++)
             {
                 var value = GetString(nics[i], type.Attribute);
+                var vlan = Vlan(nics[i], type.Vlan);
                 string target = null;
 
-                if (!string.IsNullOrEmpty(value))
+                if (!string.IsNullOrEmpty(value) && vlan != null)
+                {
+                    target = AddExternal(topology, $"{value}.{vlan}", vlan);
+                }
+                else if (!string.IsNullOrEmpty(value))
                 {
                     if (!networkByKey.TryGetValue(value, out target))
                     {
@@ -245,22 +261,42 @@ public static partial class PlanTopologyParser
         return matches.Count == 1 ? matches[0] : null;
     }
 
-    private static string AddExternal(Models.Topology topology, string value)
+    private static string AddExternal(Models.Topology topology, string value, string vlan = null)
     {
         var id = "external:" + value;
 
         if (!topology.Nodes.Any(x => x.Id == id))
         {
-            topology.Nodes.Add(new TopologyNode
+            var node = new TopologyNode
             {
                 Id = id,
                 Kind = TopologyNodeKind.Network,
                 Label = value,
                 External = true,
-            });
+            };
+
+            if (vlan != null)
+            {
+                node.Properties["vlan"] = vlan;
+            }
+
+            topology.Nodes.Add(node);
         }
 
         return id;
+    }
+
+    /// <summary>
+    /// A VLAN tag, or null for none. Every provider spells "untagged" as 0 or
+    /// leaves it out; the older proxmox_vm_qemu used -1.
+    /// </summary>
+    private static string Vlan(JsonElement element, string path)
+    {
+        var value = path == null ? null : GetScalar(element, path);
+
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tag) && tag > 0
+            ? value
+            : null;
     }
 
     #region Plan JSON

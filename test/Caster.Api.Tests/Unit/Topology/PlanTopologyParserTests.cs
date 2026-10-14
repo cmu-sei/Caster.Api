@@ -95,6 +95,14 @@ namespace Caster.Api.Tests.Unit.Topology
         }
 
         [Fact]
+        public void Proxmox_SimpleZoneVnetsHaveNoVlan()
+        {
+            Assert.All(
+                Proxmox().Nodes.Where(x => x.Kind == TopologyNodeKind.Network),
+                x => Assert.False(x.Properties.ContainsKey("vlan")));
+        }
+
+        [Fact]
         public void Proxmox_HasNoExternalNetworks()
         {
             Assert.DoesNotContain(Proxmox().Nodes, x => x.External);
@@ -129,6 +137,15 @@ namespace Caster.Api.Tests.Unit.Topology
             var existing = topology.Nodes.Single(x => x.Id == "data.vsphere_network.course-net");
             Assert.Equal("course-net", existing.Label);
             Assert.Equal("no-op", existing.Action);
+        }
+
+        [Fact]
+        public void Vsphere_UntaggedPortGroupHasNoVlan()
+        {
+            // vlan_id 0 is no VLAN.
+            var course = Vsphere().Nodes.Single(x => x.Id == "vsphere_host_port_group.course");
+
+            Assert.False(course.Properties.ContainsKey("vlan"));
         }
 
         [Fact]
@@ -176,6 +193,39 @@ namespace Caster.Api.Tests.Unit.Topology
 
             Assert.Single(topology.Nodes, x => x.External);
             Assert.Equal(2, topology.Edges.Count);
+        }
+
+        [Fact]
+        public void VlanTagsOnOneBridge_AreSeparateNetworks()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Vm("proxmox_virtual_environment_vm.a", "\"create\"", """{"bridge":"vmbr0","vlan_id":10}""") + "," +
+                Vm("proxmox_virtual_environment_vm.b", "\"create\"", """{"bridge":"vmbr0","vlan_id":20}""") + "," +
+                Vm("proxmox_virtual_environment_vm.c", "\"create\"", """{"bridge":"vmbr0","vlan_id":0}""")));
+
+            Assert.Equal(["external:vmbr0.10"], NetworksOf(topology, "proxmox_virtual_environment_vm.a"));
+            Assert.Equal(["external:vmbr0.20"], NetworksOf(topology, "proxmox_virtual_environment_vm.b"));
+            // 0 is untagged: the bridge itself.
+            Assert.Equal(["external:vmbr0"], NetworksOf(topology, "proxmox_virtual_environment_vm.c"));
+
+            var tagged = topology.Nodes.Single(x => x.Id == "external:vmbr0.10");
+            Assert.Equal("vmbr0.10", tagged.Label);
+            Assert.Equal("10", tagged.Properties["vlan"]);
+            Assert.False(topology.Nodes.Single(x => x.Id == "external:vmbr0").Properties.ContainsKey("vlan"));
+        }
+
+        [Fact]
+        public void VnetTag_IsTheNetworksVlan()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Vm("proxmox_virtual_environment_vm.a", "\"create\"", """{"bridge":"lan"}""") + "," + """
+                {"address":"proxmox_sdn_vnet.lan","mode":"managed","type":"proxmox_sdn_vnet","name":"lan",
+                 "change":{"actions":["create"],"after":{"id":"lan","alias":"corp","zone":"vlanzone","tag":30}}}
+                """));
+
+            var lan = topology.Nodes.Single(x => x.Id == "proxmox_sdn_vnet.lan");
+            Assert.Equal("30", lan.Properties["vlan"]);
+            Assert.Equal(["proxmox_sdn_vnet.lan"], NetworksOf(topology, "proxmox_virtual_environment_vm.a"));
         }
 
         [Fact]
