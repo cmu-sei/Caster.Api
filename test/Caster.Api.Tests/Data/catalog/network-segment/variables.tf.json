@@ -1,0 +1,41 @@
+{
+  "variable": {
+    "name": {
+      "description": "Name of the distributed port group as it will appear in vCenter inventory. This is the value to pass as network_name to the compute modules.",
+      "type": "string"
+    },
+    "datacenter": {
+      "description": "Name of the vCenter datacenter that contains the target inventory.",
+      "type": "string"
+    },
+    "distributed_switch": {
+      "description": "Name of the vSphere distributed virtual switch that the port group is created on.",
+      "type": "string"
+    },
+    "vlan_id": {
+      "description": "VLAN ID applied to the port group. Use 0 for no VLAN tagging, which is the normal choice for a fully isolated exercise segment.",
+      "type": "number",
+      "default": 0
+    },
+    "number_of_ports": {
+      "description": "Number of ports to pre-allocate on the port group. Size this above the number of adapters you expect to attach.",
+      "type": "number",
+      "default": 32
+    },
+    "allow_promiscuous": {
+      "description": "Allow adapters on this segment to receive traffic not addressed to them. Required for packet capture, IDS sensors and span-style monitoring.",
+      "type": "bool",
+      "default": false
+    },
+    "allow_spoofing": {
+      "description": "Allow forged transmits and MAC address changes on this segment. Required for routers that NAT or bridge, and for attack tooling that spoofs addresses.",
+      "type": "bool",
+      "default": false
+    },
+    "annotation": {
+      "description": "Free-form notes recorded on the port group description.",
+      "type": "string",
+      "default": ""
+    }
+  }
+}

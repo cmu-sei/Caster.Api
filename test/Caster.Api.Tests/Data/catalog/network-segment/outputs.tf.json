@@ -1,0 +1,20 @@
+{
+  "output": {
+    "id": {
+      "description": "Managed object reference ID of the created distributed port group.",
+      "value": "${vsphere_distributed_port_group.segment.id}"
+    },
+    "name": {
+      "description": "Name of the created distributed port group. Pass this to a compute module's network_name input.",
+      "value": "${vsphere_distributed_port_group.segment.name}"
+    },
+    "vlan_id": {
+      "description": "VLAN ID applied to the segment.",
+      "value": "${vsphere_distributed_port_group.segment.vlan_id}"
+    },
+    "key": {
+      "description": "Opaque distributed virtual port group key, as used by the vSphere API.",
+      "value": "${vsphere_distributed_port_group.segment.key}"
+    }
+  }
+}

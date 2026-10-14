@@ -27,11 +27,8 @@ namespace Caster.Api.Infrastructure.Authorization
             {
                 context.Fail();
             }
-            else if (requirement.RequiredPermissions == null || requirement.RequiredPermissions.Length == 0)
-            {
-                context.Succeed(requirement);
-            }
-            else if (requirement.RequiredPermissions.Any(p => context.User.HasClaim(AuthorizationConstants.PermissionsClaimType, p.ToString())))
+            else if (requirement.RequiredPermissions != null &&
+                requirement.RequiredPermissions.Any(p => context.User.HasClaim(AuthorizationConstants.PermissionsClaimType, p.ToString())))
             {
                 context.Succeed(requirement);
             }
