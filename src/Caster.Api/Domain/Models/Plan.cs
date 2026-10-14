@@ -24,7 +24,8 @@ namespace Caster.Api.Domain.Models
 
         /// <summary>
         /// JSON of the <see cref="Topology"/> read from this plan, or null when
-        /// the plan failed or topology is turned off. Kept out of the Plan
+        /// the plan failed, topology is turned off, or a later plan in the
+        /// Workspace has one: only the latest is kept. Kept out of the Plan
         /// payload; served by its own endpoint.
         /// </summary>
         public string Topology { get; set; }

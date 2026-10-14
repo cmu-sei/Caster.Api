@@ -291,6 +291,20 @@ namespace Caster.Api.Features.Runs.EventHandlers
             {
                 _logger.LogWarning(ex, "Could not read the topology of plan {PlanId}.", _plan.Id);
                 _output.AddLine($"Topology unavailable: {ex.Message}");
+                return;
+            }
+
+            // Only the latest plan's topology is ever read, so drop the older
+            // copies. Left behind, they cost space and nothing else.
+            try
+            {
+                await _db.Plans
+                    .Where(x => x.Run.WorkspaceId == workspace.Id && x.Id != _plan.Id && x.Topology != null)
+                    .ExecuteUpdateAsync(x => x.SetProperty(y => y.Topology, (string)null));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not clear the older topologies of workspace {WorkspaceId}.", workspace.Id);
             }
         }
 

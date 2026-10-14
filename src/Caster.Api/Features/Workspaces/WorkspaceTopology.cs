@@ -8,19 +8,26 @@ using Caster.Api.Domain.Models;
 namespace Caster.Api.Features.Workspaces
 {
     /// <summary>
-    /// The machines and networks of a Workspace's most recent plan that has a
-    /// topology, and which network each NIC is attached to.
+    /// A Workspace's machines and networks, and which network each NIC is
+    /// attached to: from its latest plan while that plan is still to be
+    /// applied, otherwise from its state.
     /// </summary>
     public class WorkspaceTopology
     {
         public Guid WorkspaceId { get; set; }
 
-        /// <summary>The Run whose plan this was read from. Null when no plan has a topology yet.</summary>
+        /// <summary>
+        /// Plan while the latest plan's Run is still to be applied; State once
+        /// it has been applied, has failed or was rejected.
+        /// </summary>
+        public TopologySource Source { get; set; }
+
+        /// <summary>The Run of the latest plan with a topology. Null when there is none yet.</summary>
         public Guid? RunId { get; set; }
 
         public DateTime? CreatedAt { get; set; }
 
-        /// <summary>True when that plan was a destroy, so every node's Action is delete.</summary>
+        /// <summary>True when that plan was a destroy.</summary>
         public bool IsDestroy { get; set; }
 
         public List<TopologyNode> Nodes { get; set; } = [];

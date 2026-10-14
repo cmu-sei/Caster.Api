@@ -37,11 +37,20 @@ public class TopologyNode
     /// <summary>Module instance address, such as <c>module.host["dc"]</c>. Null at the root.</summary>
     public string Module { get; set; }
 
-    /// <summary>What the plan does to it: create, update, replace, delete, read or no-op. Null for an external network.</summary>
+    /// <summary>
+    /// What the plan does to it: create, update, replace, delete, read or no-op.
+    /// Null for an external network, and for anything read from the state.
+    /// </summary>
     public string Action { get; set; }
 
     /// <summary>True for a network that is referenced by value but not managed in this workspace.</summary>
     public bool External { get; set; }
+
+    /// <summary>
+    /// True when the plan creates it but the apply failed before it did: it is
+    /// in the plan and not in the state.
+    /// </summary>
+    public bool NotCreated { get; set; }
 
     /// <summary>A few display values, such as cpus and memory_mb, when the plan knows them.</summary>
     public Dictionary<string, string> Properties { get; set; } = [];
@@ -51,6 +60,16 @@ public enum TopologyNodeKind
 {
     Machine,
     Network,
+}
+
+/// <summary>Where a workspace's topology was read from.</summary>
+public enum TopologySource
+{
+    /// <summary>The latest plan, still to be applied: what applying it will do.</summary>
+    Plan,
+
+    /// <summary>The workspace's state: what exists now.</summary>
+    State,
 }
 
 /// <summary>One NIC: machine <see cref="From"/>, NIC <see cref="Nic"/>, attached to network <see cref="To"/>.</summary>

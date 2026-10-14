@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services.Topology;
 using Caster.Api.Features.Shared;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
@@ -43,23 +44,43 @@ namespace Caster.Api.Features.Workspaces
                 var latest = await dbContext.Plans
                     .Where(x => x.Run.WorkspaceId == request.Id && x.Topology != null)
                     .OrderByDescending(x => x.Run.CreatedAt)
-                    .Select(x => new { x.RunId, x.Run.CreatedAt, x.Run.IsDestroy, x.Topology })
+                    .Select(x => new { x.RunId, x.Run.CreatedAt, x.Run.IsDestroy, x.Run.Status, x.Topology })
                     .FirstOrDefaultAsync(cancellationToken);
 
-                // No plan with a topology yet is an empty graph, not an error,
-                // so the view can say "run a plan" without special casing a 404.
+                // No plan with a topology and nothing in the state is an empty
+                // graph, not an error, so the view can say "run a plan" without
+                // special casing a 404.
                 var result = new WorkspaceTopology { WorkspaceId = request.Id };
+                var plan = latest == null
+                    ? null
+                    : JsonSerializer.Deserialize<Topology>(latest.Topology, DefaultJsonSettings.Settings);
 
                 if (latest != null)
                 {
-                    var topology = JsonSerializer.Deserialize<Topology>(latest.Topology, DefaultJsonSettings.Settings);
-
                     result.RunId = latest.RunId;
                     result.CreatedAt = latest.CreatedAt;
                     result.IsDestroy = latest.IsDestroy;
-                    result.Nodes = topology.Nodes;
-                    result.Edges = topology.Edges;
                 }
+
+                // Once the plan is applied, failed or rejected, what it would do
+                // no longer describes anything; the state says what is there. A
+                // state error means the stored state is stale, so the plan is
+                // the better guess.
+                var topology = plan;
+
+                if (latest == null || latest.Status is RunStatus.Applied or RunStatus.Failed or RunStatus.Rejected)
+                {
+                    var state = await dbContext.Workspaces
+                        .Where(x => x.Id == request.Id)
+                        .Select(x => x.State)
+                        .FirstOrDefaultAsync(cancellationToken);
+
+                    topology = AppliedTopology.Read(state, plan, latest?.Status == RunStatus.Failed);
+                    result.Source = TopologySource.State;
+                }
+
+                result.Nodes = topology.Nodes;
+                result.Edges = topology.Edges;
 
                 return result;
             }

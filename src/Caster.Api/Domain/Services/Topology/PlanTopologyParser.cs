@@ -13,7 +13,7 @@ namespace Caster.Api.Domain.Services.Topology;
 
 /// <summary>
 /// Reads the machines, networks and NIC attachments out of
-/// <c>terraform show -json &lt;plan&gt;</c>.
+/// <c>terraform show -json &lt;plan&gt;</c>, or out of a workspace's state file.
 /// </summary>
 /// <remarks>
 /// A NIC is matched to a network by value first: the planned
@@ -69,9 +69,27 @@ public static partial class PlanTopologyParser
         using var document = JsonDocument.Parse(planJson);
         var root = document.RootElement;
 
-        var instances = ReadInstances(root);
-        var configuration = ReadConfiguration(root);
+        return Build(ReadInstances(root), ReadConfiguration(root));
+    }
 
+    /// <summary>
+    /// What a state file (format version 4, as Caster stores it on the
+    /// workspace) says exists. Every node's <see cref="TopologyNode.Action"/>
+    /// is null: nothing is about to change.
+    /// </summary>
+    /// <remarks>
+    /// A state file has no configuration, so a NIC is matched by value only.
+    /// After an apply every value is known, so nothing needs the references.
+    /// </remarks>
+    public static Models.Topology ParseState(string stateJson)
+    {
+        using var document = JsonDocument.Parse(stateJson);
+
+        return Build(ReadStateFile(document.RootElement), []);
+    }
+
+    private static Models.Topology Build(Dictionary<string, Instance> instances, Dictionary<string, JsonElement> configuration)
+    {
         var topology = new Models.Topology();
         var networkByKey = new Dictionary<string, string>(StringComparer.Ordinal);
         var networks = new List<Instance>();
@@ -397,6 +415,56 @@ public static partial class PlanTopologyParser
                 ReadStateModule(child, instances);
             }
         }
+    }
+
+    /// <summary>
+    /// The instances in a state file. Unlike <c>terraform show -json</c>, it
+    /// gives no addresses, so they are built the way Terraform writes them:
+    /// <c>module.host["dc"].proxmox_virtual_environment_vm.vm</c>.
+    /// </summary>
+    private static Dictionary<string, Instance> ReadStateFile(JsonElement root)
+    {
+        var instances = new Dictionary<string, Instance>(StringComparer.Ordinal);
+
+        if (!root.TryGetProperty("resources", out var resources) || resources.ValueKind != JsonValueKind.Array)
+        {
+            return instances;
+        }
+
+        foreach (var resource in resources.EnumerateArray())
+        {
+            var module = GetString(resource, "module");
+            var mode = GetString(resource, "mode");
+            var type = GetString(resource, "type");
+            var name = GetString(resource, "name");
+            var address = (module == null ? string.Empty : module + ".") +
+                (mode == "data" ? "data." : string.Empty) +
+                $"{type}.{name}";
+
+            foreach (var instance in GetArray(resource, "instances"))
+            {
+                var index = instance.TryGetProperty("index_key", out var key)
+                    ? key.ValueKind switch
+                    {
+                        JsonValueKind.String => $"[\"{key.GetString().Replace("\\", "\\\\").Replace("\"", "\\\"")}\"]",
+                        JsonValueKind.Number => $"[{key.GetRawText()}]",
+                        _ => string.Empty,
+                    }
+                    : string.Empty;
+
+                instances[address + index] = new Instance
+                {
+                    Address = address + index,
+                    Mode = mode,
+                    Type = type,
+                    Name = name,
+                    Module = module,
+                    Values = instance.TryGetProperty("attributes", out var attributes) ? attributes : default,
+                };
+            }
+        }
+
+        return instances;
     }
 
     private static string ReadAction(JsonElement change)
