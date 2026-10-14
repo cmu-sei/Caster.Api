@@ -27,52 +27,21 @@ namespace Caster.Api.Features.Workspaces
     public class Create
     {
         [DataContract(Name = "CreateWorkspaceCommand")]
-        public class Command : IRequest<Workspace>, IWorkspaceUpdateRequest
+        public class Command : WorkspaceFields, IRequest<Workspace>
         {
-            /// <summary>
-            /// The Name of the Workspace
-            /// </summary>
-            [DataMember]
-            public string Name { get; set; }
-
             /// <summary>
             /// The Id of the Directory of the Workspace
             /// </summary>
             [DataMember]
             public Guid DirectoryId { get; set; }
 
-            /// <summary>
-            /// True if this Workspace will be dynamically assigned a Host on first Run
-            /// </summary>
-            [DataMember]
-            public bool DynamicHost { get; set; }
-
-            /// <summary>
-            /// The version of Terraform that will be used for Runs in this Workspace.
-            /// If null or empty, the default version will be used.
-            /// </summary>
-            [DataMember]
-            public string TerraformVersion { get; set; }
-
-            /// <summary>
-            /// Limit the number of concurrent operations as Terraform walks the graph.
-            /// If null, the Terraform default will be used.
-            /// </summary>
-            [DataMember]
-            public int? Parallelism { get; set; }
-
-            /// <summary>
-            /// If set, the number of consecutive failed destroys in an Azure Workspace before
-            /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
-            /// </summary>
-            [DataMember]
-            public int? AzureDestroyFailureThreshold { get; set; }
         }
 
         public class CommandValidator : AbstractValidator<Command>
         {
             public CommandValidator(IValidationService validationService, TerraformOptions options)
             {
+                RuleFor(x => x.Name).NotAReservedName("Workspace");
                 RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
                 RuleFor(x => x.Parallelism.Value)
                     .ParalellismValidation(options)
@@ -105,22 +74,33 @@ namespace Caster.Api.Features.Workspaces
 
             private async Task<Domain.Models.Workspace> SetCascadedProperties(Domain.Models.Workspace workspace, Command request, CancellationToken ct)
             {
-                if (!request.Parallelism.HasValue && string.IsNullOrEmpty(request.TerraformVersion))
+                // Each property cascades on its own. A single guard across all of them meant
+                // that supplying any one value skipped the cascade for the others.
+                var cascadeVersion = string.IsNullOrEmpty(request.TerraformVersion);
+                var cascadeParallelism = !request.Parallelism.HasValue;
+                var cascadeThreshold = !request.AzureDestroyFailureThreshold.HasValue;
+
+                if (!cascadeVersion && !cascadeParallelism && !cascadeThreshold)
                 {
-                    // Load parent directories from database
-                    var directory = await dbContext.GetDirectoryWithAncestors(workspace.DirectoryId, ct);
+                    return workspace;
+                }
 
-                    workspace.TerraformVersion = !string.IsNullOrEmpty(request.TerraformVersion) ?
-                        request.TerraformVersion :
-                        GetTerraformVersion(directory);
+                // Load parent directories from database
+                var directory = await dbContext.GetDirectoryWithAncestors(workspace.DirectoryId, ct);
 
-                    workspace.Parallelism = request.Parallelism.HasValue ?
-                        request.Parallelism.Value :
-                        GetParallelism(directory);
+                if (cascadeVersion)
+                {
+                    workspace.TerraformVersion = GetTerraformVersion(directory);
+                }
 
-                    workspace.AzureDestroyFailureThreshold = request.AzureDestroyFailureThreshold.HasValue ?
-                        request.AzureDestroyFailureThreshold.Value :
-                        GetAzureDestroyThreshold(directory);
+                if (cascadeParallelism)
+                {
+                    workspace.Parallelism = GetParallelism(directory);
+                }
+
+                if (cascadeThreshold)
+                {
+                    workspace.AzureDestroyFailureThreshold = GetAzureDestroyThreshold(directory);
                 }
 
                 return workspace;

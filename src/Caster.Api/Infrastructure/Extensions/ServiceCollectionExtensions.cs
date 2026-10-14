@@ -17,6 +17,7 @@ using Caster.Api.Infrastructure.Swashbuckle.SchemaFilters;
 using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Extensions.Http;
 using Player.Vm.Api;
@@ -27,6 +28,7 @@ using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Services.Inventory;
 using Microsoft.Extensions.Options;
+using Caster.Api.Domain.Services.Modules;
 
 namespace Caster.Api.Infrastructure.Extensions
 {
@@ -99,11 +101,21 @@ namespace Caster.Api.Infrastructure.Extensions
 
         private static void AddGitlabClient(this IServiceCollection services, ClientOptions clientOptions, TerraformOptions terraformOptions)
         {
-            services.AddHttpClient("gitlab", client =>
+            services.AddHttpClient("gitlab", (sp, client) =>
             {
                 // Workaround to avoid TaskCanceledException after several retries. TODO: find a better way to handle this.
                 client.Timeout = Timeout.InfiniteTimeSpan;
                 client.BaseAddress = new Uri(terraformOptions.GitlabApiUrl);
+
+                // A header rather than the private_token query parameter keeps the
+                // token out of request urls, which proxies and access logs record.
+                // Read per client so a reloaded token is picked up.
+                var token = sp.GetRequiredService<IOptionsMonitor<TerraformOptions>>().CurrentValue.GitlabToken;
+
+                if (!string.IsNullOrEmpty(token))
+                {
+                    client.DefaultRequestHeaders.Add("PRIVATE-TOKEN", token);
+                }
             }).AddPolicyHandler((sp, _) => GetPolicy(sp, clientOptions.MaxRetryDelaySeconds, "Gitlab Api"));
         }
 
@@ -277,6 +289,29 @@ namespace Caster.Api.Infrastructure.Extensions
             {
                 services.AddScoped<ITerraformService, ProcessTerraformService>();
             }
+        }
+
+        /// <summary>
+        /// Registers the Module discovery seam. Safe to call when nothing is
+        /// configured - no source is contacted until a Modules request runs and
+        /// finds a configured source.
+        /// <para>
+        /// Every reader is registered as an <see cref="IModuleRepositoryProvider"/>,
+        /// and the only <see cref="IModuleRepositoryService"/> in the container
+        /// is the dispatcher that picks between them. So configuration alone
+        /// decides which sources are read, and the legacy Gitlab path keeps
+        /// working through the same seam with no config change.
+        /// </para>
+        /// </summary>
+        public static void AddModuleRepositoryServices(this IServiceCollection services)
+        {
+            services.AddSingleton<IGitCommandRunner, GitCommandRunner>();
+            services.AddSingleton<ModuleSourceStatusStore>();
+
+            services.AddScoped<IModuleRepositoryProvider, GitlabModuleRepositoryProvider>();
+            services.AddScoped<IModuleRepositoryProvider, GitModuleRepositoryProvider>();
+
+            services.AddScoped<IModuleRepositoryService, ModuleRepositoryDispatcher>();
         }
     }
 }

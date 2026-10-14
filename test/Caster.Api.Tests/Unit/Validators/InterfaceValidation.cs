@@ -52,7 +52,7 @@ namespace Caster.Api.Tests.Unit.Validators
         public static IEnumerable<object[]> CommandsWithVersion(string version) =>
         [
             [new Workspaces.Create.Command { Name = "valid", DirectoryId = Guid.NewGuid(), TerraformVersion = version }],
-            [new Workspaces.Edit.Command { Id = Guid.NewGuid(), Name = "valid", DirectoryId = Guid.NewGuid(), TerraformVersion = version }],
+            [new Workspaces.Edit.Command { Id = Guid.NewGuid(), Name = "valid", TerraformVersion = version }],
             [new Workspaces.PartialEdit.Command { Id = Guid.NewGuid(), TerraformVersion = version }],
             [new Directories.Create.Command { Name = "valid", ProjectId = Guid.NewGuid(), TerraformVersion = version }],
             [new Directories.Edit.Command { Id = Guid.NewGuid(), Name = "valid", TerraformVersion = version }],
@@ -94,7 +94,7 @@ namespace Caster.Api.Tests.Unit.Validators
             var commands = new object[]
             {
                 new Workspaces.Create.Command { Name = name, DirectoryId = Guid.NewGuid() },
-                new Workspaces.Edit.Command { Id = Guid.NewGuid(), Name = name, DirectoryId = Guid.NewGuid() },
+                new Workspaces.Edit.Command { Id = Guid.NewGuid(), Name = name },
                 new Workspaces.PartialEdit.Command { Id = Guid.NewGuid(), Name = name },
             };
 
@@ -127,7 +127,7 @@ namespace Caster.Api.Tests.Unit.Validators
         [Fact]
         public async Task Test_Workspace_Edit_Requires_Name()
         {
-            var errors = await Validate(new Workspaces.Edit.Command { Id = Guid.NewGuid(), Name = null, DirectoryId = Guid.NewGuid() });
+            var errors = await Validate(new Workspaces.Edit.Command { Id = Guid.NewGuid(), Name = null });
 
             Assert.True(errors.ContainsKey("Name"));
         }
