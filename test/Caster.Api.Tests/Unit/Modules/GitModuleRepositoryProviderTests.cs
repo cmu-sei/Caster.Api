@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Options;
@@ -48,6 +49,7 @@ namespace Caster.Api.Tests.Unit.Modules
             _sut = new GitModuleRepositoryProvider(
                 _db,
                 _git,
+                new LockService(),
                 Substitute.For<ILogger<GitModuleRepositoryProvider>>());
 
             _scratch = Path.Combine(Path.GetTempPath(), $"caster-test-{Guid.NewGuid():N}");
@@ -653,6 +655,70 @@ namespace Caster.Api.Tests.Unit.Modules
             Assert.Equal(1, _git.CloneCallCount);
             Assert.Equal(2, _git.LsRemoteCallCount);
             Assert.Equal(2, await _db.Modules.CountAsync());
+        }
+
+        [Fact]
+        public async Task SyncModules_ModuleAddedInALaterTag_SecondSyncSkipsTheClone()
+        {
+            // v0.1.0 predates machine-blank, so it never carries that tag. That
+            // must not read as out of date, or every request re-clones every tag.
+            var early = Path.Combine(_scratch, "early");
+            Directory.CreateDirectory(Path.Combine(early, "network-segment"));
+            CopyModule("network-segment", Path.Combine(early, "network-segment"));
+            _git.SourceTreesByTag["v0.1.0"] = early;
+            _git.SourceTree = BuildMonorepoTree();
+            GivenTags("v0.1.0", "v0.2.0");
+            var source = Source(ModuleSourceLayout.Subdirectories);
+
+            await _sut.SyncModulesAsync(source, false, CancellationToken.None);
+            Assert.Equal(2, _git.CloneCallCount);
+
+            await _sut.SyncModulesAsync(source, false, CancellationToken.None);
+
+            Assert.Equal(2, _git.CloneCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_ConcurrentRequests_SyncTheSourceOnce()
+        {
+            // Two requests, each with its own context on the one database, as
+            // when a page loads the module list twice at once.
+            var database = $"caster_modules_{Guid.NewGuid():N}";
+            var locks = new LockService();
+            var tree = BuildMonorepoTree();
+            var runners = new[] { new FakeGitCommandRunner(), new FakeGitCommandRunner() };
+            var contexts = runners.Select(_ => new CasterContext(
+                new DbContextOptionsBuilder<CasterContext>().UseInMemoryDatabase(database).Options)).ToArray();
+
+            try
+            {
+                var syncs = runners.Select((runner, i) =>
+                {
+                    runner.LsRemoteLines.Add("1111111111111111111111111111111111111111\trefs/tags/v0.1.0");
+                    runner.SourceTree = tree;
+                    runner.CloneDelay = TimeSpan.FromMilliseconds(100);
+
+                    return new GitModuleRepositoryProvider(
+                        contexts[i],
+                        runner,
+                        locks,
+                        Substitute.For<ILogger<GitModuleRepositoryProvider>>())
+                        .SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, CancellationToken.None);
+                });
+
+                await Task.WhenAll(syncs);
+
+                // The second waited, then found the first's result current.
+                Assert.Equal(1, runners.Sum(x => x.CloneCallCount));
+                Assert.Equal(2, await contexts[0].ModuleVersions.CountAsync());
+            }
+            finally
+            {
+                foreach (var context in contexts)
+                {
+                    context.Dispose();
+                }
+            }
         }
 
         [Fact]

@@ -14,6 +14,7 @@ namespace Caster.Api.Domain.Services
         AsyncLock GetFileLock(Guid fileId);
         AsyncLock GetWorkspaceLock(Guid workspaceId);
         AsyncLock GetPartitionLock(Guid partitionId);
+        AsyncLock GetModuleSourceLock(string sourceName);
         void EnableWorkspaceLocking();
         void DisableWorkspaceLocking();
         bool IsWorkspaceLockingEnabled();
@@ -25,6 +26,7 @@ namespace Caster.Api.Domain.Services
         private ConcurrentDictionary<Guid, AsyncLock> _fileLocks = new ConcurrentDictionary<Guid, AsyncLock>();
         private ConcurrentDictionary<Guid, AsyncLock> _workspaceLocks = new ConcurrentDictionary<Guid, AsyncLock>();
         private ConcurrentDictionary<Guid, AsyncLock> _partitionLocks = new ConcurrentDictionary<Guid, AsyncLock>();
+        private ConcurrentDictionary<string, AsyncLock> _moduleSourceLocks = new ConcurrentDictionary<string, AsyncLock>(StringComparer.OrdinalIgnoreCase);
         private bool _enableWorkspaceLocking = true;
 
         public LockService()
@@ -43,6 +45,11 @@ namespace Caster.Api.Domain.Services
 
         public AsyncLock GetPartitionLock(Guid partitionId) {
             return _partitionLocks.GetOrAdd(partitionId, x => { return new AsyncLock(); });
+        }
+
+        public AsyncLock GetModuleSourceLock(string sourceName)
+        {
+            return _moduleSourceLocks.GetOrAdd(sourceName, x => { return new AsyncLock(); });
         }
 
         #region Workspaces

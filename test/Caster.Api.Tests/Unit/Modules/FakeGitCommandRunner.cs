@@ -36,6 +36,9 @@ namespace Caster.Api.Tests.Unit.Modules
         /// <summary>Clone destinations handed out, so a test can assert they were deleted.</summary>
         public List<string> CloneDestinations { get; } = [];
 
+        /// <summary>How long each clone takes, so concurrent syncs overlap the way real clones do.</summary>
+        public TimeSpan CloneDelay { get; set; }
+
         public int LsRemoteCallCount { get; private set; }
         public int CloneCallCount { get; private set; }
 
@@ -47,8 +50,13 @@ namespace Caster.Api.Tests.Unit.Modules
             return Task.FromResult<IReadOnlyList<string>>(LsRemoteLines.ToArray());
         }
 
-        public Task CloneTagAsync(string url, string tag, string destinationPath, CancellationToken cancellationToken)
+        public async Task CloneTagAsync(string url, string tag, string destinationPath, CancellationToken cancellationToken)
         {
+            if (CloneDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(CloneDelay, cancellationToken);
+            }
+
             CloneCallCount++;
             CloneDestinations.Add(destinationPath);
             ClonedTags.Add(tag);
@@ -69,8 +77,6 @@ namespace Caster.Api.Tests.Unit.Modules
             // provider is seen to skip it when enumerating module roots.
             Directory.CreateDirectory(Path.Combine(destinationPath, ".git"));
             File.WriteAllText(Path.Combine(destinationPath, ".git", "HEAD"), "ref: refs/heads/main\n");
-
-            return Task.CompletedTask;
         }
 
         public Task<DateTime?> GetHeadCommitDateAsync(string repositoryPath, CancellationToken cancellationToken) =>

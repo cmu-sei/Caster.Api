@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
@@ -62,6 +63,7 @@ namespace Caster.Api.Tests.Unit.Modules
             _sut = new GitModuleRepositoryProvider(
                 _db,
                 new GitCommandRunner(monitor, Substitute.For<ILogger<GitCommandRunner>>()),
+                new LockService(),
                 Substitute.For<ILogger<GitModuleRepositoryProvider>>());
         }
 
@@ -184,6 +186,7 @@ namespace Caster.Api.Tests.Unit.Modules
             var broken = new GitModuleRepositoryProvider(
                 _db,
                 new FailingCloneRunner(_bareRepositoryUrl),
+                new LockService(),
                 Substitute.For<ILogger<GitModuleRepositoryProvider>>());
 
             await Assert.ThrowsAnyAsync<Exception>(() =>

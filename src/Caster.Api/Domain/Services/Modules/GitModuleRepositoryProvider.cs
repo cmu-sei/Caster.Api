@@ -33,6 +33,7 @@ namespace Caster.Api.Domain.Services.Modules;
 public class GitModuleRepositoryProvider(
     CasterContext db,
     IGitCommandRunner git,
+    ILockService lockService,
     ILogger<GitModuleRepositoryProvider> logger) : IModuleRepositoryProvider
 {
     public const string VariablesFileName = "variables.tf.json";
@@ -41,6 +42,9 @@ public class GitModuleRepositoryProvider(
 
     /// <summary>Temp directories are created under here so a crashed process leaves one obvious tree.</summary>
     public const string TempDirectoryName = "caster-module-sources";
+
+    /// <summary>How long a request waits for another's sync of the same source before serving what is stored.</summary>
+    public const int SyncLockTimeoutMilliseconds = 60000;
 
     public string Provider => ModuleSourceProviders.Git;
 
@@ -53,6 +57,31 @@ public class GitModuleRepositoryProvider(
         SyncAsync(source, string.IsNullOrWhiteSpace(providerId) ? null : providerId.Trim('/'), forceUpdate: true, cancellationToken);
 
     private async Task<bool> SyncAsync(
+        ModuleSourceOptions source,
+        string subdirectoryFilter,
+        bool forceUpdate,
+        CancellationToken cancellationToken)
+    {
+        // Every module list request syncs, and a page load sends several at
+        // once. Unserialized, they each replace the same version rows and all
+        // but one fail on rows the others already deleted. Waiting also means
+        // the up-to-date check below sees what the other request stored.
+        using (var lockResult = await lockService.GetModuleSourceLock(source.Name).LockAsync(SyncLockTimeoutMilliseconds))
+        {
+            if (!lockResult.AcquiredLock)
+            {
+                logger.LogWarning(
+                    "Module source {Source} is still being synced by another request; serving the stored Modules.",
+                    source.Name);
+
+                return true;
+            }
+
+            return await SyncLockedAsync(source, subdirectoryFilter, forceUpdate, cancellationToken);
+        }
+    }
+
+    private async Task<bool> SyncLockedAsync(
         ModuleSourceOptions source,
         string subdirectoryFilter,
         bool forceUpdate,
@@ -124,7 +153,18 @@ public class GitModuleRepositoryProvider(
                 (subdirectoryFilter == null ? string.Empty : $" Looked under '{subdirectoryFilter}'."));
         }
 
-        await PersistAsync(drafts.Values, requestTime, cancellationToken);
+        try
+        {
+            await PersistAsync(drafts.Values, requestTime, cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // The context is shared across sources in one request. Left
+            // tracked, the failed changes are retried by the next source's
+            // save and fail that one too.
+            db.ChangeTracker.Clear();
+            throw;
+        }
 
         return true;
     }
@@ -372,11 +412,16 @@ public class GitModuleRepositoryProvider(
     }
 
     /// <summary>
-    /// Cheap change check: tags are immutable by convention, so if every Module
-    /// already registered for this source carries exactly the remote tags that
-    /// apply to it (the plain tags plus its own per-module tags), there is
-    /// nothing to clone. Costs one ls-remote and one query.
+    /// Cheap change check: tags are immutable by convention, so if the tags
+    /// stored across this source's Modules are exactly the remote tags, there
+    /// is nothing to clone. Costs one ls-remote and one query.
     /// </summary>
+    /// <remarks>
+    /// Compared as a union, not Module by Module: a Module added in a later tag
+    /// never carries the tags before it, and a per-module tag belongs to one
+    /// Module only. A new tag, including one for a Module not yet registered,
+    /// is missing from the union; a deleted tag is left over in it.
+    /// </remarks>
     private async Task<bool> IsUpToDateAsync(
         ModuleSourceOptions source,
         IReadOnlyList<string> tags,
@@ -384,44 +429,14 @@ public class GitModuleRepositoryProvider(
     {
         var prefix = source.Name + "/";
 
-        var existing = await db.Modules
+        var stored = await db.ModuleVersions
             .AsNoTracking()
-            .Where(m => m.Path == source.Name || m.Path.StartsWith(prefix))
-            .Select(m => new { m.Path, VersionNames = m.Versions.Select(v => v.Name).ToList() })
+            .Where(v => v.Module.Path == source.Name || v.Module.Path.StartsWith(prefix))
+            .Select(v => v.Name)
+            .Distinct()
             .ToListAsync(cancellationToken);
 
-        if (existing.Count == 0)
-        {
-            return false;
-        }
-
-        var subdirectories = existing
-            .Select(m => m.Path.Length > prefix.Length ? m.Path[prefix.Length..] : null)
-            .Where(x => x != null)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        // A per-module tag for a subdirectory with no Module yet is either a
-        // Module added since the last sync or a tag that names nothing; only a
-        // clone can tell which.
-        if (tags.Select(t => GetTagModule(source, t)).Any(m => m != null && !subdirectories.Contains(m)))
-        {
-            return false;
-        }
-
-        return existing.All(module =>
-        {
-            var subdirectory = module.Path.Length > prefix.Length ? module.Path[prefix.Length..] : null;
-
-            var expected = tags.Where(t =>
-            {
-                var tagModule = GetTagModule(source, t);
-                return tagModule == null || string.Equals(tagModule, subdirectory, StringComparison.OrdinalIgnoreCase);
-            });
-
-            return module.VersionNames
-                .OrderBy(x => x, StringComparer.Ordinal)
-                .SequenceEqual(expected, StringComparer.Ordinal);
-        });
+        return stored.ToHashSet(StringComparer.Ordinal).SetEquals(tags);
     }
 
     /// <summary>
