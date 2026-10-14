@@ -45,6 +45,22 @@ namespace Caster.Api.Tests.Unit.Modules
         }
 
         [Fact]
+        public void HighestFirst_Orders_Per_Module_Tags_By_Their_Version()
+        {
+            var now = DateTime.UtcNow;
+            var versions = new[]
+            {
+                Version("network-segment/v1.2.0", now),
+                Version("v1.5.0", now),
+                Version("network-segment/v1.10.0", now.AddDays(-1)),
+            };
+
+            var names = ModuleVersionOrder.HighestFirst(versions).Select(v => v.Name);
+
+            Assert.Equal(["network-segment/v1.10.0", "v1.5.0", "network-segment/v1.2.0"], names);
+        }
+
+        [Fact]
         public void HighestFirst_Orders_Unparsable_Tags_Newest_First()
         {
             var now = DateTime.UtcNow;

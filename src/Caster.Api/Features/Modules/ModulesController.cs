@@ -51,6 +51,22 @@ namespace Caster.Api.Features.Modules
         }
 
         /// <summary>
+        /// Get every configured module source and how its last sync went
+        /// </summary>
+        /// <remarks>
+        /// Listing Modules serves the stored Modules when a source fails to
+        /// sync; this is where that failure is reported.
+        /// </remarks>
+        [HttpGet("modules/sources")]
+        [ProducesResponseType(typeof(IEnumerable<ModuleSource>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetModuleSources")]
+        public async Task<IActionResult> GetSources()
+        {
+            var result = await this._mediator.Send(new GetSources.Query());
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Create a new terraform module.
         /// </summary>
         /// <param name="command"></param>

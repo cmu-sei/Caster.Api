@@ -1,0 +1,24 @@
+{
+  "output": {
+    "id": {
+      "description": "Managed object reference ID of the created virtual machine.",
+      "value": "${vsphere_virtual_machine.vm.id}"
+    },
+    "name": {
+      "description": "Name of the created virtual machine.",
+      "value": "${vsphere_virtual_machine.vm.name}"
+    },
+    "uuid": {
+      "description": "BIOS UUID of the created virtual machine.",
+      "value": "${vsphere_virtual_machine.vm.uuid}"
+    },
+    "ip_address": {
+      "description": "Primary IP address reported by VMware Tools. Null when the guest never reported one, which is always the case if wait_for_guest_ip_timeout is 0.",
+      "value": "${vsphere_virtual_machine.vm.default_ip_address}"
+    },
+    "ip_addresses": {
+      "description": "All IP addresses reported by VMware Tools for the created virtual machine.",
+      "value": "${vsphere_virtual_machine.vm.guest_ip_addresses}"
+    }
+  }
+}

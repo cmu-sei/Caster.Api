@@ -35,7 +35,7 @@ namespace Caster.Api.Tests.Unit
         [Fact]
         public void Test_Get_Variables()
         {
-            var variables = GitlabModuleVariableResponse
+            var variables = ModuleVariableResponse
                 .GetModuleVariables(Encoding.UTF8.GetBytes(_modulesFixture.Variables));
 
             Assert.Equal(7, variables.Count());
