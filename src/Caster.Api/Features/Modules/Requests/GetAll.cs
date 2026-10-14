@@ -16,6 +16,8 @@ using System;
 using System.Linq;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
+using Caster.Api.Infrastructure.Exceptions;
+using Microsoft.Extensions.Logging;
 
 namespace Caster.Api.Features.Modules
 {
@@ -53,7 +55,8 @@ namespace Caster.Api.Features.Modules
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
             CasterContext dbContext,
-            IModuleRepositoryService moduleRepositoryService) : BaseHandler<Query, Module[]>
+            IModuleRepositoryService moduleRepositoryService,
+            ILogger<GetAll> logger) : BaseHandler<Query, Module[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
@@ -70,12 +73,19 @@ namespace Caster.Api.Features.Modules
             public override async Task<Module[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 // Sync every configured module source into the database first.
-                // Failures propagate on purpose: this used to swallow every
-                // exception, which made an unconfigured or broken module source
-                // indistinguishable from a repository that genuinely has no
-                // Modules. See ModuleSourceNotConfiguredException (503) and
-                // ModuleSyncException (502).
-                await moduleRepositoryService.GetModulesAsync(request.ForceUpdate, cancellationToken);
+                // A failed sync still serves what is stored: every page that
+                // lists Modules sends this, and one unreachable source should
+                // not fail them all. Each source's failure is kept instead and
+                // reported by GET api/modules/sources, so it stays
+                // distinguishable from a source that has no Modules.
+                try
+                {
+                    await moduleRepositoryService.GetModulesAsync(request.ForceUpdate, cancellationToken);
+                }
+                catch (Exception ex) when (ex is ModuleSyncException or ModuleSourceNotConfiguredException)
+                {
+                    logger.LogWarning("Serving the stored Modules: {Message}", ex.Message);
+                }
 
                 IQueryable<Domain.Models.Module> query = dbContext.Modules;
 

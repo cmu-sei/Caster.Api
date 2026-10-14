@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Services.Modules;
@@ -21,6 +22,7 @@ namespace Caster.Api.Tests.Unit.Modules
     {
         private readonly RecordingProvider _git = new(ModuleSourceProviders.Git);
         private readonly RecordingProvider _gitlab = new(ModuleSourceProviders.Gitlab);
+        private readonly ModuleSourceStatusStore _statuses = new();
 
         private ModuleRepositoryDispatcher Build(TerraformOptions options)
         {
@@ -30,6 +32,7 @@ namespace Caster.Api.Tests.Unit.Modules
             return new ModuleRepositoryDispatcher(
                 [_git, _gitlab],
                 monitor,
+                _statuses,
                 Substitute.For<ILogger<ModuleRepositoryDispatcher>>());
         }
 
@@ -205,6 +208,49 @@ namespace Caster.Api.Tests.Unit.Modules
                 sut.GetModulesAsync(false, CancellationToken.None));
 
             Assert.Equal(2, exception.Failures.Count);
+        }
+
+        [Fact]
+        public async Task GetModules_RecordsEachSourcesOutcome()
+        {
+            _gitlab.Failure = new Exception("gitlab is down");
+            var options = GitlabConfigured();
+            options.ModuleSources = [GitSource()];
+            var sut = Build(options);
+
+            await Assert.ThrowsAsync<ModuleSyncException>(() => sut.GetModulesAsync(false, CancellationToken.None));
+
+            var statuses = sut.GetSourceStatuses().ToDictionary(x => x.Source.Name, x => x.Status);
+            Assert.Null(statuses["catalog"].Error);
+            Assert.NotNull(statuses["catalog"].LastSuccess);
+            Assert.Equal("gitlab is down", statuses[ModuleRepositoryDispatcher.GitlabSourceName].Error);
+            Assert.Null(statuses[ModuleRepositoryDispatcher.GitlabSourceName].LastSuccess);
+        }
+
+        [Fact]
+        public async Task GetModules_AFailureKeepsTheLastSuccess()
+        {
+            var sut = Build(new TerraformOptions { ModuleSources = [GitSource()] });
+            await sut.GetModulesAsync(false, CancellationToken.None);
+            var synced = sut.GetSourceStatuses().Single().Status.LastSuccess;
+
+            _git.Failure = new GitCommandException("fatal: repository not found");
+            await Assert.ThrowsAsync<ModuleSyncException>(() => sut.GetModulesAsync(false, CancellationToken.None));
+
+            var status = sut.GetSourceStatuses().Single().Status;
+            Assert.Equal(synced, status.LastSuccess);
+            Assert.Equal("fatal: repository not found", status.Error);
+        }
+
+        [Fact]
+        public void GetSourceStatuses_ListsASourceNotYetSynced()
+        {
+            var sut = Build(new TerraformOptions { ModuleSources = [GitSource()] });
+
+            var (source, status) = Assert.Single(sut.GetSourceStatuses());
+
+            Assert.Equal("catalog", source.Name);
+            Assert.Null(status);
         }
 
         [Fact]

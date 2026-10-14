@@ -1,6 +1,7 @@
 // Copyright 2021 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Infrastructure.Options;
@@ -32,6 +33,12 @@ public interface IModuleRepositoryService
     /// for a git source, or a Gitlab project id for the legacy Gitlab source.
     /// </summary>
     Task<bool> GetModuleAsync(string id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Every configured module source, with how its last sync on this
+    /// instance went (null if it has not been synced yet).
+    /// </summary>
+    IReadOnlyList<(ModuleSourceOptions Source, ModuleSourceStatus Status)> GetSourceStatuses();
 }
 
 /// <summary>

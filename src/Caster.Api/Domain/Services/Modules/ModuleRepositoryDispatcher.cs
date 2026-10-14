@@ -22,11 +22,13 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
 {
     private readonly Dictionary<string, IModuleRepositoryProvider> _providers;
     private readonly IOptionsMonitor<TerraformOptions> _terraformOptions;
+    private readonly ModuleSourceStatusStore _statuses;
     private readonly ILogger<ModuleRepositoryDispatcher> _logger;
 
     public ModuleRepositoryDispatcher(
         IEnumerable<IModuleRepositoryProvider> providers,
         IOptionsMonitor<TerraformOptions> terraformOptions,
+        ModuleSourceStatusStore statuses,
         ILogger<ModuleRepositoryDispatcher> logger)
     {
         _providers = (providers ?? [])
@@ -36,6 +38,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
             .ToDictionary(x => x.Key, x => x.Last(), StringComparer.OrdinalIgnoreCase);
 
         _terraformOptions = terraformOptions;
+        _statuses = statuses;
         _logger = logger;
     }
 
@@ -55,12 +58,14 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
             if (!TryGetProvider(source, out var provider, out var failure))
             {
                 failures.Add(failure);
+                _statuses.RecordFailure(source.Name, failure);
                 continue;
             }
 
             try
             {
                 await provider.SyncModulesAsync(source, forceUpdate, cancellationToken);
+                _statuses.RecordSuccess(source.Name);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -73,6 +78,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
                 // is told what did not.
                 _logger.LogError(ex, "Failed to sync Modules from module source {Source}.", source.Name);
                 failures.Add($"module source '{source.Name}': {ex.Message}");
+                _statuses.RecordFailure(source.Name, ex.Message);
             }
         }
 
@@ -83,6 +89,9 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
 
         return true;
     }
+
+    public IReadOnlyList<(ModuleSourceOptions Source, ModuleSourceStatus Status)> GetSourceStatuses() =>
+        GetSources().Select(x => (x, _statuses.Get(x.Name))).ToList();
 
     public async Task<bool> GetModuleAsync(string id, CancellationToken cancellationToken)
     {
