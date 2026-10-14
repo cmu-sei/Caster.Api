@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Features.Files;
 using Caster.Api.Features.Shared.Behaviors;
 using Caster.Api.Features.Shared.Services;
@@ -39,7 +40,7 @@ namespace Caster.Api.Tests.Integration;
 /// <summary>
 /// An isolated relational database and HTTP host for the real controllers, handlers, mappings,
 /// validators and authorization service. Token authentication, Terraform version discovery and
-/// GitLab synchronization are substituted; background workers and external events are excluded.
+/// module synchronization are substituted; background workers and external events are excluded.
 /// </summary>
 internal sealed class AuthorizationTestApp : IAsyncDisposable
 {
@@ -69,7 +70,7 @@ internal sealed class AuthorizationTestApp : IAsyncDisposable
     public DesignModule DesignModuleB { get; }
     public HttpClient Client { get; }
     public IServiceProvider Services => _host.Services;
-    public IGitlabRepositoryService GitlabRepository { get; } = Substitute.For<IGitlabRepositoryService>();
+    public IModuleRepositoryService ModuleRepository { get; } = Substitute.For<IModuleRepositoryService>();
 
     public AuthorizationTestApp(string serverConnectionString)
     {
@@ -116,7 +117,9 @@ internal sealed class AuthorizationTestApp : IAsyncDisposable
                 DirectoryA, DirectoryB, ChildA, GrandchildA, AlternateA,
                 WorkspaceA, WorkspaceB, AlternateWorkspaceA,
                 FileA, FileB, AnotherFileA, DeletedFileA, DeletedFileB,
-                DesignA, DesignB, Module, DesignModuleA, DesignModuleB);
+                DesignA, DesignB, Module, DesignModuleA, DesignModuleB,
+                new ModuleVersion { Id = Guid.NewGuid(), Module = Module, Name = "v1" },
+                new ModuleVersion { Id = Guid.NewGuid(), Module = Module, Name = "v2" });
             db.SaveChanges();
         }
 
@@ -139,8 +142,8 @@ internal sealed class AuthorizationTestApp : IAsyncDisposable
                     RolesClaimPath = "roles"
                 });
                 services.AddScoped<IUserClaimsService, UserClaimsService>();
-                GitlabRepository.GetModulesAsync(Arg.Any<bool>(), Arg.Any<System.Threading.CancellationToken>()).Returns(true);
-                services.AddSingleton(GitlabRepository);
+                ModuleRepository.GetModulesAsync(Arg.Any<bool>(), Arg.Any<System.Threading.CancellationToken>()).Returns(true);
+                services.AddSingleton(ModuleRepository);
                 services.AddSingleton<ILockService, LockService>();
                 services.AddSingleton(new TerraformOptions { MaxParallelism = 10 });
                 var terraform = Substitute.For<ITerraformService>();

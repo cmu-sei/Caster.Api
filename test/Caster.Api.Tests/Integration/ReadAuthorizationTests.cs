@@ -161,11 +161,11 @@ public class ReadAuthorizationTests(AuthorizationDatabase database) : IClassFixt
         if (expected == HttpStatusCode.OK)
         {
             Assert.Equal(app.Module.Id, Assert.Single(await response.Content.ReadFromJsonAsync<ModuleResponse[]>()).Id);
-            await app.GitlabRepository.Received(1).GetModulesAsync(true, Arg.Any<CancellationToken>());
+            await app.ModuleRepository.Received(1).GetModulesAsync(true, Arg.Any<CancellationToken>());
         }
         else
         {
-            await app.GitlabRepository.DidNotReceive().GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>());
+            await app.ModuleRepository.DidNotReceive().GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>());
         }
     }
 

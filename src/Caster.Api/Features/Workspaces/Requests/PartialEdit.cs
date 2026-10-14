@@ -68,6 +68,7 @@ namespace Caster.Api.Features.Workspaces
         {
             public CommandValidator(TerraformOptions options)
             {
+                RuleFor(x => x.Name).NotAReservedName("Workspace").When(x => x.Name != null);
                 RuleFor(x => x.Parallelism.Value.Value)
                     .ParalellismValidation(options)
                     .When(x => x.Parallelism.HasValue && x.Parallelism.Value.HasValue);

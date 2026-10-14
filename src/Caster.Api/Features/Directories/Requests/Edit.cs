@@ -78,6 +78,7 @@ namespace Caster.Api.Features.Directories
         {
             public CommandValidator(IValidationService validationService, TerraformOptions options)
             {
+                RuleFor(x => x.Name).DirectoryNameValidation();
                 RuleFor(x => x.ParentId.Value).DirectoryExists(validationService).When(x => x.ParentId.HasValue);
                 RuleFor(x => x.Parallelism.Value)
                     .ParalellismValidation(options)
