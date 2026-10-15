@@ -5,11 +5,11 @@ using System;
 using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
-using System.Text;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using ModuleSourceView = Caster.Api.Features.Modules.ModuleSource;
 using ModuleView = Caster.Api.Features.Modules.Module;
 
 namespace Caster.Api.Tests.Features.Modules;
@@ -20,9 +20,6 @@ namespace Caster.Api.Tests.Features.Modules;
 /// </summary>
 public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factory) : ApiTestBase(fixture, factory)
 {
-    /// <summary>A GitLab project id that only <see cref="CreateFromRepository_by_a_caller_holding_ManageModules_stores_the_module_gitlab_describes"/> stubs.</summary>
-    private const int GitlabProjectId = 424242;
-
     [Fact]
     public async Task Get_returns_the_module_to_a_member_of_any_project()
     {
@@ -262,21 +259,34 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
         Assert.False(await context.Modules.AnyAsync(x => x.Path == "modules/refused", Ct));
     }
 
+    // ---- GET api/modules/sources ----------------------------------------------------------------
+
+    /// <summary>The run-wide host configures no module source, so the list is empty.</summary>
     [Fact]
-    public async Task CreateFromRepository_by_a_caller_holding_ManageModules_stores_the_module_gitlab_describes()
+    public async Task GetSources_lists_no_source_to_a_caller_holding_ViewModules_where_none_is_configured()
     {
-        var path = $"terraform-modules/repository-{Guid.NewGuid():N}";
-        Factory.OutboundHttp
-            .Respond($"{TestConfiguration.GitlabApiUrl}projects/{GitlabProjectId}", Json(
-                $$"""{"id":{{GitlabProjectId}},"name":"imported","path_with_namespace":"{{path}}","http_url_to_repo":"https://gitlab.test/imported.git?ref=master"}"""))
-            .Respond($"{TestConfiguration.GitlabApiUrl}projects/{GitlabProjectId}/releases", Json("[]"));
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewModules).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/modules/sources", Ct);
+
+        Assert.Empty(await ReadAsync<ModuleSourceView[]>(response));
+    }
+
+    [Fact]
+    public async Task GetSources_is_forbidden_for_a_caller_holding_only_ManageModules()
+    {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageModules).SeedAsync();
 
-        var response = await Client(actor).PostAsJsonAsync("api/repository/modules", new { id = GitlabProjectId.ToString() }, Ct);
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync("api/modules/sources", Ct));
+    }
 
-        await AssertStatus(HttpStatusCode.OK, response);
-        await using var context = NewContext();
-        Assert.Equal("imported", (await context.Modules.SingleAsync(x => x.Path == path, Ct)).Name);
+    /// <summary>A project membership opens the module list, but not the list of sources.</summary>
+    [Fact]
+    public async Task GetSources_is_forbidden_for_a_member_holding_ViewProject_on_a_project()
+    {
+        var actor = await Actor().OnNewProject(ProjectPermission.ViewProject).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync("api/modules/sources", Ct));
     }
 
     [Fact]
@@ -340,8 +350,6 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
         await using var context = NewContext();
         Assert.True(await context.Modules.AnyAsync(x => x.Id == module.Id, Ct));
     }
-
-    private static byte[] Json(string json) => Encoding.UTF8.GetBytes(json);
 
     /// <summary>A module used by one design, of a new project; and a module no design uses.</summary>
     private async Task<(Project Project, Design Design, Module Module)> SeedModuleOfADesign()

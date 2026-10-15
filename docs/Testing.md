@@ -45,7 +45,8 @@ The mechanics are the standard's (README, "How the harness works"). What Caster 
 
 - `Support/DatabaseFixture.cs`: an assembly fixture over the shared `PostgresTestDatabase<CasterContext>`. No `MigrationsAssembly`: Caster's migrations are in `Caster.Api` beside the context. Each test gets a database cloned from the migrated template and dropped afterwards. It also hands the host one throwaway database (`HostDatabase()`, below).
 - `Support/CasterContextFactory.cs`: builds `CasterContext` with the entity event interceptor and a provider holding a substituted mediator, which `DatabaseTestBase.Mediator` exposes.
-- `Support/CasterAppFactory.cs`: the run-wide `WebApplicationFactory<Program>`, one host for the whole run (the standard's default; nothing in Caster needs a per-class host).
+- `Support/CasterAppFactory.cs`: the run-wide `WebApplicationFactory<Program>`, one host for the whole run (the standard's default). It configures no module source, as shipped, so `GET api/modules` never syncs against the shared outbound stub.
+- `Support/GitlabSourceAppFactory.cs`: the same host with the legacy GitLab module source configured (`Terraform:GitlabGroupId`), over a host database of its own, for the one class whose routes need a configured source (`Features/Modules/ModuleSourceRequestTests`, an `IClassFixture`). It leaves the shared Terraform directories to the run-wide host.
 
 ## The host database (step 1B)
 

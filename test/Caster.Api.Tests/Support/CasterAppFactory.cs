@@ -50,7 +50,7 @@ namespace Caster.Api.Tests.Support;
 /// (the hub context, outbound HTTP, the hosted services).
 /// </para>
 /// </remarks>
-public sealed class CasterAppFactory : WebApplicationFactory<Program>, ITestHttpHost
+public class CasterAppFactory : WebApplicationFactory<Program>, ITestHttpHost
 {
     private readonly ConcurrentDictionary<Type, object> _hubs = new();
 
@@ -67,6 +67,18 @@ public sealed class CasterAppFactory : WebApplicationFactory<Program>, ITestHttp
     public HubRecorder<THub> Hub<THub>() where THub : Hub =>
         (HubRecorder<THub>)_hubs.GetOrAdd(typeof(THub), _ => new HubRecorder<THub>());
 
+    /// <summary>The configuration layered over <c>appsettings.json</c>: <see cref="TestConfiguration.Values"/>.</summary>
+    protected virtual IDictionary<string, string> Configuration => TestConfiguration.Values;
+
+    /// <summary>The throwaway database <c>Program.Main</c>'s <c>InitializeDatabase</c> migrates (step 1B).</summary>
+    protected virtual ITestDatabaseSession<CasterContext> HostDatabase() => DatabaseFixture.HostDatabase();
+
+    /// <summary>
+    /// Whether disposing this factory deletes <see cref="TestConfiguration"/>'s Terraform directories, which
+    /// every host of the process shares: only the run-wide host, which outlives the others, does.
+    /// </summary>
+    protected virtual bool RemovesTerraformDirectories => true;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Production, so the developer exception page stays off and ExceptionMiddleware answers as it does
@@ -74,10 +86,10 @@ public sealed class CasterAppFactory : WebApplicationFactory<Program>, ITestHttp
         builder.UseEnvironment("Production");
 
         // Step 1B: Main's InitializeDatabase migrates and seeds this database. See the remarks above.
-        builder.UseSetting("ConnectionStrings:PostgreSQL", DatabaseFixture.HostDatabase().ConnectionString);
+        builder.UseSetting("ConnectionStrings:PostgreSQL", HostDatabase().ConnectionString);
 
         builder.ConfigureAppConfiguration(configuration =>
-            configuration.AddInMemoryCollection(TestConfiguration.Values));
+            configuration.AddInMemoryCollection(Configuration));
 
         builder.ConfigureTestServices(services =>
         {
@@ -95,7 +107,7 @@ public sealed class CasterAppFactory : WebApplicationFactory<Program>, ITestHttp
             // own services, so the seed's entity events never reach the real handlers or a recorder;
             // afterwards it throws, so a stray resolution outside a request still fails loudly.
             TestDatabaseScope.ReplaceRegistration<CasterContext>(
-                services, () => _started ? null : DatabaseFixture.HostDatabase());
+                services, () => _started ? null : HostDatabase());
 
             // SignalR registers hub contexts as an open generic, which RemoveAll of a closed type cannot
             // match; a later closed registration wins on resolution.
@@ -139,14 +151,18 @@ public sealed class CasterAppFactory : WebApplicationFactory<Program>, ITestHttp
     public override async System.Threading.Tasks.ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
-        TestConfiguration.RemoveTerraformDirectories();
+
+        if (RemovesTerraformDirectories)
+        {
+            TestConfiguration.RemoveTerraformDirectories();
+        }
     }
 
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
 
-        if (disposing)
+        if (disposing && RemovesTerraformDirectories)
         {
             TestConfiguration.RemoveTerraformDirectories();
         }

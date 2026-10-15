@@ -234,6 +234,18 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Contains(directory.Id, (await ReadAsync<DirectoryView[]>(response)).Select(x => x.Id));
     }
 
+    /// <summary>A system permission other than ViewProjects lists no project's directories without a membership.</summary>
+    [Fact]
+    public async Task GetAll_leaves_out_every_directory_for_a_caller_holding_only_EditProjects()
+    {
+        await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/directories", Ct);
+
+        Assert.Empty(await ReadAsync<DirectoryView[]>(response));
+    }
+
     [Fact]
     public async Task GetAll_lists_only_the_directories_of_the_callers_projects()
     {
@@ -246,29 +258,29 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Equal([myDirectory.Id], (await ReadAsync<DirectoryView[]>(response)).Select(x => x.Id));
     }
 
-    /// <summary>A membership whose role grants nothing still lists the project's directories.</summary>
     [Fact]
-    public async Task GetAll_lists_a_projects_directories_to_a_member_whose_role_grants_no_permission()
+    public async Task GetAll_lists_nothing_to_a_member_whose_role_grants_no_permission()
     {
-        var (project, directory) = await SeedDirectory();
+        await SeedDirectory();
+        var (project, _) = await SeedDirectory();
         var actor = await Actor().OnProject(project, []).SeedAsync();
 
         var response = await Client(actor).GetAsync("api/directories", Ct);
 
-        Assert.Equal([directory.Id], (await ReadAsync<DirectoryView[]>(response)).Select(x => x.Id));
+        Assert.Empty(await ReadAsync<DirectoryView[]>(response));
     }
 
-    /// <summary>A project membership held through a group lists none of the project's directories.</summary>
-    // Same case as GetAll_lists_a_projects_directories_to_a_member_whose_role_grants_no_permission.
+    /// <summary>A membership held through a group lists that project's directories, and no other project's.</summary>
     [Fact]
-    public async Task GetAll_lists_nothing_to_a_caller_whose_membership_comes_from_a_group()
+    public async Task GetAll_lists_a_projects_directories_to_a_caller_whose_membership_comes_from_a_group()
     {
-        var (project, _) = await SeedDirectory();
+        var (project, directory) = await SeedDirectory();
+        await SeedDirectory();
         var actor = await Actor().OnProjectThroughNewGroup(project, ProjectPermission.ViewProject).SeedAsync();
 
         var response = await Client(actor).GetAsync("api/directories", Ct);
 
-        Assert.Empty(await ReadAsync<DirectoryView[]>(response));
+        Assert.Equal([directory.Id], (await ReadAsync<DirectoryView[]>(response)).Select(x => x.Id));
     }
 
     /// <summary>A direct membership whose role grants ViewProject lists that project's directories, with their files and content, and not those of a project whose role grants nothing.</summary>
@@ -595,9 +607,8 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Equal($"{newParent.Id}/{directory.Id}/{child.Id}/", (await StoredDirectory(child.Id)).Path);
     }
 
-    /// <summary>A member of one project moves its directory under a directory of a project it holds nothing on.</summary>
     [Fact]
-    public async Task Edit_moves_a_directory_under_a_parent_in_another_project()
+    public async Task Edit_under_a_parent_in_another_project_is_a_conflict()
     {
         var (project, directory) = await SeedDirectory();
         var (_, foreignParent) = await SeedDirectory();
@@ -606,8 +617,9 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         var response = await Client(actor).PutAsJsonAsync(
             $"api/directories/{directory.Id}", new { name = directory.Name, parentId = foreignParent.Id }, Ct);
 
-        await AssertStatus(HttpStatusCode.OK, response);
-        Assert.Equal($"{foreignParent.Id}/{directory.Id}/", (await StoredDirectory(directory.Id)).Path);
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(ParentInAnotherProjectTitle, problem.Title);
+        Assert.Equal(directory.Path, (await StoredDirectory(directory.Id)).Path);
     }
 
     [Fact]
@@ -670,10 +682,8 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         await AssertStatus(HttpStatusCode.OK, response);
     }
 
-    /// <summary>A member of one project moves its directory under a directory of a project it holds nothing on.</summary>
-    // Same case as Edit_moves_a_directory_under_a_parent_in_another_project.
     [Fact]
-    public async Task PartialEdit_moves_a_directory_under_a_parent_in_another_project()
+    public async Task PartialEdit_under_a_parent_in_another_project_is_a_conflict()
     {
         var (project, directory) = await SeedDirectory();
         var (_, foreignParent) = await SeedDirectory();
@@ -681,8 +691,9 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
 
         var response = await Client(actor).PatchAsJsonAsync($"api/directories/{directory.Id}", new { parentId = foreignParent.Id }, Ct);
 
-        await AssertStatus(HttpStatusCode.OK, response);
-        Assert.Equal($"{foreignParent.Id}/{directory.Id}/", (await StoredDirectory(directory.Id)).Path);
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal(ParentInAnotherProjectTitle, problem.Title);
+        Assert.Equal(directory.Path, (await StoredDirectory(directory.Id)).Path);
     }
 
     // ---- PUT/PATCH api/directories/{id}: a parent of the same project, never itself or below ------

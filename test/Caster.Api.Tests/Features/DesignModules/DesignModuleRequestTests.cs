@@ -423,19 +423,21 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         await AssertStatus(HttpStatusCode.OK, response);
     }
 
-    /// <summary>A member of one project moves a design module into a design of a project it holds nothing on.</summary>
+    /// <summary>An edit naming a design of another project stores the change and leaves the module in its own design.</summary>
     [Fact]
-    public async Task Edit_moves_the_design_module_into_a_design_of_another_project()
+    public async Task Edit_keeps_the_design_module_in_its_design_when_the_body_names_a_design_of_another_project()
     {
-        var (project, _, designModule) = await SeedDesignModule();
+        var (project, design, designModule) = await SeedDesignModule();
         var (_, foreignDesign) = await SeedDesign();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
 
         var response = await Client(actor).PutAsJsonAsync($"api/designModules/{designModule.Id}",
-            new { designId = foreignDesign.Id, moduleId = designModule.ModuleId, name = designModule.Name, moduleVersion = "1.0.0", values = NoValues }, Ct);
+            new { designId = foreignDesign.Id, moduleId = designModule.ModuleId, name = designModule.Name, moduleVersion = "2.0.0", values = NoValues }, Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
-        Assert.Equal(foreignDesign.Id, (await StoredDesignModule(designModule.Id)).DesignId);
+        var stored = await StoredDesignModule(designModule.Id);
+        Assert.Equal(design.Id, stored.DesignId);
+        Assert.Equal("2.0.0", stored.ModuleVersion);
     }
 
     // ---- PUT api/designModules/{id}: the stored design module decides ---------------------------

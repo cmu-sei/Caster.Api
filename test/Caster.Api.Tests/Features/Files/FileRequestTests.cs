@@ -177,9 +177,8 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.Equal(file.Content, (await ReadAsync<FileVersionView>(response)).Content);
     }
 
-    /// <summary>A member holding ViewProject on the file's project is refused one of its versions.</summary>
     [Fact]
-    public async Task GetFileVersion_is_forbidden_for_a_member_holding_ViewProject_on_the_files_project()
+    public async Task GetFileVersion_returns_the_version_with_its_content_to_a_member_holding_ViewProject()
     {
         var (project, _, file) = await SeedFile();
         var version = TestData.FileVersion(file);
@@ -188,7 +187,9 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
 
         var response = await Client(actor).GetAsync($"api/files/versions/{version.Id}", Ct);
 
-        await AssertProblem(HttpStatusCode.Forbidden, response);
+        var stored = await ReadAsync<FileVersionView>(response);
+        Assert.Equal(version.Id, stored.Id);
+        Assert.Equal(file.Content, stored.Content);
     }
 
     [Fact]
@@ -759,9 +760,9 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.Equal(file.Content, (await StoredFile(file.Id)).Content);
     }
 
-    /// <summary>A member of one project moves a file into a directory of a project it holds nothing on.</summary>
+    /// <summary>An edit naming a directory of another project stores the content and leaves the file in its own directory.</summary>
     [Fact]
-    public async Task Edit_moves_the_file_into_a_directory_of_another_project()
+    public async Task Edit_keeps_the_file_in_its_directory_when_the_body_names_a_directory_of_another_project()
     {
         var (project, directory) = await SeedDirectory();
         var (_, foreignDirectory) = await SeedDirectory();
@@ -772,7 +773,9 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
             $"api/files/{file.Id}", new { name = file.Name, directoryId = foreignDirectory.Id, content = "moved" }, Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
-        Assert.Equal(foreignDirectory.Id, (await StoredFile(file.Id)).DirectoryId);
+        var stored = await StoredFile(file.Id);
+        Assert.Equal(directory.Id, stored.DirectoryId);
+        Assert.Equal("moved", stored.Content);
     }
 
     [Fact]
@@ -842,9 +845,9 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
-    /// <summary>A member of one project moves a file into a directory of a project it holds nothing on.</summary>
+    /// <summary>A partial edit naming a directory of another project leaves the file in its own directory.</summary>
     [Fact]
-    public async Task PartialEdit_moves_the_file_into_a_directory_of_another_project()
+    public async Task PartialEdit_keeps_the_file_in_its_directory_when_the_body_names_a_directory_of_another_project()
     {
         var (project, directory) = await SeedDirectory();
         var (_, foreignDirectory) = await SeedDirectory();
@@ -854,7 +857,7 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var response = await Client(actor).PatchAsJsonAsync($"api/files/{file.Id}", new { directoryId = foreignDirectory.Id }, Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
-        Assert.Equal(foreignDirectory.Id, (await StoredFile(file.Id)).DirectoryId);
+        Assert.Equal(directory.Id, (await StoredFile(file.Id)).DirectoryId);
     }
 
     [Fact]
@@ -1651,25 +1654,11 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
 
     // ---- POST api/files/actions/tag -------------------------------------------------------------
 
-    /// <summary>A member holding EditProject on the file's project is refused tagging it.</summary>
-    // Same case as Tag_by_a_member_holding_only_ViewProject_stores_a_tagged_version.
     [Fact]
-    public async Task Tag_is_forbidden_for_a_member_holding_EditProject_on_the_files_project()
+    public async Task Tag_by_a_member_holding_EditProject_on_the_files_project_stores_a_tagged_version()
     {
         var (project, _, file) = await SeedFile();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
-
-        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag", new { tag = "v1", fileIds = new[] { file.Id } }, Ct);
-
-        await AssertProblem(HttpStatusCode.Forbidden, response);
-    }
-
-    /// <summary>A caller holding only ViewProject on the file's project tags it.</summary>
-    [Fact]
-    public async Task Tag_by_a_member_holding_only_ViewProject_stores_a_tagged_version()
-    {
-        var (project, _, file) = await SeedFile();
-        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag", new { tag = "v1", fileIds = new[] { file.Id } }, Ct);
 
@@ -1678,10 +1667,25 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.True(await context.FileVersions.AnyAsync(x => x.FileId == file.Id && x.Tag == "v1" && x.TaggedById == actor.Id, Ct));
     }
 
+    [Fact]
+    public async Task Tag_by_a_member_holding_only_ViewProject_is_forbidden_and_stores_no_tagged_version()
+    {
+        // Gate: src/Caster.Api/Features/Files/Requests/Tag.cs#Tag.Handler.Authorize
+        var (project, _, file) = await SeedFile();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag", new { tag = "v1", fileIds = new[] { file.Id } }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await using var context = NewContext();
+        Assert.False(await context.FileVersions.AnyAsync(x => x.FileId == file.Id && x.Tag == "v1", Ct));
+    }
+
     /// <summary>A member holding ViewProject on the file's project is refused tagging it, and no version is added.</summary>
     [Fact]
     public async Task Tag_is_forbidden_for_a_member_holding_only_ViewProject()
     {
+        // Gate: src/Caster.Api/Features/Files/Requests/Tag.cs#Tag.Handler.Authorize
         var graph = await SeedGraph();
         var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.ViewProject]).SeedAsync();
 
@@ -1694,8 +1698,22 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     [Fact]
     public async Task Tag_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
     {
+        // Gate: src/Caster.Api/Features/Files/Requests/Tag.cs#Tag.Handler.Authorize
         var graph = await SeedGraph();
         var actor = await Actor().OnNewProject(ProjectPermission.EditProject).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag", new { tag = TwoProjectGraph.SharedTag, fileIds = new[] { graph.FileA.Id } }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertGraphFilesUnchanged();
+    }
+
+    [Fact]
+    public async Task Tag_is_forbidden_for_a_caller_holding_only_ViewProjects()
+    {
+        // Gate: src/Caster.Api/Features/Files/Requests/Tag.cs#Tag.Handler.Authorize
+        var graph = await SeedGraph();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync("api/files/actions/tag", new { tag = TwoProjectGraph.SharedTag, fileIds = new[] { graph.FileA.Id } }, Ct);
 
@@ -1707,6 +1725,7 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     [Fact]
     public async Task Tag_is_forbidden_when_one_of_the_files_is_in_another_project()
     {
+        // Gate: src/Caster.Api/Features/Files/Requests/Tag.cs#Tag.Handler.Authorize
         var graph = await SeedGraph();
         var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
 
@@ -1721,6 +1740,7 @@ public class FileRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
     [Fact]
     public async Task Tag_is_forbidden_when_one_of_the_files_does_not_exist()
     {
+        // Gate: src/Caster.Api/Features/Files/Requests/Tag.cs#Tag.Handler.Authorize
         var graph = await SeedGraph();
         var actor = await Actor().OnProject(graph.ProjectA, [ProjectPermission.EditProject]).SeedAsync();
 

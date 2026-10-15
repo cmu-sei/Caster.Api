@@ -65,44 +65,101 @@ namespace Caster.Api.Tests.Features.Modules
                 Handler().HandleRequest(new GetAll.Query(), Ct));
         }
 
-        /// <summary>
-        /// A caller allowed on the design's project, or holding ViewProjects, and allowed the catalog (a project
-        /// membership or ViewModules) is answered the design's modules, after a sync that forced the update the
-        /// query asked for. Rows: <c>project</c> ViewProject on project A; <c>system</c> ViewModules and
-        /// ViewProjects; <c>foreign</c> asks for project B's design.
-        /// </summary>
-        [Theory]
-        [InlineData("project", false)]
-        [InlineData("system", false)]
-        [InlineData("system", true)]
-        public async Task Design_filtered_modules_sync_and_list_for_a_caller_with_catalog_and_design_access(string access, bool foreign)
+        /// <summary>A member holding ViewProject on the design's project is answered its modules, after a sync that forced the update the query asked for.</summary>
+        [Fact]
+        public async Task Design_filtered_modules_sync_and_list_for_a_member_holding_ViewProject_on_the_designs_project()
         {
             var graph = await SeedGraph();
+            var caller = new ClaimsPrincipalBuilder().WithProject(graph.ProjectA.Id, ProjectPermission.ViewProject).Build();
 
-            var modules = await Handler(Caller(access, graph.ProjectA.Id)).Handle(DesignQuery(graph, foreign), Ct);
+            var modules = await Handler(caller).Handle(DesignQuery(graph.DesignA), Ct);
 
             Assert.Equal(graph.Module.Id, Assert.Single(modules).Id);
             await _modules.Received(1).GetModulesAsync(true, Arg.Any<CancellationToken>());
         }
 
-        /// <summary>
-        /// A caller without view access to the design's project, or without the catalog, is refused before any
-        /// sync is asked for. Rows: <c>project</c> ViewProject on project A, asking for project B's design;
-        /// <c>catalog</c> ViewModules alone; <c>edit</c> EditProject on project A; <c>viewprojects</c>
-        /// ViewProjects alone.
-        /// </summary>
-        [Theory]
-        [InlineData("project", true)]
-        [InlineData("catalog", false)]
-        [InlineData("catalog", true)]
-        [InlineData("edit", false)]
-        [InlineData("viewprojects", false)]
-        public async Task Design_filtered_modules_are_refused_before_any_sync_without_catalog_and_design_access(string access, bool foreign)
+        /// <summary>A caller holding ViewModules and ViewProjects is answered the design's modules after the forced sync.</summary>
+        [Fact]
+        public async Task Design_filtered_modules_sync_and_list_for_a_caller_holding_ViewModules_and_ViewProjects()
         {
             var graph = await SeedGraph();
+            var caller = new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewModules, SystemPermission.ViewProjects).Build();
 
-            await Assert.ThrowsAsync<ForbiddenException>(() =>
-                Handler(Caller(access, graph.ProjectA.Id)).Handle(DesignQuery(graph, foreign), Ct));
+            var modules = await Handler(caller).Handle(DesignQuery(graph.DesignA), Ct);
+
+            Assert.Equal(graph.Module.Id, Assert.Single(modules).Id);
+            await _modules.Received(1).GetModulesAsync(true, Arg.Any<CancellationToken>());
+        }
+
+        /// <summary>The system permissions answer for a design of any project: project B's design is listed too.</summary>
+        [Fact]
+        public async Task Design_filtered_modules_sync_and_list_for_a_caller_holding_ViewModules_and_ViewProjects_for_a_design_of_another_project()
+        {
+            var graph = await SeedGraph();
+            var caller = new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewModules, SystemPermission.ViewProjects).Build();
+
+            var modules = await Handler(caller).Handle(DesignQuery(graph.DesignB), Ct);
+
+            Assert.Equal(graph.Module.Id, Assert.Single(modules).Id);
+            await _modules.Received(1).GetModulesAsync(true, Arg.Any<CancellationToken>());
+        }
+
+        /// <summary>A member holding ViewProject on project A asking for project B's design is refused before any sync.</summary>
+        [Fact]
+        public async Task Design_filtered_modules_are_refused_before_any_sync_for_a_member_holding_ViewProject_only_on_another_project()
+        {
+            var graph = await SeedGraph();
+            var caller = new ClaimsPrincipalBuilder().WithProject(graph.ProjectA.Id, ProjectPermission.ViewProject).Build();
+
+            await Assert.ThrowsAsync<ForbiddenException>(() => Handler(caller).Handle(DesignQuery(graph.DesignB), Ct));
+
+            await _modules.DidNotReceive().GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        }
+
+        /// <summary>ViewModules opens the catalog but not a design: refused before any sync.</summary>
+        [Fact]
+        public async Task Design_filtered_modules_are_refused_before_any_sync_for_a_caller_holding_only_ViewModules()
+        {
+            var graph = await SeedGraph();
+            var caller = new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewModules).Build();
+
+            await Assert.ThrowsAsync<ForbiddenException>(() => Handler(caller).Handle(DesignQuery(graph.DesignA), Ct));
+
+            await _modules.DidNotReceive().GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        }
+
+        /// <summary>ViewModules alone is refused whichever project the design is in.</summary>
+        [Fact]
+        public async Task Design_filtered_modules_are_refused_before_any_sync_for_a_caller_holding_only_ViewModules_for_a_design_of_another_project()
+        {
+            var graph = await SeedGraph();
+            var caller = new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewModules).Build();
+
+            await Assert.ThrowsAsync<ForbiddenException>(() => Handler(caller).Handle(DesignQuery(graph.DesignB), Ct));
+
+            await _modules.DidNotReceive().GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        }
+
+        /// <summary>EditProject on the design's project opens the catalog but not the design: refused before any sync.</summary>
+        [Fact]
+        public async Task Design_filtered_modules_are_refused_before_any_sync_for_a_member_holding_only_EditProject_on_the_designs_project()
+        {
+            var graph = await SeedGraph();
+            var caller = new ClaimsPrincipalBuilder().WithProject(graph.ProjectA.Id, ProjectPermission.EditProject).Build();
+
+            await Assert.ThrowsAsync<ForbiddenException>(() => Handler(caller).Handle(DesignQuery(graph.DesignA), Ct));
+
+            await _modules.DidNotReceive().GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        }
+
+        /// <summary>ViewProjects opens the design but not the catalog: refused before any sync.</summary>
+        [Fact]
+        public async Task Design_filtered_modules_are_refused_before_any_sync_for_a_caller_holding_only_ViewProjects()
+        {
+            var graph = await SeedGraph();
+            var caller = new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewProjects).Build();
+
+            await Assert.ThrowsAsync<ForbiddenException>(() => Handler(caller).Handle(DesignQuery(graph.DesignA), Ct));
 
             await _modules.DidNotReceive().GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>());
         }
@@ -115,19 +172,8 @@ namespace Caster.Api.Tests.Features.Modules
             return await TwoProjectGraph.SeedAsync(Db, savedBy.Id, Ct);
         }
 
-        /// <summary>A forced listing of project A's design, or of project B's when <paramref name="foreign"/>.</summary>
-        private static GetAll.Query DesignQuery(TwoProjectGraph graph, bool foreign) =>
-            new() { DesignId = foreign ? graph.DesignB.Id : graph.DesignA.Id, ForceUpdate = true };
-
-        /// <summary>The principal the claims transformer would produce for each row's caller.</summary>
-        private static ClaimsPrincipal Caller(string access, Guid projectId) => access switch
-        {
-            "project" => new ClaimsPrincipalBuilder().WithProject(projectId, ProjectPermission.ViewProject).Build(),
-            "edit" => new ClaimsPrincipalBuilder().WithProject(projectId, ProjectPermission.EditProject).Build(),
-            "catalog" => new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewModules).Build(),
-            "system" => new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewModules, SystemPermission.ViewProjects).Build(),
-            _ => new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewProjects).Build()
-        };
+        /// <summary>A forced listing of <paramref name="design"/>'s modules.</summary>
+        private static GetAll.Query DesignQuery(Design design) => new() { DesignId = design.Id, ForceUpdate = true };
 
         /// <summary>The one module every test here lists, stored before the sync is asked for.</summary>
         private async Task SeedStoredModule()

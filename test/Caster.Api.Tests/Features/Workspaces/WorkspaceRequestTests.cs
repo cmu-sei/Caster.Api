@@ -349,21 +349,24 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Equal(workspace.Name, (await StoredWorkspace(workspace.Id)).Name);
     }
 
-    /// <summary>A caller holding EditProject only on another project moves this project's workspace into their directory.</summary>
+    /// <summary>
+    /// A caller holding EditProject only on another project is refused this project's workspace, though the
+    /// body names a directory of its own: the workspace is authorized, not the body's directory.
+    /// </summary>
     [Fact]
-    public async Task Edit_by_a_member_of_another_project_naming_its_own_directory_moves_the_workspace_there()
+    public async Task Edit_is_forbidden_for_a_member_of_another_project_naming_its_own_directory()
     {
-        var (_, _, workspace) = await SeedWorkspace();
+        var (_, directory, workspace) = await SeedWorkspace();
         var (theirs, theirDirectory) = await SeedDirectory();
         var actor = await Actor().OnProject(theirs, [ProjectPermission.EditProject]).SeedAsync();
 
         var response = await Client(actor).PutAsJsonAsync(
             $"api/workspaces/{workspace.Id}", new { name = "taken", directoryId = theirDirectory.Id }, Ct);
 
-        await AssertStatus(HttpStatusCode.OK, response);
+        await AssertProblem(HttpStatusCode.Forbidden, response);
         var stored = await StoredWorkspace(workspace.Id);
-        Assert.Equal("taken", stored.Name);
-        Assert.Equal(theirDirectory.Id, stored.DirectoryId);
+        Assert.Equal(workspace.Name, stored.Name);
+        Assert.Equal(directory.Id, stored.DirectoryId);
     }
 
     // ---- PATCH api/workspaces/{id} --------------------------------------------------------------
@@ -438,18 +441,18 @@ public class WorkspaceRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Equal(workspace.Name, (await StoredWorkspace(workspace.Id)).Name);
     }
 
-    /// <summary>A member of one project moves its workspace into a directory of a project it holds nothing on.</summary>
+    /// <summary>A partial edit naming a directory of another project leaves the workspace in its own directory.</summary>
     [Fact]
-    public async Task PartialEdit_moves_the_workspace_into_a_directory_of_another_project()
+    public async Task PartialEdit_keeps_the_workspace_in_its_directory_when_the_body_names_a_directory_of_another_project()
     {
-        var (project, _, workspace) = await SeedWorkspace();
+        var (project, directory, workspace) = await SeedWorkspace();
         var (_, foreignDirectory) = await SeedDirectory();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
 
         var response = await Client(actor).PatchAsJsonAsync($"api/workspaces/{workspace.Id}", new { directoryId = foreignDirectory.Id }, Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
-        Assert.Equal(foreignDirectory.Id, (await StoredWorkspace(workspace.Id)).DirectoryId);
+        Assert.Equal(directory.Id, (await StoredWorkspace(workspace.Id)).DirectoryId);
     }
 
     // ---- PUT/PATCH api/workspaces/{id}: the stored workspace decides ------------------------------
