@@ -17,6 +17,10 @@ namespace Caster.Api.Features.Inventory
         [DataContract(Name = "RefreshInventoryCommand")]
         public class Command : IRequest<InventoryRefreshResult>
         {
+            /// <summary>
+            /// The connection to refresh, by name. Null or empty refreshes the default.
+            /// </summary>
+            public string Connection { get; set; }
         }
 
         public class Handler(
@@ -34,13 +38,16 @@ namespace Caster.Api.Features.Inventory
                 // InventoryDefaults.ForceRefreshTimeout. A slow or unreachable
                 // provider therefore cannot hang this request, and a disconnected
                 // caller does not cancel the refresh.
+                if (!inventoryService.HasConnection(request.Connection))
+                    throw InventoryConnection.NotFound(request.Connection);
+
                 var completed = await inventoryService.ForceRefreshAsync(
-                    InventoryDefaults.ForceRefreshTimeout, cancellationToken);
+                    request.Connection, InventoryDefaults.ForceRefreshTimeout, cancellationToken);
 
                 return new InventoryRefreshResult
                 {
                     Completed = completed,
-                    LastUpdated = inventoryService.GetSnapshot().LastUpdated,
+                    LastUpdated = inventoryService.GetSnapshot(request.Connection)?.LastUpdated,
                     WaitSeconds = (int)InventoryDefaults.ForceRefreshTimeout.TotalSeconds
                 };
             }

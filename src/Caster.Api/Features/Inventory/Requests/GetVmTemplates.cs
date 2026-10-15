@@ -17,6 +17,10 @@ namespace Caster.Api.Features.Inventory
         [DataContract(Name = "GetInventoryVmTemplatesQuery")]
         public class Query : IRequest<InventoryResult>
         {
+            /// <summary>
+            /// The connection to read, by name. Null or empty reads the default.
+            /// </summary>
+            public string Connection { get; set; }
         }
 
         public class Handler(
@@ -27,7 +31,7 @@ namespace Caster.Api.Features.Inventory
                 await authorizationService.Authorize([SystemPermission.ViewHosts], cancellationToken);
 
             public override Task<InventoryResult> HandleRequest(Query request, CancellationToken cancellationToken) =>
-                Task.FromResult(InventoryResult.From(inventoryService.GetSnapshot(), InventoryCategory.VmTemplate));
+                Task.FromResult(InventoryResult.From(InventoryConnection.Snapshot(inventoryService, request.Connection), InventoryCategory.VmTemplate));
         }
     }
 }

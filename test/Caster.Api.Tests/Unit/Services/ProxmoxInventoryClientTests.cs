@@ -918,6 +918,23 @@ namespace Caster.Api.Tests.Unit.Services
                 return inner(request);
             };
 
+        [Theory]
+        [InlineData(false, "proxmox-inventory")]
+        [InlineData(true, "proxmox-inventory-insecure")]
+        public async Task GetInventoryAsync_InsecureSkipVerify_IsReadPerConnection(bool insecure, string expected)
+        {
+            using var handler = new StubHandler(DefaultResponder());
+            var factory = new StubHttpClientFactory(handler);
+            var client = new ProxmoxInventoryClient(factory, Substitute.For<ILogger<ProxmoxInventoryClient>>());
+
+            var options = Options();
+            options.InsecureSkipVerify = insecure;
+
+            await client.GetInventoryAsync(options, CancellationToken.None);
+
+            Assert.Equal(expected, Assert.Single(factory.Names));
+        }
+
         private static async Task<InventorySnapshot> Read(
             Func<HttpRequestMessage, HttpResponseMessage> responder,
             InfrastructureOptions options = null)
@@ -957,7 +974,13 @@ namespace Caster.Api.Tests.Unit.Services
 
         private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
         {
-            public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+            public List<string> Names { get; } = [];
+
+            public HttpClient CreateClient(string name)
+            {
+                Names.Add(name);
+                return new(handler, disposeHandler: false);
+            }
         }
 
         #endregion

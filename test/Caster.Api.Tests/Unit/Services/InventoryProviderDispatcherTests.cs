@@ -148,6 +148,14 @@ namespace Caster.Api.Tests.Unit.Services
         }
 
         [Fact]
+        public void InsecureSkipVerify_PicksTheInsecureClient()
+        {
+            Assert.Equal("proxmox-inventory", InventoryHttpClients.For("proxmox-inventory", new InfrastructureConnectionOptions()));
+            Assert.Equal("proxmox-inventory-insecure",
+                InventoryHttpClients.For("proxmox-inventory", new InfrastructureConnectionOptions { InsecureSkipVerify = true }));
+        }
+
+        [Fact]
         public void EveryProviderHasItsOwnHttpClientName()
         {
             Assert.NotEqual(VsphereInventoryClient.HttpClientName, ProxmoxInventoryClient.HttpClientName);
@@ -187,6 +195,10 @@ namespace Caster.Api.Tests.Unit.Services
             {
                 using var client = factory.CreateClient(x.HttpClientName);
                 Assert.Equal(TimeSpan.FromSeconds(60), client.Timeout);
+
+                // plus one that skips certificate validation, chosen per connection
+                using var insecure = factory.CreateClient(x.HttpClientName + InventoryHttpClients.InsecureSuffix);
+                Assert.Equal(TimeSpan.FromSeconds(60), insecure.Timeout);
             });
         }
 
@@ -226,7 +238,7 @@ namespace Caster.Api.Tests.Unit.Services
 
             public int Calls => _calls;
 
-            public InfrastructureOptions LastOptions { get; private set; }
+            public InfrastructureConnectionOptions LastOptions { get; private set; }
 
             public CancellationToken LastToken { get; private set; }
 
@@ -234,7 +246,7 @@ namespace Caster.Api.Tests.Unit.Services
 
             public string HttpClientName => $"{provider}-inventory";
 
-            public Task<InventorySnapshot> GetInventoryAsync(InfrastructureOptions options, CancellationToken cancellationToken)
+            public Task<InventorySnapshot> GetInventoryAsync(InfrastructureConnectionOptions options, CancellationToken cancellationToken)
             {
                 Interlocked.Increment(ref _calls);
                 LastOptions = options;

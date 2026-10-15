@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Services.Inventory;
@@ -246,6 +247,232 @@ namespace Caster.Api.Tests.Unit.Services
             }
         }
 
+        #region Connections
+
+        [Fact]
+        public async Task NamedConnection_IsReadAndCachedOnItsOwn()
+        {
+            var client = new FakeProviderClient(ReadFrom);
+            var sut = Build(TwoConnections(), client);
+
+            await Run(sut);
+
+            Assert.Equal("https://vcenter.test", Assert.Single(sut.GetSnapshot().VmTemplates.Entries).Name);
+            Assert.Equal("https://pve2.test:8006", Assert.Single(sut.GetSnapshot("lab2").VmTemplates.Entries).Name);
+
+            // null, empty and "default" all name the top-level settings
+            Assert.Same(sut.GetSnapshot(), sut.GetSnapshot(null));
+            Assert.Same(sut.GetSnapshot(), sut.GetSnapshot(""));
+            Assert.Same(sut.GetSnapshot(), sut.GetSnapshot("default"));
+
+            // names are case insensitive, like the configuration keys they come from
+            Assert.Same(sut.GetSnapshot("lab2"), sut.GetSnapshot(" LAB2 "));
+
+            Assert.Equal(1, client.CallsTo("https://vcenter.test"));
+            Assert.Equal(1, client.CallsTo("https://pve2.test:8006"));
+        }
+
+        [Fact]
+        public async Task UnknownConnection_HasNoSnapshot()
+        {
+            var sut = Build(TwoConnections(), new FakeProviderClient(ReadFrom));
+
+            await Run(sut);
+
+            Assert.False(sut.HasConnection("lab3"));
+            Assert.Null(sut.GetSnapshot("lab3"));
+            Assert.False(await sut.ForceRefreshAsync("lab3", TimeSpan.FromSeconds(1), CancellationToken.None));
+
+            Assert.True(sut.HasConnection(null));
+            Assert.True(sut.HasConnection("lab2"));
+        }
+
+        [Fact]
+        public async Task NamedConnection_InheritsNothingFromTheDefault()
+        {
+            var seen = new System.Collections.Concurrent.ConcurrentBag<InfrastructureConnectionOptions>();
+            var sut = Build(TwoConnections(), new FakeProviderClient(x =>
+            {
+                seen.Add(x);
+                return ReadFrom(x);
+            }));
+
+            await Run(sut);
+
+            var lab2 = Assert.Single(seen, x => x.Url == "https://pve2.test:8006");
+
+            // the default connection's vSphere account never reaches the lab2 provider
+            Assert.Null(lab2.Username);
+            Assert.Null(lab2.Password);
+            Assert.Equal("proxmox", lab2.Provider);
+        }
+
+        [Fact]
+        public async Task NamedConnection_MessagesNameItsOwnSettings()
+        {
+            var options = TwoConnections();
+            options.Connections["lab2"].Enabled = false;
+
+            var sut = Build(options, new FakeProviderClient(ReadFrom));
+
+            await Run(sut);
+
+            var error = sut.GetSnapshot("lab2").VmTemplates.Error;
+
+            Assert.Contains("Set Infrastructure:Connections:lab2:Enabled to true", error);
+            Assert.DoesNotContain("Set Infrastructure:Enabled", error);
+
+            // and the default connection's messages are untouched
+            options.Enabled = false;
+            var defaultOnly = Build(options, new FakeProviderClient(ReadFrom));
+            await Run(defaultOnly);
+            Assert.Equal(InventoryMessages.NotEnabled, defaultOnly.GetSnapshot().VmTemplates.Error);
+        }
+
+        [Fact]
+        public async Task NamedConnection_RewritesAProviderMessageOnce()
+        {
+            var options = TwoConnections();
+
+            // the same snapshot object comes back on every read
+            var shared = InventorySnapshot.AllUnavailable(InventoryMessages.ProxmoxApiTokenMalformed);
+            var client = new FakeProviderClient(x => x.Url == "https://pve2.test:8006" ? shared : ReadFrom(x));
+            var sut = Build(options, client);
+
+            try
+            {
+                await sut.StartAsync(CancellationToken.None);
+                Assert.True(await sut.ForceRefreshAsync("lab2", TimeSpan.FromSeconds(10), CancellationToken.None));
+            }
+            finally
+            {
+                await sut.StopAsync(CancellationToken.None);
+            }
+
+            Assert.StartsWith("Infrastructure:Connections:lab2:ApiToken is not", sut.GetSnapshot("lab2").Isos.Error);
+        }
+
+        [Fact]
+        public async Task NamedConnection_ProviderThrows_RedactsThatConnectionsToken()
+        {
+            var client = new FakeProviderClient(x => x.Url == "https://pve2.test:8006"
+                ? throw new InvalidOperationException($"bad token {Lab2Token}")
+                : ReadFrom(x));
+            var sut = Build(TwoConnections(), client);
+
+            await Run(sut);
+
+            var error = sut.GetSnapshot("lab2").VmTemplates.Error;
+
+            Assert.DoesNotContain(Lab2Token, error);
+            Assert.DoesNotContain(Lab2Token[(Lab2Token.IndexOf('=') + 1)..], error);
+            Assert.Contains("***", error);
+
+            // one connection failing does not touch another
+            Assert.True(sut.GetSnapshot().VmTemplates.Available);
+        }
+
+        [Fact]
+        public async Task ForceRefreshAsync_RefreshesOnlyTheNamedConnection()
+        {
+            var client = new FakeProviderClient(ReadFrom);
+            var sut = Build(TwoConnections(), client);
+
+            try
+            {
+                await sut.StartAsync(CancellationToken.None);
+
+                Assert.True(await sut.ForceRefreshAsync("lab2", TimeSpan.FromSeconds(10), CancellationToken.None));
+                Assert.True(await sut.ForceRefreshAsync("lab2", TimeSpan.FromSeconds(10), CancellationToken.None));
+
+                Assert.Equal(3, client.CallsTo("https://pve2.test:8006"));
+                Assert.Equal(1, client.CallsTo("https://vcenter.test"));
+            }
+            finally
+            {
+                await sut.StopAsync(CancellationToken.None);
+            }
+        }
+
+        [Fact]
+        public void GetConnections_ListsTheDefaultFirstWithoutUrlsOrCredentials()
+        {
+            var options = TwoConnections();
+            options.Connections["alpha"] = new InfrastructureConnectionOptions { Provider = "vsphere" };
+
+            var sut = Build(options, new FakeProviderClient(ReadFrom));
+
+            var connections = sut.GetConnections();
+
+            Assert.Equal(["default", "alpha", "lab2"], connections.Select(x => x.Name));
+            Assert.True(connections[0].IsDefault);
+            Assert.False(connections[1].Enabled);
+            Assert.Equal("proxmox", connections[2].Provider);
+
+            // the listing type has nowhere to put a url or a secret
+            var properties = typeof(InventoryConnectionInfo).GetProperties().Select(x => x.Name).ToArray();
+            Assert.Equal(["Name", "Provider", "Enabled", "IsDefault", "LastUpdated"], properties);
+        }
+
+        [Fact]
+        public void ConnectionNamedDefault_IsIgnored()
+        {
+            var options = EnabledOptions();
+            options.Connections["Default"] = new InfrastructureConnectionOptions
+            {
+                Enabled = true,
+                Provider = "proxmox",
+                Url = "https://impostor.test"
+            };
+
+            var sut = Build(options, new FakeProviderClient(ReadFrom));
+
+            var connection = Assert.Single(sut.GetConnections());
+            Assert.Equal("vsphere", connection.Provider);
+        }
+
+        [Fact]
+        public async Task OptionsChange_AddsAndRemovesConnections()
+        {
+            var client = new FakeProviderClient(ReadFrom);
+            var monitor = new TestOptionsMonitor<InfrastructureOptions>(EnabledOptions());
+            var sut = Build(monitor, client);
+
+            try
+            {
+                await sut.StartAsync(CancellationToken.None);
+                Assert.Null(sut.GetSnapshot("lab2"));
+
+                monitor.Set(TwoConnections());
+
+                // a new connection reads straight away, without waiting out its interval
+                await WaitFor(() => sut.GetSnapshot("lab2")?.VmTemplates.Available == true);
+                Assert.Equal("https://pve2.test:8006", Assert.Single(sut.GetSnapshot("lab2").VmTemplates.Entries).Name);
+
+                monitor.Set(EnabledOptions());
+
+                Assert.Null(sut.GetSnapshot("lab2"));
+                Assert.Equal(["default"], sut.GetConnections().Select(x => x.Name));
+            }
+            finally
+            {
+                await sut.StopAsync(CancellationToken.None);
+            }
+        }
+
+        private static async Task WaitFor(Func<bool> condition)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+
+            while (!condition())
+            {
+                Assert.True(DateTime.UtcNow < deadline, "timed out waiting for the condition");
+                await Task.Delay(20);
+            }
+        }
+
+        #endregion
+
         #region Helpers
 
         private static InfrastructureOptions EnabledOptions() => new()
@@ -272,9 +499,46 @@ namespace Caster.Api.Tests.Unit.Services
         };
 
         private static InventoryService Build(InfrastructureOptions options, IInventoryProviderClient client) =>
-            new(new TestOptionsMonitor<InfrastructureOptions>(options),
-                client,
-                Substitute.For<ILogger<InventoryService>>());
+            Build(new TestOptionsMonitor<InfrastructureOptions>(options), client);
+
+        private static InventoryService Build(IOptionsMonitor<InfrastructureOptions> monitor, IInventoryProviderClient client) =>
+            new(monitor, client, Substitute.For<ILogger<InventoryService>>());
+
+        private const string Lab2Token = "caster@pve!lab2=9f1c2d3e-0000-4000-8000-00000000abcd";
+
+        /// <summary>
+        /// The default connection plus an enabled Proxmox connection named lab2,
+        /// with nothing in common, so a test can tell which settings a read used.
+        /// </summary>
+        private static InfrastructureOptions TwoConnections()
+        {
+            var options = EnabledOptions();
+
+            options.Connections["lab2"] = new InfrastructureConnectionOptions
+            {
+                Enabled = true,
+                Provider = "proxmox",
+                Url = "https://pve2.test:8006",
+                ApiToken = Lab2Token,
+                RefreshMinutes = 600
+            };
+
+            return options;
+        }
+
+        /// <summary>
+        /// One template named after the url it was read from.
+        /// </summary>
+        private static InventorySnapshot ReadFrom(InfrastructureConnectionOptions options) => new()
+        {
+            LastUpdated = DateTime.UtcNow,
+            VmTemplates = InventoryCategoryResult.Ok([
+                new InventoryEntry { Id = options.Url, Name = options.Url, Path = options.Url }
+            ]),
+            Networks = InventoryCategoryResult.Ok([]),
+            Datastores = InventoryCategoryResult.Ok([]),
+            Isos = InventoryCategoryResult.Ok([])
+        };
 
         /// <summary>
         /// Runs one refresh cycle and shuts the background loop back down.
@@ -291,22 +555,30 @@ namespace Caster.Api.Tests.Unit.Services
             }
         }
 
-        private sealed class FakeProviderClient(Func<InfrastructureOptions, InventorySnapshot> responder) : IInventoryProviderClient
+        private sealed class FakeProviderClient(Func<InfrastructureConnectionOptions, InventorySnapshot> responder) : IInventoryProviderClient
         {
             private int _calls;
 
             public int Calls => _calls;
-            public InfrastructureOptions LastOptions { get; private set; }
+            public InfrastructureConnectionOptions LastOptions { get; private set; }
+
+            /// <summary>
+            /// Every read, in order, by the url it was made against.
+            /// </summary>
+            public System.Collections.Concurrent.ConcurrentQueue<string> Urls { get; } = new();
+
+            public int CallsTo(string url) => Urls.Count(x => x == url);
 
             /// <summary>
             /// Lets a test observe the token the provider call actually receives.
             /// </summary>
             public Action<CancellationToken> OnCall { get; set; }
 
-            public Task<InventorySnapshot> GetInventoryAsync(InfrastructureOptions options, CancellationToken cancellationToken)
+            public Task<InventorySnapshot> GetInventoryAsync(InfrastructureConnectionOptions options, CancellationToken cancellationToken)
             {
                 Interlocked.Increment(ref _calls);
                 LastOptions = options;
+                Urls.Enqueue(options.Url);
                 OnCall?.Invoke(cancellationToken);
                 return Task.FromResult(responder(options));
             }
@@ -314,11 +586,26 @@ namespace Caster.Api.Tests.Unit.Services
 
         private sealed class TestOptionsMonitor<T>(T value) : IOptionsMonitor<T>
         {
+            private Action<T, string> _listener;
+
             public T CurrentValue => value;
 
             public T Get(string name) => value;
 
-            public IDisposable OnChange(Action<T, string> listener) => new NoopDisposable();
+            public IDisposable OnChange(Action<T, string> listener)
+            {
+                _listener = listener;
+                return new NoopDisposable();
+            }
+
+            /// <summary>
+            /// Replaces the value and notifies the listener, as a config reload does.
+            /// </summary>
+            public void Set(T next)
+            {
+                value = next;
+                _listener?.Invoke(next, null);
+            }
 
             private sealed class NoopDisposable : IDisposable
             {

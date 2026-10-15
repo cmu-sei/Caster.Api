@@ -62,7 +62,7 @@ public class ProxmoxInventoryClient(
 
     string IInventoryProvider.HttpClientName => HttpClientName;
 
-    public async Task<InventorySnapshot> GetInventoryAsync(InfrastructureOptions options, CancellationToken cancellationToken)
+    public async Task<InventorySnapshot> GetInventoryAsync(InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         // Provider selection lives in InventoryProviderDispatcher, so reaching
         // this method means proxmox was asked for.
@@ -85,7 +85,7 @@ public class ProxmoxInventoryClient(
                 "Infrastructure:Url is not a valid absolute url, so the Proxmox api address could not be built.");
         }
 
-        using var client = httpClientFactory.CreateClient(HttpClientName);
+        using var client = httpClientFactory.CreateClient(InventoryHttpClients.For(HttpClientName, options));
         client.BaseAddress = baseAddress;
 
         ProxmoxCredential credential;
@@ -144,7 +144,7 @@ public class ProxmoxInventoryClient(
     }
 
     /// <summary>
-    /// Checks the shape of <see cref="InfrastructureOptions.ApiToken"/> without
+    /// Checks the shape of <see cref="InfrastructureConnectionOptions.ApiToken"/> without
     /// ever copying any part of it into a message:
     /// <c>user@realm!tokenid=secret</c>.
     /// </summary>
@@ -172,7 +172,7 @@ public class ProxmoxInventoryClient(
     /// caller ever needs a write.
     /// </summary>
     private static async Task<ProxmoxCredential> CreateTicketAsync(
-        HttpClient client, InfrastructureOptions options, CancellationToken cancellationToken)
+        HttpClient client, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, TicketPath)
         {
@@ -292,7 +292,7 @@ public class ProxmoxInventoryClient(
     /// and lxc entry carries the flag.
     /// </summary>
     private async Task<InventoryCategoryResult> ReadVmTemplatesAsync(
-        HttpClient client, ProxmoxCredential credential, InfrastructureOptions options, CancellationToken cancellationToken)
+        HttpClient client, ProxmoxCredential credential, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         var read = await ReadAsync<ProxmoxResource>(client, credential, VmResourcesPath, "VM templates", options, cancellationToken);
 
@@ -378,7 +378,7 @@ public class ProxmoxInventoryClient(
         ProxmoxCredential credential,
         ProviderRead<ProxmoxNode> nodes,
         ProviderRead<ProxmoxStorage> storages,
-        InfrastructureOptions options,
+        InfrastructureConnectionOptions options,
         CancellationToken cancellationToken)
     {
         if (!nodes.Ok)
@@ -530,7 +530,7 @@ public class ProxmoxInventoryClient(
         HttpClient client,
         ProxmoxCredential credential,
         ProviderRead<ProxmoxNode> nodes,
-        InfrastructureOptions options,
+        InfrastructureConnectionOptions options,
         CancellationToken cancellationToken)
     {
         if (!nodes.Ok)
@@ -614,7 +614,7 @@ public class ProxmoxInventoryClient(
         HttpClient client,
         ProxmoxCredential credential,
         Dictionary<string, InventoryEntry> entries,
-        InfrastructureOptions options,
+        InfrastructureConnectionOptions options,
         CancellationToken cancellationToken)
     {
         var read = await ReadAsync<ProxmoxVnet>(client, credential, SdnVnetsPath, "SDN vnets", options, cancellationToken);
@@ -666,7 +666,7 @@ public class ProxmoxInventoryClient(
         ProxmoxCredential credential,
         string path,
         string description,
-        InfrastructureOptions options,
+        InfrastructureConnectionOptions options,
         CancellationToken cancellationToken)
     {
         try
@@ -763,7 +763,7 @@ public class ProxmoxInventoryClient(
         }
     }
 
-    private static string Redact(string message, InfrastructureOptions options, params string[] extraSecrets) =>
+    private static string Redact(string message, InfrastructureConnectionOptions options, params string[] extraSecrets) =>
         InventoryRedaction.Redact(message, options, extraSecrets);
 
     #endregion

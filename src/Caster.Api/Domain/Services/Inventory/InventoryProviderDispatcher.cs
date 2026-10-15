@@ -15,12 +15,12 @@ namespace Caster.Api.Domain.Services.Inventory;
 /// One concrete infrastructure provider reader. Implementations claim a
 /// <see cref="Provider"/> name and are selected by
 /// <see cref="InventoryProviderDispatcher"/>; they must not inspect
-/// <see cref="InfrastructureOptions.Provider"/> themselves.
+/// <see cref="InfrastructureConnectionOptions.Provider"/> themselves.
 /// </summary>
 public interface IInventoryProvider : IInventoryProviderClient
 {
     /// <summary>
-    /// The <see cref="InfrastructureOptions.Provider"/> value this reader handles,
+    /// The <see cref="InfrastructureConnectionOptions.Provider"/> value this reader handles,
     /// matched case insensitively. See <see cref="InfrastructureProviders"/>.
     /// </summary>
     string Provider { get; }
@@ -33,8 +33,25 @@ public interface IInventoryProvider : IInventoryProviderClient
 }
 
 /// <summary>
+/// Each provider registers two named http clients, one that validates TLS
+/// certificates and one that does not, so <see cref="InfrastructureConnectionOptions.InsecureSkipVerify"/>
+/// is decided per connection and per read rather than when a shared handler
+/// happens to be built.
+/// </summary>
+public static class InventoryHttpClients
+{
+    public const string InsecureSuffix = "-insecure";
+
+    /// <summary>
+    /// The client a provider should create for <paramref name="options"/>.
+    /// </summary>
+    public static string For(string httpClientName, InfrastructureConnectionOptions options) =>
+        options?.InsecureSkipVerify == true ? httpClientName + InsecureSuffix : httpClientName;
+}
+
+/// <summary>
 /// Selects the <see cref="IInventoryProvider"/> that matches
-/// <see cref="InfrastructureOptions.Provider"/>. Registered as the single
+/// <see cref="InfrastructureConnectionOptions.Provider"/>. Registered as the single
 /// <see cref="IInventoryProviderClient"/> so <see cref="InventoryService"/> stays
 /// unaware that there is more than one provider.
 /// </summary>
@@ -56,7 +73,7 @@ public class InventoryProviderDispatcher : IInventoryProviderClient
         _logger = logger;
     }
 
-    public Task<InventorySnapshot> GetInventoryAsync(InfrastructureOptions options, CancellationToken cancellationToken)
+    public Task<InventorySnapshot> GetInventoryAsync(InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         var requested = options?.Provider;
 

@@ -233,37 +233,36 @@ namespace Caster.Api.Infrastructure.Extensions
         }
 
         /// <summary>
-        /// One named http client per inventory provider, so each gets its own
-        /// timeout and its own TLS handler.
+        /// Two named http clients per inventory provider, so each provider gets its
+        /// own timeout and handler, and each connection's InsecureSkipVerify picks
+        /// between them on every read. See <see cref="InventoryHttpClients"/>.
         /// </summary>
-        /// <remarks>
-        /// InsecureSkipVerify is read when the handler is built, so toggling it at
-        /// runtime only takes effect after handler rotation.
-        /// </remarks>
         private static void AddInventoryHttpClient(
             this IServiceCollection services,
             string name,
             Action<HttpClientHandler> configureHandler = null)
         {
-            services.AddHttpClient(name, client =>
+            foreach (var insecure in new[] { false, true })
             {
-                client.Timeout = TimeSpan.FromSeconds(60);
-            })
-            .ConfigurePrimaryHttpMessageHandler(sp =>
-            {
-                var options = sp.GetRequiredService<IOptionsMonitor<InfrastructureOptions>>().CurrentValue;
-                var handler = new HttpClientHandler();
-
-                if (options.InsecureSkipVerify)
+                services.AddHttpClient(insecure ? name + InventoryHttpClients.InsecureSuffix : name, client =>
                 {
-                    handler.ServerCertificateCustomValidationCallback =
-                        HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-                }
+                    client.Timeout = TimeSpan.FromSeconds(60);
+                })
+                .ConfigurePrimaryHttpMessageHandler(() =>
+                {
+                    var handler = new HttpClientHandler();
 
-                configureHandler?.Invoke(handler);
+                    if (insecure)
+                    {
+                        handler.ServerCertificateCustomValidationCallback =
+                            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                    }
 
-                return handler;
-            });
+                    configureHandler?.Invoke(handler);
+
+                    return handler;
+                });
+            }
         }
 
         public static void AddTerraformServices(this IServiceCollection services, TerraformOptions terraformOptions)

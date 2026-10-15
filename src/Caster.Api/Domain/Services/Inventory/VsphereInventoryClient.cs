@@ -25,7 +25,7 @@ namespace Caster.Api.Domain.Services.Inventory;
 /// </summary>
 public interface IInventoryProviderClient
 {
-    Task<InventorySnapshot> GetInventoryAsync(InfrastructureOptions options, CancellationToken cancellationToken);
+    Task<InventorySnapshot> GetInventoryAsync(InfrastructureConnectionOptions options, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -54,7 +54,7 @@ public class VsphereInventoryClient(
         PropertyNameCaseInsensitive = true
     };
 
-    public async Task<InventorySnapshot> GetInventoryAsync(InfrastructureOptions options, CancellationToken cancellationToken)
+    public async Task<InventorySnapshot> GetInventoryAsync(InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         // Provider selection lives in InventoryProviderDispatcher, so reaching
         // this method means vsphere was asked for.
@@ -99,16 +99,16 @@ public class VsphereInventoryClient(
         }
     }
 
-    private HttpClient CreateClient(InfrastructureOptions options)
+    private HttpClient CreateClient(InfrastructureConnectionOptions options)
     {
-        var client = httpClientFactory.CreateClient(HttpClientName);
+        var client = httpClientFactory.CreateClient(InventoryHttpClients.For(HttpClientName, options));
         client.BaseAddress = new Uri(options.Url.TrimEnd('/') + "/", UriKind.Absolute);
         return client;
     }
 
     #region Session
 
-    private static async Task<string> CreateSessionAsync(HttpClient client, InfrastructureOptions options, CancellationToken cancellationToken)
+    private static async Task<string> CreateSessionAsync(HttpClient client, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, SessionPath);
         var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{options.Username}:{options.Password}"));
@@ -181,7 +181,7 @@ public class VsphereInventoryClient(
     #region Categories
 
     private async Task<InventoryCategoryResult> ReadVmTemplatesAsync(
-        HttpClient client, string sessionToken, InfrastructureOptions options, CancellationToken cancellationToken)
+        HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         return await ReadCategoryAsync<VsphereVm>(client, sessionToken, VmPath, "VM templates", options, cancellationToken, vms =>
         {
@@ -224,7 +224,7 @@ public class VsphereInventoryClient(
     }
 
     private async Task<InventoryCategoryResult> ReadNetworksAsync(
-        HttpClient client, string sessionToken, InfrastructureOptions options, CancellationToken cancellationToken)
+        HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         return await ReadCategoryAsync<VsphereNetwork>(client, sessionToken, NetworkPath, "networks", options, cancellationToken, networks =>
         {
@@ -250,7 +250,7 @@ public class VsphereInventoryClient(
     }
 
     private async Task<InventoryCategoryResult> ReadDatastoresAsync(
-        HttpClient client, string sessionToken, InfrastructureOptions options, CancellationToken cancellationToken)
+        HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         return await ReadCategoryAsync<VsphereDatastore>(client, sessionToken, DatastorePath, "datastores", options, cancellationToken, datastores =>
         {
@@ -282,7 +282,7 @@ public class VsphereInventoryClient(
         string sessionToken,
         string path,
         string description,
-        InfrastructureOptions options,
+        InfrastructureConnectionOptions options,
         CancellationToken cancellationToken,
         Func<T[], InventoryCategoryResult> project)
     {
@@ -341,7 +341,7 @@ public class VsphereInventoryClient(
         }
     }
 
-    private static string Redact(string message, InfrastructureOptions options) =>
+    private static string Redact(string message, InfrastructureConnectionOptions options) =>
         InventoryRedaction.Redact(message, options);
 
     #endregion

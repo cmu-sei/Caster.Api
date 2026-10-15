@@ -20,7 +20,7 @@ public static class InventoryRedaction
     /// <see cref="Mask"/>. <paramref name="extraSecrets"/> covers values that only
     /// exist for the duration of a read, such as a Proxmox auth ticket.
     /// </summary>
-    public static string Redact(string message, InfrastructureOptions options, params string[] extraSecrets)
+    public static string Redact(string message, InfrastructureConnectionOptions options, params string[] extraSecrets)
     {
         if (string.IsNullOrEmpty(message))
             return message;
@@ -33,7 +33,7 @@ public static class InventoryRedaction
         return message;
     }
 
-    private static IEnumerable<string> Secrets(InfrastructureOptions options, string[] extraSecrets)
+    private static IEnumerable<string> Secrets(InfrastructureConnectionOptions options, string[] extraSecrets)
     {
         if (!string.IsNullOrEmpty(options?.Password))
         {
