@@ -576,6 +576,8 @@ public class ProxmoxInventoryClient(
                 AddIfPresent(properties, "cidr", iface.Cidr);
                 AddIfPresent(properties, "bridgePorts", iface.BridgePorts);
                 AddIfPresent(properties, "active", iface.Active?.ToString(CultureInfo.InvariantCulture));
+                // The bridge's Comment in Proxmox, usually the only human readable name it has.
+                AddIfPresent(properties, "comment", iface.Comments?.Trim());
 
                 entries[iface.Iface] = new InventoryEntry
                 {
@@ -943,6 +945,12 @@ public class ProxmoxInventoryClient(
 
         [JsonPropertyName("active")]
         public int? Active { get; set; }
+
+        /// <summary>
+        /// The Comment field, stored by Proxmox with a trailing newline.
+        /// </summary>
+        [JsonPropertyName("comments")]
+        public string Comments { get; set; }
     }
 
     /// <summary>

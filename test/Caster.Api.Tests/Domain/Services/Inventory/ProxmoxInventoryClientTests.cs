@@ -79,7 +79,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         /// </summary>
         private const string NetworkBody = """
         { "data": [
-          { "iface": "vmbr0", "type": "bridge", "cidr": "10.0.100.2/24", "bridge_ports": "nic0", "active": 1, "address": "10.0.100.2", "gateway": "10.0.100.1" },
+          { "iface": "vmbr0", "type": "bridge", "cidr": "10.0.100.2/24", "bridge_ports": "nic0", "active": 1, "address": "10.0.100.2", "gateway": "10.0.100.1", "comments": "Exercise LAN\n" },
           { "iface": "nic0", "type": "eth", "active": 1 }
         ] }
         """;
@@ -444,6 +444,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal("nic0", bridge.Properties["bridgePorts"]);
             Assert.Equal("1", bridge.Properties["active"]);
             Assert.Equal("pve", bridge.Properties["nodes"]);
+            Assert.Equal("Exercise LAN", bridge.Properties["comment"]);
         }
 
         [Fact]
