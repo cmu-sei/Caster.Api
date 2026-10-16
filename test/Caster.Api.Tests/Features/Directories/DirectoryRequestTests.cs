@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Text;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
@@ -1017,6 +1018,34 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         var response = await Client(actor).PostAsync(ImportUrl(directory), ArchiveHelper.Zip(ImportedFileName, ImportedContent), Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal(ImportedContent, await StoredContent(directory.Id, ImportedFileName));
+    }
+
+    /// <summary>
+    /// A zip compressed in macOS Finder carries __MACOSX and .DS_Store files whose NUL bytes the
+    /// database refused, failing the whole import with a 500. They are now left out, and any other
+    /// binary file is left out with a warning.
+    /// </summary>
+    [Fact]
+    public async Task Import_of_a_Finder_compressed_zip_stores_only_its_text_files()
+    {
+        var (_, directory) = await SeedDirectory();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var archive = ArchiveHelper.Zip(
+            (ImportedFileName, Encoding.UTF8.GetBytes(ImportedContent)),
+            (".DS_Store", new byte[] { 0x00, 0x00, 0x00, 0x01, 0x42, 0x75, 0x64, 0x31 }),
+            ("__MACOSX/._" + ImportedFileName, new byte[] { 0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00 }),
+            ("diagram.png", new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00 }));
+
+        var response = await Client(actor).PostAsync(ImportUrl(directory), archive, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal(["'diagram.png' is a binary file and was not imported."], (await ReadAsync<ImportResultView>(response)).Warnings);
+
+        await using var context = NewContext();
+        Assert.Equal([ImportedFileName], await context.Files.Where(x => x.DirectoryId == directory.Id).Select(x => x.Name).ToListAsync(Ct));
+        Assert.False(await context.Directories.AnyAsync(x => x.ParentId == directory.Id, Ct));
         Assert.Equal(ImportedContent, await StoredContent(directory.Id, ImportedFileName));
     }
 

@@ -526,6 +526,84 @@ namespace Caster.Api.Tests.Domain.Services
 
         #endregion
 
+        #region Foreign Files
+
+        /// <summary>The start of an AppleDouble file, which macOS writes for a file's metadata.</summary>
+        private static readonly byte[] AppleDoubleContent = [0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00];
+
+        /// <summary>The start of a .DS_Store file.</summary>
+        private static readonly byte[] DsStoreContent = [0x00, 0x00, 0x00, 0x01, 0x42, 0x75, 0x64, 0x31];
+
+        /// <summary>
+        /// A folder compressed in macOS Finder carries a __MACOSX folder of AppleDouble files and
+        /// any .DS_Store files. None of it is the user's content, and its NUL bytes failed the
+        /// entire Import when the database refused to store them.
+        /// </summary>
+        [Fact]
+        public void A_Finder_Compressed_Archive_Imports_Only_Its_Content()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var stream = BuildZip(
+                ("mactest/", []),
+                ("mactest/main.tf", Encoding.UTF8.GetBytes(AsciiContent)),
+                ("mactest/.DS_Store", DsStoreContent),
+                ("__MACOSX/", []),
+                ("__MACOSX/mactest/", []),
+                ("__MACOSX/mactest/._main.tf", AppleDoubleContent));
+
+            var extracted = service.ExtractDirectory(stream, "mactest.zip");
+
+            var child = Assert.Single(extracted.Entity.Children);
+            Assert.Equal("mactest", child.Name);
+            Assert.Equal("main.tf", Assert.Single(child.Files).Name);
+            Assert.Empty(extracted.Entity.Files);
+            Assert.Empty(extracted.Warnings);
+        }
+
+        /// <summary>
+        /// macOS tar writes each AppleDouble file next to the file it describes rather than
+        /// under __MACOSX. Text content is not what identifies them, so it is ignored too.
+        /// </summary>
+        [Fact]
+        public void AppleDouble_Files_Beside_Their_Originals_Are_Not_Imported()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var stream = BuildZip(
+                ("main.tf", Encoding.UTF8.GetBytes(AsciiContent)),
+                ("._main.tf", Encoding.UTF8.GetBytes("text")),
+                ("__Workspaces__/default/workspace.tf", Encoding.UTF8.GetBytes(AsciiContent)),
+                ("__Workspaces__/default/._workspace.tf", AppleDoubleContent),
+                ("__Workspaces__/default/.DS_Store", Encoding.UTF8.GetBytes("text")));
+
+            var extracted = service.ExtractDirectory(stream, "Infrastructure.zip");
+
+            Assert.Equal("main.tf", Assert.Single(extracted.Entity.Files).Name);
+            Assert.Equal("workspace.tf", Assert.Single(Assert.Single(extracted.Entity.Workspaces).Files).Name);
+            Assert.Empty(extracted.Warnings);
+        }
+
+        /// <summary>
+        /// Any other binary file is skipped and reported, rather than failing the Import.
+        /// </summary>
+        [Fact]
+        public void A_Binary_File_Is_Skipped_With_A_Warning()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var stream = BuildZip(
+                ("Infrastructure/main.tf", Encoding.UTF8.GetBytes(AsciiContent)),
+                ("Infrastructure/diagram.png", [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00]));
+
+            var extracted = service.ExtractProject(stream, "upload.zip");
+
+            Assert.Equal("main.tf", Assert.Single(SingleDirectory(extracted.Entity).Files).Name);
+            Assert.Equal(["'Infrastructure/diagram.png' is a binary file and was not imported."], extracted.Warnings);
+        }
+
+        #endregion
+
         /// <summary>The entries of a tar.gz archive as its headers declare them, read to the end.</summary>
         private static List<TarEntry> TarEntries(Stream archive)
         {
