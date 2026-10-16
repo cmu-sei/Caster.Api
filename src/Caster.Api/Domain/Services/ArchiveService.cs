@@ -19,8 +19,18 @@ namespace Caster.Api.Domain.Services
 {
     public interface IArchiveService
     {
-        Task<ArchiveResult> ArchiveProject(Project project, ArchiveType type, bool includeIds, bool includeSettings);
-        Task<ArchiveResult> ArchiveDirectory(Directory directory, ArchiveType type, bool includeIds, bool includeSettings);
+        Task<ArchiveResult> ArchiveProject(Project project, ArchiveType type, bool includeIds, bool includeSettings, DiskManifest diskManifest = null);
+        Task<ArchiveResult> ArchiveDirectory(Directory directory, ArchiveType type, bool includeIds, bool includeSettings, DiskManifest diskManifest = null);
+
+        /// <summary>
+        /// The Files an archive of the Project would contain, by their path within it.
+        /// </summary>
+        IReadOnlyList<ArchiveFileEntry> ListFiles(Project project, bool includeIds);
+
+        /// <summary>
+        /// The Files an archive of the Directory would contain, by their path within it.
+        /// </summary>
+        IReadOnlyList<ArchiveFileEntry> ListFiles(Directory directory, bool includeIds);
         ArchiveExtractResult<Directory> ExtractDirectory(System.IO.Stream stream, string filename);
         ArchiveExtractResult<Project> ExtractProject(System.IO.Stream stream, string filename);
     }
@@ -42,6 +52,11 @@ namespace Caster.Api.Domain.Services
         /// The single manifest entry carrying Directory and Workspace settings.
         /// </summary>
         public const string ManifestEntryName = ReservedEntryName + "/manifest.json";
+
+        /// <summary>
+        /// The VM templates and ISOs the archive's Terraform refers to, when requested.
+        /// </summary>
+        public const string DiskManifestEntryName = ReservedEntryName + "/disks.json";
 
         /// <summary>
         /// File content is stored as text. Reading and writing must agree on an encoding or
@@ -67,7 +82,7 @@ namespace Caster.Api.Domain.Services
         /// Archive a Project.
         /// Assumes all Directories are fully populated with Files, Workspaces, and child Directories
         /// </summary>
-        public async Task<ArchiveResult> ArchiveProject(Project project, ArchiveType type, bool includeIds, bool includeSettings)
+        public async Task<ArchiveResult> ArchiveProject(Project project, ArchiveType type, bool includeIds, bool includeSettings, DiskManifest diskManifest = null)
         {
             var stream = new System.IO.MemoryStream();
 
@@ -81,6 +96,7 @@ namespace Caster.Api.Domain.Services
                 }
 
                 await WriteManifest(archiveStream, manifest);
+                await WriteDiskManifest(archiveStream, diskManifest);
             }
 
             stream.Position = 0;
@@ -97,7 +113,7 @@ namespace Caster.Api.Domain.Services
         /// Archive a Directory.
         /// Assumes the Directory is fully populated with Files, Workspaces, and child Directories
         /// </summary>
-        public async Task<ArchiveResult> ArchiveDirectory(Directory directory, ArchiveType type, bool includeIds, bool includeSettings)
+        public async Task<ArchiveResult> ArchiveDirectory(Directory directory, ArchiveType type, bool includeIds, bool includeSettings, DiskManifest diskManifest = null)
         {
             var stream = new System.IO.MemoryStream();
 
@@ -108,6 +124,7 @@ namespace Caster.Api.Domain.Services
                 await ArchiveDirectory(directory, "", archiveStream, includeIds, includeDirName: false, manifest);
 
                 await WriteManifest(archiveStream, manifest);
+                await WriteDiskManifest(archiveStream, diskManifest);
             }
 
             stream.Position = 0;
@@ -125,8 +142,7 @@ namespace Caster.Api.Domain.Services
             // When the Directory's own name is not part of the path, the ancestors are the whole
             // path. Appending a separator anyway produced entry names rooted at "/", which some
             // extractors treat as absolute.
-            var name = includeDirName ? directory.GetExportName(includeIds) : string.Empty;
-            var rootPath = name.Length == 0 ? ancestors : $"{ancestors}{name}/";
+            var rootPath = RootPath(directory, ancestors, includeIds, includeDirName);
 
             if (manifest != null)
             {
@@ -146,7 +162,7 @@ namespace Caster.Api.Domain.Services
 
             foreach (var workspace in directory.Workspaces)
             {
-                var path = $"{rootPath}{WorkspacesEntryName}/{workspace.Name}/";
+                var path = WorkspacePath(rootPath, workspace);
 
                 if (manifest != null)
                 {
@@ -197,6 +213,72 @@ namespace Caster.Api.Domain.Services
                     Name = sourceName
                 }
             };
+        }
+
+        private static string RootPath(Directory directory, string ancestors, bool includeIds, bool includeDirName)
+        {
+            var name = includeDirName ? directory.GetExportName(includeIds) : string.Empty;
+            return name.Length == 0 ? ancestors : $"{ancestors}{name}/";
+        }
+
+        private static string WorkspacePath(string rootPath, Workspace workspace) =>
+            $"{rootPath}{WorkspacesEntryName}/{workspace.Name}/";
+
+        public IReadOnlyList<ArchiveFileEntry> ListFiles(Project project, bool includeIds)
+        {
+            var files = new List<ArchiveFileEntry>();
+
+            foreach (var directory in project.Directories.Where(d => d.ParentId == null))
+            {
+                ListFiles(directory, "", includeIds, includeDirName: true, files);
+            }
+
+            return files;
+        }
+
+        public IReadOnlyList<ArchiveFileEntry> ListFiles(Directory directory, bool includeIds)
+        {
+            var files = new List<ArchiveFileEntry>();
+            ListFiles(directory, "", includeIds, includeDirName: false, files);
+            return files;
+        }
+
+        /// <summary>
+        /// Walks the tree the same way the archive is written, so the paths agree with its entries.
+        /// </summary>
+        private static void ListFiles(Directory directory, string ancestors, bool includeIds, bool includeDirName, List<ArchiveFileEntry> files)
+        {
+            var rootPath = RootPath(directory, ancestors, includeIds, includeDirName);
+
+            foreach (var file in directory.Files.Where(f => f.WorkspaceId == null))
+            {
+                files.Add(new ArchiveFileEntry($"{rootPath}{file.Name}", file.Content));
+            }
+
+            foreach (var workspace in directory.Workspaces)
+            {
+                var path = WorkspacePath(rootPath, workspace);
+
+                foreach (var file in workspace.Files)
+                {
+                    files.Add(new ArchiveFileEntry($"{path}{file.Name}", file.Content));
+                }
+            }
+
+            foreach (var dir in directory.Children)
+            {
+                ListFiles(dir, rootPath, includeIds, true, files);
+            }
+        }
+
+        private static async Task WriteDiskManifest(ArchiveOutputStream archiveStream, DiskManifest diskManifest)
+        {
+            if (diskManifest == null)
+            {
+                return;
+            }
+
+            await WriteEntry(archiveStream, DiskManifestEntryName, JsonSerializer.Serialize(diskManifest, ManifestJsonOptions));
         }
 
         private static async Task WriteManifest(ArchiveOutputStream archiveStream, ArchiveManifest manifest)
@@ -268,6 +350,11 @@ namespace Caster.Api.Domain.Services
                         {
                             result.Manifest = this.ReadManifest(archiveInputStream, result);
                         }
+                        else if (archiveEntry.IsFile &&
+                            string.Join('/', pathParts).Equals(DiskManifestEntryName, StringComparison.Ordinal))
+                        {
+                            result.DiskManifest = this.ReadDiskManifest(archiveInputStream, result);
+                        }
 
                         continue;
                     }
@@ -306,6 +393,24 @@ namespace Caster.Api.Domain.Services
                 // An unreadable manifest must not fail the Import. The archive still carries
                 // all of the structure and file content it did before manifests existed.
                 result.Warnings.Add("The archive contains a settings manifest that could not be read. Settings were not restored.");
+                return null;
+            }
+        }
+
+        private DiskManifest ReadDiskManifest(ArchiveInputStream archiveInputStream, ArchiveExtractResult result)
+        {
+            try
+            {
+                using var contentStream = new System.IO.MemoryStream();
+                StreamUtils.Copy(archiveInputStream.Stream, contentStream, new byte[4096]);
+
+                return JsonSerializer.Deserialize<DiskManifest>(
+                    Utf8.GetString(contentStream.ToArray()),
+                    ManifestJsonOptions);
+            }
+            catch (Exception ex) when (ex is JsonException || ex is NotSupportedException)
+            {
+                result.Warnings.Add("The archive contains a disk manifest that could not be read. Its VM templates and ISOs were not checked.");
                 return null;
             }
         }

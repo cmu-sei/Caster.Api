@@ -252,6 +252,7 @@ namespace Caster.Api
             services.AddSingleton<InventoryService>();
             services.AddSingleton<IInventoryService>(x => x.GetService<InventoryService>());
             services.AddSingleton<IHostedService>(x => x.GetService<InventoryService>());
+            services.AddSingleton<IDiskManifestService, DiskManifestService>();
 
             services.AddScoped<IGetFileQuery, GetFileQuery>();
 
