@@ -37,6 +37,19 @@ namespace Caster.Api.Features.Workspaces
         }
 
         /// <summary>
+        /// Get the machines and networks of a Workspace's most recent plan
+        /// </summary>
+        /// <param name="id">The Id of the Workspace</param>
+        [HttpGet("workspaces/{id}/topology")]
+        [ProducesResponseType(typeof(WorkspaceTopology), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetWorkspaceTopology")]
+        public async Task<IActionResult> GetTopology([FromRoute] Guid id)
+        {
+            var result = await this._mediator.Send(new GetTopology.Query { Id = id });
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Get all Workspaces
         /// </summary>
         [HttpGet("workspaces")]
