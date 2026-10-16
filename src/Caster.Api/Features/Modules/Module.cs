@@ -28,6 +28,12 @@ namespace Caster.Api.Features.Modules
         public List<ModuleVersion> Versions { get; set; }
         public DateTime? DateModified { get; set; }
         public int? VersionsCount { get; set; }
+
+        /// <summary>
+        /// The name of the highest version, the one Designer offers first. Null unless
+        /// requested, or if the Module has no versions.
+        /// </summary>
+        public string LatestVersion { get; set; }
     }
 
     public class ModuleVersion

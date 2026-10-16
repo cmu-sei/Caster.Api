@@ -13,6 +13,7 @@ using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Services.Modules;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
@@ -49,6 +50,12 @@ namespace Caster.Api.Features.Modules
             /// </summary>
             [DataMember]
             public Guid? DesignId { get; set; }
+
+            /// <summary>
+            /// Whether or not to retrieve the name of the highest version.
+            /// </summary>
+            [DataMember]
+            public bool IncludeLatestVersion { get; set; }
         }
 
         public class Handler(
@@ -119,7 +126,37 @@ namespace Caster.Api.Features.Modules
                     module.Versions = Domain.Models.ModuleVersionOrder.HighestFirst(module.Versions, v => v.Name, v => v.DateCreated);
                 }
 
+                if (request.IncludeLatestVersion)
+                {
+                    await SetLatestVersions(modules, cancellationToken);
+                }
+
                 return modules;
+            }
+
+            /// <summary>
+            /// Versions are ordered by parsing their names, which the database cannot do, so
+            /// only the names and dates are read and the highest is picked here.
+            /// </summary>
+            private async Task SetLatestVersions(Module[] modules, CancellationToken cancellationToken)
+            {
+                var ids = modules.Select(m => m.Id).ToArray();
+
+                var versions = await dbContext.ModuleVersions
+                    .Where(v => ids.Contains(v.ModuleId))
+                    .Select(v => new { v.ModuleId, v.Name, v.DateCreated })
+                    .ToListAsync(cancellationToken);
+
+                var latest = versions
+                    .GroupBy(v => v.ModuleId)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => Domain.Models.ModuleVersionOrder.HighestFirst(g, v => v.Name, v => v.DateCreated)[0].Name);
+
+                foreach (var module in modules)
+                {
+                    module.LatestVersion = latest.GetValueOrDefault(module.Id);
+                }
             }
         }
     }

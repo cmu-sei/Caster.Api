@@ -194,6 +194,38 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
         Assert.Null(Assert.Single(await ReadAsync<ModuleView[]>(response), x => x.Id == module.Id).Versions);
     }
 
+    /// <summary>
+    /// The latest version is the highest by version number, not by name or import order, and a
+    /// module with no versions has none.
+    /// </summary>
+    [Fact]
+    public async Task GetAll_with_includeLatestVersion_names_each_modules_highest_version()
+    {
+        var module = TestData.Module();
+        var empty = TestData.Module();
+        await Seed(
+            module,
+            empty,
+            TestData.ModuleVersion(module, "v1.10.0"),
+            TestData.ModuleVersion(module, "v1.2.0"),
+            TestData.ModuleVersion(module, "main"));
+
+        var modules = await ReadAsync<ModuleView[]>(await RootClient.GetAsync("api/modules?includeLatestVersion=true", Ct));
+
+        Assert.Equal("v1.10.0", Assert.Single(modules, x => x.Id == module.Id).LatestVersion);
+        Assert.Null(Assert.Single(modules, x => x.Id == empty.Id).LatestVersion);
+    }
+
+    [Fact]
+    public async Task GetAll_without_includeLatestVersion_leaves_it_out()
+    {
+        var (module, _) = await SeedModule();
+
+        var modules = await ReadAsync<ModuleView[]>(await RootClient.GetAsync("api/modules", Ct));
+
+        Assert.Null(Assert.Single(modules, x => x.Id == module.Id).LatestVersion);
+    }
+
     /// <summary>Listing a module's versions is answered with a 500.</summary>
     [Fact]
     public async Task GetVersions_answers_a_member_of_any_project_with_a_server_error()
