@@ -68,6 +68,41 @@ public class DesignsController : ControllerBase
     }
 
     /// <summary>
+    /// Draft a Design with AI from the module catalog
+    /// </summary>
+    /// <remarks>
+    /// Nothing is saved. The planner reviews the draft, then creates it with CreateDesignFromAiDraft.
+    /// </remarks>
+    /// <param name="directoryId">ID of the Directory the Design will belong to.</param>
+    /// <param name="command"></param>
+    /// <returns></returns>
+    [HttpPost("directories/{directoryId}/designs/ai-draft")]
+    [ProducesResponseType(typeof(AiDesignDraft), (int)HttpStatusCode.OK)]
+    [SwaggerOperation(OperationId = "DraftDesignWithAi")]
+    public async Task<IActionResult> DraftWithAi([FromRoute] Guid directoryId, [FromBody] DraftWithAi.Command command)
+    {
+        command.DirectoryId = directoryId;
+        var result = await _mediator.Send(command);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Create a disabled Design from a reviewed AI draft
+    /// </summary>
+    /// <param name="directoryId">ID of the Directory the Design will belong to.</param>
+    /// <param name="command"></param>
+    /// <returns></returns>
+    [HttpPost("directories/{directoryId}/designs/ai-draft/create")]
+    [ProducesResponseType(typeof(Design), (int)HttpStatusCode.Created)]
+    [SwaggerOperation(OperationId = "CreateDesignFromAiDraft")]
+    public async Task<IActionResult> CreateFromAiDraft([FromRoute] Guid directoryId, [FromBody] CreateFromAiDraft.Command command)
+    {
+        command.DirectoryId = directoryId;
+        var result = await _mediator.Send(command);
+        return CreatedAtAction(nameof(Get), new { id = result.Id }, result);
+    }
+
+    /// <summary>
     /// Update a Design
     /// </summary>
     /// <param name="id">Id of the Design to update</param>

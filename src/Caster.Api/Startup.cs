@@ -109,6 +109,10 @@ namespace Caster.Api
                 .Configure<FileVersionScrubOptions>(Configuration.GetSection("FileVersions"))
                     .AddScoped(config => config.GetService<IOptionsMonitor<FileVersionScrubOptions>>().CurrentValue);
 
+            services.AddOptions()
+                .Configure<AiOptions>(Configuration.GetSection("Ai"))
+                    .AddScoped(config => config.GetService<IOptionsMonitor<AiOptions>>().CurrentValue);
+
 
             services.AddMvc()
             .AddJsonOptions(options =>
@@ -218,6 +222,7 @@ namespace Caster.Api
             services.AddScoped<IGitlabRepositoryService, GitlabRepositoryService>();
             services.AddScoped<IArchiveService, ArchiveService>();
             services.AddScoped<IImportService, ImportService>();
+            services.AddScoped<IAiModelClient, BedrockAiModelClient>();
             services.AddScoped<IValidationService, ValidationService>();
             services.AddScoped<ICasterAuthorizationService, AuthorizationService>();
 
