@@ -10,6 +10,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Caster.Api.Domain.Models;
 using Caster.Api.Features.DesignModules;
+using Caster.Api.Infrastructure.Options;
 
 namespace Caster.Api.Features.Designs;
 
@@ -41,14 +42,40 @@ public class AiDraftModule
     public string ModuleVersion { get; set; }
     public string Name { get; set; }
     public string Purpose { get; set; }
+
+    /// <summary>
+    /// The hypervisor the Module builds on, or null for a Module that works on any.
+    /// </summary>
+    public string Hypervisor { get; set; }
+
+    /// <summary>
+    /// The module source the Module was synced from.
+    /// </summary>
+    public string Source { get; set; }
+
     public List<DesignModules.ModuleValue> Values { get; set; } = [];
     public string[] MissingRequiredVariables { get; set; } = [];
 }
 
 /// <summary>
 /// The version of a Module offered to the model: the highest version of each Module.
+/// Hypervisor is null for a Module that works on any.
 /// </summary>
-public record AiCatalogModule(Domain.Models.Module Module, ModuleVersion Version);
+public record AiCatalogModule(Domain.Models.Module Module, ModuleVersion Version, string Source = null, string Hypervisor = null);
+
+/// <summary>
+/// What the draft dialog needs to know before it asks for a prompt.
+/// </summary>
+public class AiDesignDraftOptions
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// The hypervisors Terraform runs have an endpoint for. With more than one, the planner
+    /// picks which the draft targets; with none, every Module is offered.
+    /// </summary>
+    public string[] ConfiguredHypervisors { get; set; } = [];
+}
 
 /// <summary>
 /// Builds the prompt and tool schema for drafting a Design, and checks the model's answer
@@ -64,7 +91,69 @@ public static class AiDesignDraftBuilder
     private static readonly Regex BareModuleReference = new(@"^module\.[a-zA-Z_][a-zA-Z0-9_-]*\.[a-zA-Z_][a-zA-Z0-9_-]*$");
     private static readonly Regex TerraformName = new(DesignModuleValidation.TerraformNamePattern);
 
-    public static string BuildSystemPrompt(IReadOnlyList<AiCatalogModule> catalog)
+    /// <summary>
+    /// The hypervisors a draft targets: the requested ones, or every configured one when
+    /// none is requested. Null means any, when the server has no hypervisor endpoint and
+    /// nothing was requested.
+    /// </summary>
+    public static string[] ResolveHypervisors(IReadOnlyList<string> configured, IReadOnlyList<string> requested, List<string> warnings)
+    {
+        var wanted = (requested ?? [])
+            .Select(r => Hypervisors.All.FirstOrDefault(h => string.Equals(h, r?.Trim(), StringComparison.OrdinalIgnoreCase)))
+            .Where(h => h != null)
+            .Distinct()
+            .ToArray();
+
+        if (configured == null || configured.Count == 0)
+        {
+            warnings.Add("No hypervisor endpoint (PROXMOX_VE_ENDPOINT or VSPHERE_SERVER) is configured for Terraform runs, " +
+                (wanted.Length > 0 ? "so the draft may target a hypervisor this server cannot build on." : "so modules for every hypervisor were offered."));
+            return wanted.Length > 0 ? wanted : null;
+        }
+
+        var unconfigured = wanted.Except(configured).ToArray();
+        if (unconfigured.Length > 0)
+            throw new Infrastructure.Exceptions.ConflictException(
+                $"{string.Join(" and ", unconfigured)} is not configured for Terraform runs on this server.");
+
+        return wanted.Length > 0 ? wanted : configured.ToArray();
+    }
+
+    /// <summary>
+    /// The highest version of each Module that Terraform runs can download and that builds
+    /// on one of the target hypervisors, or on any. A Module's source is the configured
+    /// source its Path starts with; one that matches none came from the fallback source.
+    /// </summary>
+    public static List<AiCatalogModule> SelectCatalog(
+        IEnumerable<Domain.Models.Module> modules,
+        IReadOnlyList<ModuleSourceOptions> sources,
+        string fallbackSource,
+        IReadOnlyList<string> hypervisors)
+    {
+        var named = (sources ?? [])
+            .Where(s => s != null && !string.IsNullOrWhiteSpace(s.Name))
+            .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var catalog = new List<AiCatalogModule>();
+        foreach (var module in modules.Where(m => m.Versions.Count > 0).OrderBy(m => m.Name))
+        {
+            var firstSegment = (module.Path ?? "").Split('/', 2)[0];
+            var source = named.GetValueOrDefault(firstSegment);
+            if (source != null && !source.AvailableToRuns)
+                continue;
+
+            var version = ModuleVersionOrder.HighestFirst(module.Versions).First();
+            var hypervisor = Hypervisors.ForProviders(version.Providers);
+            if (hypervisor != null && hypervisors != null && !hypervisors.Contains(hypervisor))
+                continue;
+
+            catalog.Add(new AiCatalogModule(module, version, source?.Name ?? fallbackSource, hypervisor));
+        }
+        return catalog;
+    }
+
+    public static string BuildSystemPrompt(IReadOnlyList<AiCatalogModule> catalog, IReadOnlyList<string> hypervisors = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You design Terraform topologies for Caster, the infrastructure tool of the Crucible cyber range.");
@@ -79,12 +168,22 @@ public static class AiDesignDraftBuilder
         sb.AppendLine("- For any other type, give an HCL expression: 2, true, [\"a\", \"b\"], { key = \"value\" }, or module.<name>.<output> directly.");
         sb.AppendLine("- Only reference outputs listed for a module you include, and never a module's own outputs.");
         sb.AppendLine("- Prefer the fewest modules that meet the request. Say in the summary what the planner still has to decide.");
+        if (hypervisors?.Count == 1)
+        {
+            sb.AppendLine($"- The design builds on {hypervisors[0]}. Every catalog module either targets it or works on any hypervisor.");
+        }
+        else if (hypervisors?.Count > 1)
+        {
+            sb.AppendLine($"- The design spans {string.Join(" and ", hypervisors)}. Each module is marked with the hypervisor it builds on.");
+            sb.AppendLine("  A machine can only attach to networks and other resources on its own hypervisor, so never pass one hypervisor's module output to a module on another.");
+            sb.AppendLine("  Give each hypervisor its own networks. Say in the summary which machines run where, and that the two sides only reach each other over a link the planner provides, such as a shared VLAN or a router.");
+        }
         sb.AppendLine();
         sb.AppendLine("Catalog:");
         foreach (var entry in catalog)
         {
             sb.AppendLine();
-            sb.AppendLine($"## {entry.Module.Name} (moduleId {entry.Module.Id}, version {entry.Version.Name})");
+            sb.AppendLine($"## {entry.Module.Name} (moduleId {entry.Module.Id}, version {entry.Version.Name}, hypervisor {entry.Hypervisor ?? "any"})");
             if (!string.IsNullOrWhiteSpace(entry.Module.Description))
                 sb.AppendLine(entry.Module.Description.Trim());
             sb.AppendLine("Variables:");
@@ -248,6 +347,8 @@ public static class AiDesignDraftBuilder
                 ModuleVersion = entry.Version.Name,
                 Name = name,
                 Purpose = GetString(item, "purpose"),
+                Hypervisor = entry.Hypervisor,
+                Source = entry.Source,
                 Values = values.Select(v => new DesignModules.ModuleValue(v)).ToList(),
                 MissingRequiredVariables = missing
             }, entry.Version, values));
@@ -257,6 +358,7 @@ public static class AiDesignDraftBuilder
             draft.Warnings.Add("The draft has no modules from the catalog.");
 
         draft.Warnings.AddRange(ReferenceProblems(kept.Select(k => (k.Draft.Name, k.Version, (IEnumerable<Domain.Models.ModuleValue>)k.Values))));
+        draft.Warnings.AddRange(HypervisorProblems(kept.Select(k => (k.Draft.Name, k.Draft.Hypervisor, (IEnumerable<Domain.Models.ModuleValue>)k.Values))));
         draft.Modules = kept.Select(k => k.Draft).ToList();
         draft.Snippet = string.Join("\n\n", kept.Select(k => k.Version.ToSnippet(k.Draft.Name, k.Values)));
         return draft;
@@ -321,6 +423,36 @@ public static class AiDesignDraftBuilder
                 break;
         }
 
+        return problems;
+    }
+
+    /// <summary>
+    /// A module.X.Y reference between Modules on two different hypervisors, which Terraform
+    /// may plan but the hypervisor cannot honor (a vSphere VM on a Proxmox bridge).
+    /// A Module that works on any hypervisor may reference and be referenced by either.
+    /// </summary>
+    public static List<string> HypervisorProblems(IEnumerable<(string Name, string Hypervisor, IEnumerable<Domain.Models.ModuleValue> Values)> modules)
+    {
+        var list = modules.ToList();
+        var byName = list.GroupBy(x => x.Name).ToDictionary(g => g.Key, g => g.First().Hypervisor);
+        var problems = new List<string>();
+
+        foreach (var (name, hypervisor, values) in list)
+        {
+            if (hypervisor == null)
+                continue;
+
+            foreach (var value in values ?? [])
+            {
+                foreach (Match match in ModuleReference.Matches(value.Value ?? ""))
+                {
+                    var target = match.Groups[1].Value;
+                    if (byName.TryGetValue(target, out var targetHypervisor) && targetHypervisor != null && targetHypervisor != hypervisor)
+                        problems.Add($"{name}.{value.Name} references {match.Value}, but {name} builds on {hypervisor} and '{target}' on {targetHypervisor}. " +
+                            "A machine can only use its own hypervisor's resources.");
+                }
+            }
+        }
         return problems;
     }
 

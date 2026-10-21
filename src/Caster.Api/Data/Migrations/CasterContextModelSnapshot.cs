@@ -483,6 +483,10 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("outputs");
 
+                    b.Property<string>("Providers")
+                        .HasColumnType("text")
+                        .HasColumnName("providers");
+
                     b.Property<string>("UrlLink")
                         .HasColumnType("text")
                         .HasColumnName("url_link");

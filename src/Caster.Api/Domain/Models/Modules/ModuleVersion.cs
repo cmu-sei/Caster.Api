@@ -28,6 +28,13 @@ public class ModuleVersion : IEntity
     public List<ModuleOutput> Outputs { get; set; } = new List<ModuleOutput>();
 
     /// <summary>
+    /// Provider source addresses the version declares under required_providers, such as
+    /// bpg/proxmox. Null for a version synced before Caster read them, or from a source
+    /// that cannot (the Gitlab API).
+    /// </summary>
+    public string[] Providers { get; set; }
+
+    /// <summary>
     /// Names of the required variables (those without a default) that have no value.
     /// </summary>
     public string[] MissingRequiredVariables(IEnumerable<ModuleValue> values)
@@ -104,6 +111,12 @@ public class VersionConfiguration : IEntityTypeConfiguration<ModuleVersion>
             .HasConversion(
                 v => JsonSerializer.Serialize(v, DefaultJsonSettings.Settings),
                 v => JsonSerializer.Deserialize<List<ModuleOutput>>(v, DefaultJsonSettings.Settings));
+
+        builder
+            .Property(p => p.Providers)
+            .HasConversion(
+                list => list == null ? null : string.Join('\n', list),
+                str => str == null ? null : str.Split('\n', StringSplitOptions.RemoveEmptyEntries));
 
     }
 }

@@ -68,6 +68,20 @@ public class DesignsController : ControllerBase
     }
 
     /// <summary>
+    /// Get what drafting a Design with AI needs to know: whether it is enabled, and which hypervisors Terraform runs can build on
+    /// </summary>
+    /// <param name="directoryId">ID of the Directory the Design will belong to.</param>
+    /// <returns></returns>
+    [HttpGet("directories/{directoryId}/designs/ai-draft/options")]
+    [ProducesResponseType(typeof(AiDesignDraftOptions), (int)HttpStatusCode.OK)]
+    [SwaggerOperation(OperationId = "GetAiDesignDraftOptions")]
+    public async Task<IActionResult> GetAiDraftOptions([FromRoute] Guid directoryId)
+    {
+        var result = await _mediator.Send(new GetAiDraftOptions.Query { DirectoryId = directoryId });
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Draft a Design with AI from the module catalog
     /// </summary>
     /// <remarks>

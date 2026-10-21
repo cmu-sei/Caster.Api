@@ -210,6 +210,7 @@ public class GitModuleRepositoryProvider(
                     DateCreated = dateCreated,
                     Variables = ReadVariables(root),
                     Outputs = ReadOutputs(root),
+                    Providers = TerraformProviderReader.Read(root.LocalPath),
                 });
             }
         }
@@ -436,7 +437,12 @@ public class GitModuleRepositoryProvider(
             .Distinct()
             .ToListAsync(cancellationToken);
 
-        return stored.ToHashSet(StringComparer.Ordinal).SetEquals(tags);
+        if (!stored.ToHashSet(StringComparer.Ordinal).SetEquals(tags))
+            return false;
+
+        // Versions synced before Caster read required_providers are read again once.
+        return !await db.ModuleVersions
+            .AnyAsync(v => (v.Module.Path == source.Name || v.Module.Path.StartsWith(prefix)) && v.Providers == null, cancellationToken);
     }
 
     /// <summary>

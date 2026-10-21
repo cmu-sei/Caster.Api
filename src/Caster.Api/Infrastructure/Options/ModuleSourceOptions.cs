@@ -45,6 +45,13 @@ public class ModuleSourceOptions
     public ModuleSourceLayout Layout { get; set; } = ModuleSourceLayout.Root;
 
     /// <summary>
+    /// Whether Terraform runs can download this source's Modules. Set false for a source
+    /// Caster can sync but runs cannot fetch, such as an ssh URL when the run pods have no
+    /// key. AI drafts leave its Modules out so they do not produce a Design that cannot plan.
+    /// </summary>
+    public bool AvailableToRuns { get; set; } = true;
+
+    /// <summary>
     /// A source with no name or no url is treated as absent rather than as an
     /// error, so a half-filled entry in a values file does not break startup.
     /// </summary>
