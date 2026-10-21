@@ -455,6 +455,25 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     [Fact]
+    public async Task Create_answers_an_id_that_is_already_taken_with_a_server_error()
+    {
+        var (project, directory) = await SeedDirectory();
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/directories", new { id = directory.Id, projectId = project.Id, name = "Again" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
+        await using var context = NewContext();
+        var stored = await context.Directories.SingleAsync(x => x.Id == directory.Id, Ct);
+        Assert.Equal(directory.Name, stored.Name);
+        Assert.Equal(directory.ProjectId, stored.ProjectId);
+        Assert.Equal(directory.ParentId, stored.ParentId);
+        Assert.Equal(directory.Path, stored.Path);
+        Assert.False(await context.Directories.AnyAsync(x => x.Name == "Again", Ct));
+    }
+
+    [Fact]
     public async Task Create_is_forbidden_for_a_caller_holding_only_ViewProject()
     {
         var project = await SeedProject();
