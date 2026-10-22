@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Caster.Api.Domain.Models;
+using Caster.Api.Infrastructure.Options;
 
 namespace Caster.Api.Domain.Services.Topology;
 
@@ -22,8 +23,12 @@ namespace Caster.Api.Domain.Services.Topology;
 /// configuration's <c>references</c> cannot see past. When the value is not
 /// known until apply (a vSphere port group created in the same plan), the
 /// NIC's own <c>references</c> are tried instead, within the same module.
-/// Only resource types listed in <see cref="Types"/> are drawn; everything
-/// else in the plan is ignored.
+/// Only the resource types in <see cref="Types"/>, and any added in
+/// <see cref="TopologyOptions"/>, are drawn; everything else in the plan is ignored.
+///
+/// A NIC that is a resource of its own (<c>azurerm_network_interface</c>) is
+/// followed to its network the same way, value first and then references,
+/// and is not drawn: the machine is wired straight to the network.
 ///
 /// A Proxmox NIC with a VLAN tag on a plain bridge is on a different segment
 /// from an untagged NIC on that bridge, so the tag is part of its key:
@@ -31,45 +36,160 @@ namespace Caster.Api.Domain.Services.Topology;
 /// </remarks>
 public static partial class PlanTopologyParser
 {
-    private sealed record MachineType(string Block, string Attribute, string Vlan, string[] Label, (string Name, string Path)[] Properties);
+    private static TopologyMachineType Machine(
+        string nics, string network, string vlan, string[] label = null, Dictionary<string, string> properties = null,
+        string interfaces = null) =>
+        new() { Nics = nics, Network = network, Vlan = vlan, Interfaces = interfaces, Label = label, Properties = properties ?? [] };
 
-    private sealed record NetworkType(string[] Keys, string[] Label, string Vlan = null);
+    private static TopologyNetworkType Network(string[] keys, string[] label = null, string vlan = null) =>
+        new() { Keys = keys, Label = label, Vlan = vlan };
 
-    private static readonly Dictionary<string, MachineType> Machines = new(StringComparer.Ordinal)
+    // bpg/proxmox names each resource twice: proxmox_virtual_environment_vm
+    // and, since 0.80, a short alias. The aliases are listed under both names.
+    private static readonly Dictionary<string, TopologyMachineType> BuiltInMachines = new(StringComparer.Ordinal)
     {
-        ["proxmox_virtual_environment_vm"] = new(
-            "network_device", "bridge", "vlan_id", ["name"],
-            [("cpus", "cpu.0.cores"), ("memory_mb", "memory.0.dedicated"), ("node", "node_name")]),
-        ["proxmox_vm_qemu"] = new(
-            "network", "bridge", "tag", ["name"],
-            [("cpus", "cores"), ("memory_mb", "memory"), ("node", "target_node")]),
-        ["vsphere_virtual_machine"] = new(
-            "network_interface", "network_id", null, ["name"],
-            [("cpus", "num_cpus"), ("memory_mb", "memory")]),
+        ["proxmox_virtual_environment_vm"] = Machine(
+            "network_device", "bridge", "vlan_id", properties: new()
+            {
+                ["cpus"] = "cpu.0.cores", ["memory_mb"] = "memory.0.dedicated", ["node"] = "node_name",
+            }),
+        // network is a map keyed by slot: net0, net1.
+        ["proxmox_virtual_environment_cloned_vm"] = Machine(
+            "network", "bridge", "tag", properties: new()
+            {
+                ["cpus"] = "cpu.cores", ["memory_mb"] = "memory.size", ["node"] = "node_name",
+            }),
+        // Experimental in bpg, with no NICs yet: drawn unconnected.
+        ["proxmox_virtual_environment_vm2"] = Machine(
+            null, null, null, properties: new() { ["cpus"] = "cpu.cores", ["node"] = "node_name" }),
+        ["proxmox_virtual_environment_container"] = Machine(
+            "network_interface", "bridge", "vlan_id", ["initialization.0.hostname"], new()
+            {
+                ["cpus"] = "cpu.0.cores", ["memory_mb"] = "memory.0.dedicated", ["node"] = "node_name",
+            }),
+        ["proxmox_vm_qemu"] = Machine(
+            "network", "bridge", "tag", properties: new()
+            {
+                ["cpus"] = "cores", ["memory_mb"] = "memory", ["node"] = "target_node",
+            }),
+        ["proxmox_lxc"] = Machine(
+            "network", "bridge", "tag", ["hostname"], new()
+            {
+                ["cpus"] = "cores", ["memory_mb"] = "memory", ["node"] = "target_node",
+            }),
+        ["vsphere_virtual_machine"] = Machine(
+            "network_interface", "network_id", null, properties: new()
+            {
+                ["cpus"] = "num_cpus", ["memory_mb"] = "memory",
+            }),
+        // subnet_id is the primary NIC; more are aws_network_interface resources
+        // attached from their side, which this does not follow.
+        ["aws_instance"] = Machine(
+            null, "subnet_id", null, ["tags.Name"], new() { ["instance_type"] = "instance_type" }),
+        ["azurerm_linux_virtual_machine"] = Machine(
+            null, null, null, properties: new() { ["size"] = "size", ["location"] = "location" },
+            interfaces: "network_interface_ids"),
+        ["azurerm_windows_virtual_machine"] = Machine(
+            null, null, null, properties: new() { ["size"] = "size", ["location"] = "location" },
+            interfaces: "network_interface_ids"),
+        // The original azurerm VM resource, still in older ranges.
+        ["azurerm_virtual_machine"] = Machine(
+            null, null, null, properties: new() { ["size"] = "vm_size", ["location"] = "location" },
+            interfaces: "network_interface_ids"),
     };
 
-    private static readonly Dictionary<string, NetworkType> Networks = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, TopologyNetworkType> BuiltInNetworks = new(StringComparer.Ordinal)
     {
         // A NIC's bridge is the vnet id; the alias is the readable name.
-        ["proxmox_sdn_vnet"] = new(["id"], ["alias", "id"], "tag"),
-        ["proxmox_virtual_environment_network_linux_bridge"] = new(["name"], ["name"]),
+        ["proxmox_virtual_environment_sdn_vnet"] = Network(["id"], ["alias", "id"], "tag"),
+        ["proxmox_virtual_environment_network_linux_bridge"] = Network(["name"]),
         // network_id is the managed object id: dvportgroup-123, network-202.
-        ["vsphere_distributed_port_group"] = new(["id"], ["name"], "vlan_id"),
-        ["vsphere_network"] = new(["id"], ["name"]),
+        ["vsphere_distributed_port_group"] = Network(["id"], vlan: "vlan_id"),
+        ["vsphere_network"] = Network(["id"]),
         // A host port group is never a NIC's network_id; VMs reach it through a
         // vsphere_network data source, which is folded into it below.
-        ["vsphere_host_port_group"] = new([], ["name"], "vlan_id"),
+        ["vsphere_host_port_group"] = Network([], vlan: "vlan_id"),
+        ["aws_subnet"] = Network(["id"], ["tags.Name", "cidr_block"]),
+        ["aws_default_subnet"] = Network(["id"], ["tags.Name", "cidr_block"]),
+        ["azurerm_subnet"] = Network(["id"]),
     };
 
-    /// <summary>The resource types the parser draws, for the UI's legend and the docs.</summary>
-    public static IReadOnlyCollection<string> Types => [.. Machines.Keys, .. Networks.Keys];
+    private static readonly Dictionary<string, TopologyInterfaceType> BuiltInInterfaces = new(StringComparer.Ordinal)
+    {
+        // Every IP configuration of an Azure NIC is in the same virtual
+        // network; the first names the subnet the NIC is drawn on.
+        ["azurerm_network_interface"] = new() { Keys = ["id"], Network = "ip_configuration.0.subnet_id" },
+    };
 
-    public static Models.Topology Parse(string planJson)
+    private static readonly (string Alias, string Name)[] ProxmoxAliases =
+    [
+        ("proxmox_vm", "proxmox_virtual_environment_vm2"),
+        ("proxmox_cloned_vm", "proxmox_virtual_environment_cloned_vm"),
+        ("proxmox_sdn_vnet", "proxmox_virtual_environment_sdn_vnet"),
+        ("proxmox_network_linux_bridge", "proxmox_virtual_environment_network_linux_bridge"),
+    ];
+
+    static PlanTopologyParser()
+    {
+        foreach (var (alias, name) in ProxmoxAliases)
+        {
+            if (BuiltInMachines.TryGetValue(name, out var machine))
+            {
+                BuiltInMachines[alias] = machine;
+            }
+            else
+            {
+                BuiltInNetworks[alias] = BuiltInNetworks[name];
+            }
+        }
+    }
+
+    /// <summary>The resource types drawn when <see cref="TopologyOptions"/> adds none, for the UI's legend and the docs.</summary>
+    public static IReadOnlyCollection<string> Types =>
+        [.. BuiltInMachines.Keys, .. BuiltInNetworks.Keys, .. BuiltInInterfaces.Keys];
+
+    private sealed record TypeTable(
+        Dictionary<string, TopologyMachineType> Machines,
+        Dictionary<string, TopologyNetworkType> Networks,
+        Dictionary<string, TopologyInterfaceType> Interfaces);
+
+    /// <summary>The built-in types, with any configured under the same name replacing them.</summary>
+    private static TypeTable Resolve(TopologyOptions options)
+    {
+        var machines = new Dictionary<string, TopologyMachineType>(BuiltInMachines, StringComparer.Ordinal);
+        var networks = new Dictionary<string, TopologyNetworkType>(BuiltInNetworks, StringComparer.Ordinal);
+        var interfaces = new Dictionary<string, TopologyInterfaceType>(BuiltInInterfaces, StringComparer.Ordinal);
+
+        foreach (var (name, type) in options?.Machines ?? [])
+        {
+            networks.Remove(name);
+            interfaces.Remove(name);
+            machines[name] = type;
+        }
+
+        foreach (var (name, type) in options?.Networks ?? [])
+        {
+            machines.Remove(name);
+            interfaces.Remove(name);
+            networks[name] = type;
+        }
+
+        foreach (var (name, type) in options?.Interfaces ?? [])
+        {
+            machines.Remove(name);
+            networks.Remove(name);
+            interfaces[name] = type;
+        }
+
+        return new TypeTable(machines, networks, interfaces);
+    }
+
+    public static Models.Topology Parse(string planJson, TopologyOptions options = null)
     {
         using var document = JsonDocument.Parse(planJson);
         var root = document.RootElement;
 
-        return Build(ReadInstances(root), ReadConfiguration(root));
+        return Build(ReadInstances(root), ReadConfiguration(root), Resolve(options));
     }
 
     /// <summary>
@@ -81,22 +201,25 @@ public static partial class PlanTopologyParser
     /// A state file has no configuration, so a NIC is matched by value only.
     /// After an apply every value is known, so nothing needs the references.
     /// </remarks>
-    public static Models.Topology ParseState(string stateJson)
+    public static Models.Topology ParseState(string stateJson, TopologyOptions options = null)
     {
         using var document = JsonDocument.Parse(stateJson);
 
-        return Build(ReadStateFile(document.RootElement), []);
+        return Build(ReadStateFile(document.RootElement), [], Resolve(options));
     }
 
-    private static Models.Topology Build(Dictionary<string, Instance> instances, Dictionary<string, JsonElement> configuration)
+    private static Models.Topology Build(
+        Dictionary<string, Instance> instances,
+        Dictionary<string, JsonElement> configuration,
+        TypeTable types)
     {
         var topology = new Models.Topology();
         var networkByKey = new Dictionary<string, string>(StringComparer.Ordinal);
         var networks = new List<Instance>();
 
-        foreach (var instance in instances.Values.Where(x => Networks.ContainsKey(x.Type)))
+        foreach (var instance in instances.Values.Where(x => types.Networks.ContainsKey(x.Type)))
         {
-            var type = Networks[instance.Type];
+            var type = types.Networks[instance.Type];
 
             networks.Add(instance);
             var network = new TopologyNode
@@ -104,7 +227,7 @@ public static partial class PlanTopologyParser
                 Id = instance.Address,
                 Kind = TopologyNodeKind.Network,
                 Type = instance.Type,
-                Label = FirstString(instance.Values, type.Label) ?? instance.Name,
+                Label = FirstString(instance.Values, type.Label ?? ["name"]) ?? instance.Name,
                 Module = instance.Module,
                 Action = instance.Action,
             };
@@ -116,9 +239,9 @@ public static partial class PlanTopologyParser
 
             topology.Nodes.Add(network);
 
-            foreach (var key in type.Keys)
+            foreach (var key in type.Keys ?? [])
             {
-                var value = GetString(instance.Values, key);
+                var value = GetScalar(instance.Values, key);
 
                 if (!string.IsNullOrEmpty(value))
                 {
@@ -129,22 +252,40 @@ public static partial class PlanTopologyParser
 
         var aliases = FoldNetworkDataSources(networks, configuration, topology);
 
+        var interfaces = instances.Values.Where(x => types.Interfaces.ContainsKey(x.Type)).ToList();
+        var interfaceByKey = new Dictionary<string, Instance>(StringComparer.Ordinal);
+
+        foreach (var instance in interfaces)
+        {
+            foreach (var key in types.Interfaces[instance.Type].Keys ?? [])
+            {
+                var value = GetScalar(instance.Values, key);
+
+                if (!string.IsNullOrEmpty(value))
+                {
+                    interfaceByKey.TryAdd(value, instance);
+                }
+            }
+        }
+
+        var machines = new List<(Instance Instance, TopologyNode Node)>();
+
         // A machine data source is a template lookup, not a machine in the
         // topology. Networks are different: vsphere_network only exists as one.
-        foreach (var instance in instances.Values.Where(x => x.Mode == "managed" && Machines.ContainsKey(x.Type)))
+        foreach (var instance in instances.Values.Where(x => x.Mode == "managed" && types.Machines.ContainsKey(x.Type)))
         {
-            var type = Machines[instance.Type];
+            var type = types.Machines[instance.Type];
             var node = new TopologyNode
             {
                 Id = instance.Address,
                 Kind = TopologyNodeKind.Machine,
                 Type = instance.Type,
-                Label = FirstString(instance.Values, type.Label) ?? instance.Name,
+                Label = FirstString(instance.Values, type.Label ?? ["name"]) ?? instance.Name,
                 Module = instance.Module,
                 Action = instance.Action,
             };
 
-            foreach (var (name, path) in type.Properties)
+            foreach (var (name, path) in type.Properties ?? [])
             {
                 var value = GetScalar(instance.Values, path);
 
@@ -155,13 +296,14 @@ public static partial class PlanTopologyParser
             }
 
             topology.Nodes.Add(node);
+            machines.Add((instance, node));
 
-            var nics = GetArray(instance.Values, type.Block);
+            var nics = Nics(instance.Values, type);
             JsonElement? expressions = configuration.TryGetValue(ConfigAddress(instance.Address), out var found) ? found : null;
 
             for (var i = 0; i < nics.Count; i++)
             {
-                var value = GetString(nics[i], type.Attribute);
+                var value = GetScalar(nics[i], type.Network);
                 var vlan = Vlan(nics[i], type.Vlan);
                 string target = null;
 
@@ -193,11 +335,192 @@ public static partial class PlanTopologyParser
                     Nic = i,
                 });
             }
+
+            var attached = Interfaces(instance, expressions, type, interfaces, interfaceByKey);
+
+            for (var i = 0; i < attached.Count; i++)
+            {
+                var target = InterfaceNetwork(attached[i], types.Interfaces[attached[i].Type], configuration, networks, networkByKey, topology);
+
+                if (target == null)
+                {
+                    continue;
+                }
+
+                topology.Edges.Add(new TopologyEdge
+                {
+                    From = instance.Address,
+                    To = aliases.GetValueOrDefault(target, target),
+                    Nic = nics.Count + i,
+                });
+            }
         }
+
+        ReadConsoles(instances, configuration, machines);
 
         topology.Nodes = [.. topology.Nodes.OrderBy(x => x.Kind).ThenBy(x => x.Id, StringComparer.Ordinal)];
 
         return topology;
+    }
+
+    private const string PlayerVm = "crucible_player_virtual_machine";
+
+    private static readonly string[] GuestInfoTeamIds = ["guestinfo.teamId", "guestinfo.team_id"];
+
+    /// <summary>
+    /// Which Player teams can open each machine's console: the teams of the
+    /// <c>crucible_player_virtual_machine</c> records that point at it, or a
+    /// vSphere machine's own <c>guestinfo.teamId</c>, which Caster's Player
+    /// sync registers. A record is matched by VM id, else by a reference to
+    /// the machine, else by name alone. Nothing is said about any machine when
+    /// the workspace uses neither.
+    /// </summary>
+    private static void ReadConsoles(
+        Dictionary<string, Instance> instances,
+        Dictionary<string, JsonElement> configuration,
+        List<(Instance Instance, TopologyNode Node)> machines)
+    {
+        var records = instances.Values.Where(x => x.Mode == "managed" && x.Type == PlayerVm).ToList();
+        var consoles = new Dictionary<TopologyNode, TopologyConsole>();
+
+        foreach (var (instance, node) in machines)
+        {
+            if (GuestInfoTeams(instance.Values) is { } teams)
+            {
+                consoles[node] = new TopologyConsole { TeamIds = teams, Match = TopologyConsoleMatch.Self };
+            }
+        }
+
+        if (records.Count == 0 && consoles.Count == 0)
+        {
+            return;
+        }
+
+        var byId = new Dictionary<string, TopologyNode>(StringComparer.Ordinal);
+
+        foreach (var (instance, node) in machines)
+        {
+            if (PlayerId(instance.Values) is { } id)
+            {
+                byId.TryAdd(id, node);
+            }
+        }
+
+        foreach (var record in records)
+        {
+            TopologyNode node = null;
+            var match = TopologyConsoleMatch.Id;
+
+            if (RecordId(record.Values) is { } id)
+            {
+                node = byId.GetValueOrDefault(id);
+            }
+
+            if (node == null && configuration.TryGetValue(ConfigAddress(record.Address), out var expressions))
+            {
+                match = TopologyConsoleMatch.Reference;
+                node = ReferencesAt(expressions, "proxmox_vm_info.0.id")
+                    .Concat(References(expressions, "virtual_machine_id"))
+                    .Select(reference => FindInModule(machines.Select(x => x.Instance), record.Module, reference))
+                    .Where(x => x != null)
+                    .Select(x => machines.First(m => m.Instance == x).Node)
+                    .FirstOrDefault();
+            }
+
+            if (node == null && GetScalar(record.Values, "name") is { Length: > 0 } name)
+            {
+                match = TopologyConsoleMatch.Name;
+                var named = machines.Where(x => x.Node.Label == name).ToList();
+                node = named.Count == 1 ? named[0].Node : null;
+            }
+
+            if (node == null)
+            {
+                continue;
+            }
+
+            var console = consoles.TryGetValue(node, out var found) ? found : consoles[node] = new TopologyConsole { Match = match };
+
+            // Two records for one machine: the surer match describes both.
+            if (console.Match == null || match < console.Match)
+            {
+                console.Match = match;
+            }
+
+            if (record.Values.ValueKind == JsonValueKind.Object &&
+                record.Values.TryGetProperty("team_ids", out var teamIds) &&
+                teamIds.ValueKind == JsonValueKind.Array)
+            {
+                console.TeamIds = [.. console.TeamIds.Union(teamIds.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString()))];
+            }
+            else
+            {
+                console.TeamsUnknown = true;
+            }
+        }
+
+        foreach (var (_, node) in machines)
+        {
+            node.Console = consoles.GetValueOrDefault(node) ?? new TopologyConsole();
+        }
+    }
+
+    /// <summary>A vSphere machine's teams in <c>extra_config</c>, comma-separated, as Caster's Player sync reads them.</summary>
+    private static List<string> GuestInfoTeams(JsonElement values)
+    {
+        if (values.ValueKind != JsonValueKind.Object ||
+            !values.TryGetProperty("extra_config", out var extraConfig) ||
+            extraConfig.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var teams = GuestInfoTeamIds
+            .Select(x => extraConfig.TryGetProperty(x, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null)
+            .Where(x => x != null)
+            .SelectMany(x => x.Split(','))
+            .Select(x => x.Trim())
+            .Where(x => Guid.TryParse(x, out _))
+            .Distinct()
+            .ToList();
+
+        return teams.Count > 0 ? teams : null;
+    }
+
+    /// <summary>
+    /// The VM id a Player record would use for a machine: a Proxmox VM's node
+    /// and id, or a vSphere VM's uuid. Null until apply when it isn't set.
+    /// </summary>
+    private static string PlayerId(JsonElement values)
+    {
+        var vmId = GetScalar(values, "vm_id") ?? GetScalar(values, "vmid");
+        var node = GetScalar(values, "node_name") ?? GetScalar(values, "target_node");
+
+        if (vmId != null && node != null)
+        {
+            return $"proxmox:{node}/{vmId}";
+        }
+
+        var uuid = GetScalar(values, "uuid");
+
+        return uuid == null ? null : "vm:" + uuid;
+    }
+
+    private static string RecordId(JsonElement values)
+    {
+        var vmId = GetScalar(values, "proxmox_vm_info.0.id");
+        var node = GetScalar(values, "proxmox_vm_info.0.node");
+
+        if (vmId != null && node != null)
+        {
+            return $"proxmox:{node}/{vmId}";
+        }
+
+        var id = GetScalar(values, "virtual_machine_id");
+
+        return id == null ? null : "vm:" + id;
     }
 
     /// <summary>
@@ -234,24 +557,120 @@ public static partial class PlanTopologyParser
         return aliases;
     }
 
-    private static string ResolveReference(
+    /// <summary>
+    /// The NIC resources a machine lists in <see cref="TopologyMachineType.Interfaces"/>,
+    /// in order. Their ids are not known until apply when they are created in
+    /// the same plan, so then the list's references are used: one per NIC, or
+    /// a block indexed by <c>each.key</c>, which is the machine's own key.
+    /// </summary>
+    private static List<Instance> Interfaces(
         Instance machine,
         JsonElement? expressions,
-        MachineType type,
-        int index,
-        List<Instance> networks)
+        TopologyMachineType type,
+        List<Instance> interfaces,
+        Dictionary<string, Instance> interfaceByKey)
     {
-        if (expressions == null ||
-            !expressions.Value.TryGetProperty(type.Block, out var blocks) ||
-            blocks.ValueKind != JsonValueKind.Array ||
-            blocks.GetArrayLength() <= index)
+        if (string.IsNullOrEmpty(type.Interfaces))
         {
-            // A dynamic block has one expression for all of its NICs, so it
-            // cannot say which NIC goes where.
+            return [];
+        }
+
+        var ids = GetArray(machine.Values, type.Interfaces)
+            .Where(x => x.ValueKind == JsonValueKind.String)
+            .Select(x => x.GetString())
+            .ToList();
+
+        if (ids.Count > 0)
+        {
+            return [.. ids.Select(x => interfaceByKey.GetValueOrDefault(x)).Where(x => x != null)];
+        }
+
+        if (expressions == null)
+        {
+            return [];
+        }
+
+        var references = References(expressions.Value, type.Interfaces).ToList();
+        var found = new List<Instance>();
+
+        if (references.Contains("each.key") && IndexPattern().Matches(machine.Address).LastOrDefault() is { } key &&
+            key.Index + key.Length == machine.Address.Length)
+        {
+            references = [.. references.Select(x => x + key.Value)];
+        }
+
+        foreach (var reference in references)
+        {
+            var nic = FindInModule(interfaces, machine.Module, reference);
+
+            if (nic != null && !found.Contains(nic))
+            {
+                found.Add(nic);
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>The network a NIC resource is on, by value or else by its configuration's references.</summary>
+    private static string InterfaceNetwork(
+        Instance nic,
+        TopologyInterfaceType type,
+        Dictionary<string, JsonElement> configuration,
+        List<Instance> networks,
+        Dictionary<string, string> networkByKey,
+        Models.Topology topology)
+    {
+        if (string.IsNullOrEmpty(type.Network))
+        {
             return null;
         }
 
-        return References(blocks[index], type.Attribute)
+        var value = GetScalar(nic.Values, type.Network);
+
+        if (!string.IsNullOrEmpty(value))
+        {
+            return networkByKey.TryGetValue(value, out var known) ? known : AddExternal(topology, value);
+        }
+
+        return configuration.TryGetValue(ConfigAddress(nic.Address), out var expressions)
+            ? ReferencesAt(expressions, type.Network)
+                .Select(reference => FindInModule(networks, nic.Module, reference)?.Address)
+                .FirstOrDefault(x => x != null)
+            : null;
+    }
+
+    private static string ResolveReference(
+        Instance machine,
+        JsonElement? expressions,
+        TopologyMachineType type,
+        int index,
+        List<Instance> networks)
+    {
+        JsonElement nic;
+
+        if (expressions == null)
+        {
+            return null;
+        }
+        else if (string.IsNullOrEmpty(type.Nics))
+        {
+            nic = expressions.Value;
+        }
+        else if (expressions.Value.TryGetProperty(type.Nics, out var blocks) &&
+            blocks.ValueKind == JsonValueKind.Array &&
+            blocks.GetArrayLength() > index)
+        {
+            nic = blocks[index];
+        }
+        else
+        {
+            // A dynamic block, or a map of NICs, has one expression for all of
+            // them, so it cannot say which NIC goes where.
+            return null;
+        }
+
+        return References(nic, type.Network)
             .Select(reference => FindInModule(networks, machine.Module, reference)?.Address)
             .FirstOrDefault(x => x != null);
     }
@@ -277,6 +696,39 @@ public static partial class PlanTopologyParser
         var matches = candidates.Where(x => ConfigAddress(x.Address) == ConfigAddress(prefix + reference)).ToList();
 
         return matches.Count == 1 ? matches[0] : null;
+    }
+
+    /// <summary>
+    /// A machine's NICs in slot order. A machine with no <see cref="TopologyMachineType.Nics"/>
+    /// is its own one NIC; one with no <see cref="TopologyMachineType.Network"/> has none.
+    /// </summary>
+    private static List<JsonElement> Nics(JsonElement values, TopologyMachineType type)
+    {
+        if (string.IsNullOrEmpty(type.Network) || values.ValueKind != JsonValueKind.Object)
+        {
+            return [];
+        }
+
+        if (string.IsNullOrEmpty(type.Nics))
+        {
+            return [values];
+        }
+
+        if (!values.TryGetProperty(type.Nics, out var nics))
+        {
+            return [];
+        }
+
+        return nics.ValueKind switch
+        {
+            JsonValueKind.Array => [.. nics.EnumerateArray()],
+            // Keyed by slot: net0, net1, ... net10.
+            JsonValueKind.Object => [.. nics.EnumerateObject()
+                .OrderBy(x => x.Name.Length)
+                .ThenBy(x => x.Name, StringComparer.Ordinal)
+                .Select(x => x.Value)],
+            _ => [],
+        };
     }
 
     private static string AddExternal(Models.Topology topology, string value, string vlan = null)
@@ -553,6 +1005,37 @@ public static partial class PlanTopologyParser
         }
     }
 
+    /// <summary>
+    /// <see cref="References"/> for an attribute inside blocks, such as
+    /// <c>ip_configuration.0.subnet_id</c>: a block's expressions are a list
+    /// of objects, one per block.
+    /// </summary>
+    private static IEnumerable<string> ReferencesAt(JsonElement expressions, string path)
+    {
+        var parts = path.Split('.');
+        var current = expressions;
+
+        foreach (var part in parts[..^1])
+        {
+            if (current.ValueKind == JsonValueKind.Object && current.TryGetProperty(part, out var child))
+            {
+                current = child;
+            }
+            else if (current.ValueKind == JsonValueKind.Array &&
+                int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var i) &&
+                i < current.GetArrayLength())
+            {
+                current = current[i];
+            }
+            else
+            {
+                return [];
+            }
+        }
+
+        return References(current, parts[^1]);
+    }
+
     #endregion
 
     #region Value access
@@ -571,8 +1054,8 @@ public static partial class PlanTopologyParser
             ? value.GetString()
             : null;
 
-    private static string FirstString(JsonElement element, string[] names) =>
-        names.Select(x => GetString(element, x)).FirstOrDefault(x => !string.IsNullOrEmpty(x));
+    private static string FirstString(JsonElement element, string[] paths) =>
+        paths.Select(x => GetScalar(element, x)).FirstOrDefault(x => !string.IsNullOrEmpty(x));
 
     /// <summary>Follows a dotted path such as <c>cpu.0.cores</c> and returns a string or number as text.</summary>
     private static string GetScalar(JsonElement element, string path)

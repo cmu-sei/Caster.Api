@@ -2,10 +2,13 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.Topology;
+using Caster.Api.Infrastructure.Options;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 using File = System.IO.File;
 
@@ -287,6 +290,308 @@ namespace Caster.Api.Tests.Unit.Topology
                 configuration));
 
             Assert.Equal(["proxmox_sdn_vnet.lan[1]"], NetworksOf(topology, "proxmox_virtual_environment_vm.a"));
+        }
+
+        private static string Resource(string address, string after, string mode = "managed") =>
+            $$$$"""
+            {"address":"{{{{address}}}}","mode":"{{{{mode}}}}","type":"{{{{address.Split('.')[0]}}}}","name":"{{{{address.Split('.')[1]}}}}",
+             "change":{"actions":["create"],"after":{{{{after}}}}}}
+            """;
+
+        [Fact]
+        public void ClonedVm_ReadsItsMapOfNicsInSlotOrder()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(Resource("proxmox_cloned_vm.fw", """
+                {"name":"fw","node_name":"pve","cpu":{"cores":2},"memory":{"size":2048},
+                 "network":{"net10":{"bridge":"c"},"net2":{"bridge":"b","tag":20},"net0":{"bridge":"a"}}}
+                """)));
+
+            Assert.Equal(["external:a", "external:b.20", "external:c"], NetworksOf(topology, "proxmox_cloned_vm.fw"));
+            var fw = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine);
+            Assert.Equal("2", fw.Properties["cpus"]);
+            Assert.Equal("2048", fw.Properties["memory_mb"]);
+        }
+
+        [Fact]
+        public void Containers_AreMachinesLabelledByHostname()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_container.ct", """
+                    {"initialization":[{"hostname":"web01"}],"network_interface":[{"name":"eth0","bridge":"lan"}]}
+                    """) + "," +
+                Resource("proxmox_lxc.old", """{"hostname":"web02","network":[{"name":"eth0","bridge":"lan","tag":5}]}""") + "," +
+                Resource("proxmox_virtual_environment_sdn_vnet.lan", """{"id":"lan","zone":"z"}""")));
+
+            Assert.Equal("web01", topology.Nodes.Single(x => x.Id == "proxmox_virtual_environment_container.ct").Label);
+            Assert.Equal("web02", topology.Nodes.Single(x => x.Id == "proxmox_lxc.old").Label);
+            Assert.Equal(["proxmox_virtual_environment_sdn_vnet.lan"], NetworksOf(topology, "proxmox_virtual_environment_container.ct"));
+            Assert.Equal(["external:lan.5"], NetworksOf(topology, "proxmox_lxc.old"));
+        }
+
+        [Fact]
+        public void ShortProxmoxNames_AreDrawnLikeTheLongOnes()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_vm.new", """{"name":"new","cpu":{"cores":4}}""") + "," +
+                Resource("proxmox_network_linux_bridge.br", """{"name":"vmbr9"}""") + "," +
+                Vm("proxmox_virtual_environment_vm.a", "\"create\"", """{"bridge":"vmbr9"}""")));
+
+            // proxmox_vm has no NICs to read yet: drawn, unconnected.
+            Assert.Equal("4", topology.Nodes.Single(x => x.Id == "proxmox_vm.new").Properties["cpus"]);
+            Assert.Empty(NetworksOf(topology, "proxmox_vm.new"));
+            Assert.Equal(["proxmox_network_linux_bridge.br"], NetworksOf(topology, "proxmox_virtual_environment_vm.a"));
+        }
+
+        [Fact]
+        public void AwsInstance_IsItsOwnNicOnItsSubnet()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("aws_instance.web", """{"subnet_id":"subnet-1","instance_type":"t3.micro","tags":{"Name":"web"}}""") + "," +
+                Resource("aws_subnet.dmz", """{"id":"subnet-1","cidr_block":"10.1.0.0/24"}""")));
+
+            var web = topology.Nodes.Single(x => x.Id == "aws_instance.web");
+            Assert.Equal("web", web.Label);
+            Assert.Equal("t3.micro", web.Properties["instance_type"]);
+            Assert.Equal("10.1.0.0/24", topology.Nodes.Single(x => x.Id == "aws_subnet.dmz").Label);
+            Assert.Equal(["aws_subnet.dmz"], NetworksOf(topology, "aws_instance.web"));
+        }
+
+        [Fact]
+        public void AwsSubnetCreatedInThePlan_IsFoundByReference()
+        {
+            var configuration = """
+                {"resources":[{"address":"aws_instance.web","expressions":
+                  {"subnet_id":{"references":["aws_subnet.dmz.id","aws_subnet.dmz"]}}}]}
+                """;
+
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("aws_instance.web", """{"instance_type":"t3.micro"}""") + "," +
+                Resource("aws_subnet.dmz", """{"cidr_block":"10.1.0.0/24"}"""),
+                configuration));
+
+            Assert.Equal(["aws_subnet.dmz"], NetworksOf(topology, "aws_instance.web"));
+        }
+
+        [Fact]
+        public void AzureVm_IsWiredThroughItsNicsToTheirSubnets()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("azurerm_linux_virtual_machine.web", """
+                    {"name":"web","size":"Standard_B1s","location":"eastus","network_interface_ids":["nic-a","nic-b"]}
+                    """) + "," +
+                Resource("azurerm_network_interface.a", """{"id":"nic-a","ip_configuration":[{"name":"ip","subnet_id":"subnet-dmz"}]}""") + "," +
+                Resource("azurerm_network_interface.b", """{"id":"nic-b","ip_configuration":[{"name":"ip","subnet_id":"subnet-other"}]}""") + "," +
+                Resource("azurerm_subnet.dmz", """{"id":"subnet-dmz","name":"dmz"}""")));
+
+            var web = topology.Nodes.Single(x => x.Id == "azurerm_linux_virtual_machine.web");
+            Assert.Equal("Standard_B1s", web.Properties["size"]);
+            Assert.Equal(["azurerm_subnet.dmz", "external:subnet-other"], NetworksOf(topology, "azurerm_linux_virtual_machine.web"));
+            // The NICs are the wires, not nodes.
+            Assert.DoesNotContain(topology.Nodes, x => x.Type == "azurerm_network_interface");
+        }
+
+        [Fact]
+        public void AzureNicsAndSubnetsCreatedInThePlan_AreFoundByReference()
+        {
+            var configuration = """
+                {"resources":[
+                  {"address":"azurerm_windows_virtual_machine.dc","expressions":
+                    {"network_interface_ids":{"references":["azurerm_network_interface.a.id","azurerm_network_interface.a",
+                                                            "azurerm_network_interface.b.id","azurerm_network_interface.b"]}}},
+                  {"address":"azurerm_network_interface.a","expressions":
+                    {"ip_configuration":[{"subnet_id":{"references":["azurerm_subnet.servers.id","azurerm_subnet.servers"]}}]}},
+                  {"address":"azurerm_network_interface.b","expressions":
+                    {"ip_configuration":[{"subnet_id":{"references":["azurerm_subnet.mgmt.id","azurerm_subnet.mgmt"]}}]}}]}
+                """;
+
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("azurerm_windows_virtual_machine.dc", """{"name":"dc","size":"Standard_B2s"}""") + "," +
+                Resource("azurerm_network_interface.a", """{"ip_configuration":[{"name":"ip"}]}""") + "," +
+                Resource("azurerm_network_interface.b", """{"ip_configuration":[{"name":"ip"}]}""") + "," +
+                Resource("azurerm_subnet.servers", """{"name":"servers"}""") + "," +
+                Resource("azurerm_subnet.mgmt", """{"name":"mgmt"}"""),
+                configuration));
+
+            var edges = topology.Edges.Where(x => x.From == "azurerm_windows_virtual_machine.dc").OrderBy(x => x.Nic).ToList();
+            Assert.Equal(["azurerm_subnet.servers", "azurerm_subnet.mgmt"], edges.Select(x => x.To));
+            Assert.Equal([0, 1], edges.Select(x => x.Nic));
+        }
+
+        [Fact]
+        public void AzureNicIndexedByEachKey_IsTheMachinesOwn()
+        {
+            var nics = string.Join(",", new[] { "web", "db" }.Select(key => $$$$"""
+                {"address":"azurerm_network_interface.nic[\"{{{{key}}}}\"]","mode":"managed","type":"azurerm_network_interface","name":"nic",
+                 "change":{"actions":["create"],"after":{"ip_configuration":[{"name":"ip","subnet_id":"subnet-{{{{key}}}}"}]}}}
+                """));
+            var configuration = """
+                {"resources":[{"address":"azurerm_linux_virtual_machine.vm","expressions":
+                  {"network_interface_ids":{"references":["azurerm_network_interface.nic","each.key"]}}}]}
+                """;
+
+            var topology = PlanTopologyParser.Parse(Plan(
+                """
+                {"address":"azurerm_linux_virtual_machine.vm[\"db\"]","mode":"managed","type":"azurerm_linux_virtual_machine","name":"vm",
+                 "change":{"actions":["create"],"after":{"name":"db"}}}
+                """ + "," + nics,
+                configuration));
+
+            Assert.Equal(["external:subnet-db"], NetworksOf(topology, "azurerm_linux_virtual_machine.vm[\"db\"]"));
+        }
+
+        [Fact]
+        public void ConfiguredTypes_AreDrawn()
+        {
+            var options = new TopologyOptions
+            {
+                Machines =
+                {
+                    ["google_compute_instance"] = new TopologyMachineType
+                    {
+                        Nics = "network_interface",
+                        Network = "subnetwork",
+                        Properties = { ["machine_type"] = "machine_type" },
+                    },
+                },
+                Networks = { ["google_compute_subnetwork"] = new TopologyNetworkType { Keys = ["self_link", "name"] } },
+            };
+
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("google_compute_instance.web", """
+                    {"name":"web","machine_type":"e2-micro","network_interface":[{"subnetwork":"dmz"}]}
+                    """) + "," +
+                Resource("google_compute_subnetwork.dmz", """{"name":"dmz"}""")), options);
+
+            Assert.Equal("e2-micro", topology.Nodes.Single(x => x.Id == "google_compute_instance.web").Properties["machine_type"]);
+            Assert.Equal(["google_compute_subnetwork.dmz"], NetworksOf(topology, "google_compute_instance.web"));
+        }
+
+        [Fact]
+        public void ConfiguredTypes_BindFromTheTerraformSection()
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string>
+                {
+                    ["Terraform:Topology:Machines:example_vm:Interfaces"] = "nic_ids",
+                    ["Terraform:Topology:Machines:example_vm:Label:0"] = "hostname",
+                    ["Terraform:Topology:Interfaces:example_nic:Keys:0"] = "id",
+                    ["Terraform:Topology:Interfaces:example_nic:Network"] = "network",
+                    ["Terraform:Topology:Networks:example_network:Keys:0"] = "id",
+                })
+                .Build();
+            var options = configuration.GetSection("Terraform").Get<TerraformOptions>();
+
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("example_vm.web", """{"hostname":"web","nic_ids":["n1"]}""") + "," +
+                Resource("example_nic.n", """{"id":"n1","network":"net-1"}""") + "," +
+                Resource("example_network.lan", """{"id":"net-1"}""")), options.Topology);
+
+            Assert.Equal(["hostname"], options.Topology.Machines["example_vm"].Label);
+            Assert.Equal(["example_network.lan"], NetworksOf(topology, "example_vm.web"));
+        }
+
+        [Fact]
+        public void ConfiguredType_ReplacesTheBuiltInOfTheSameName()
+        {
+            var options = new TopologyOptions
+            {
+                Machines = { ["proxmox_virtual_environment_vm"] = new TopologyMachineType { Nics = "network_device", Network = "bridge", Label = ["description"] } },
+            };
+
+            var topology = PlanTopologyParser.Parse(Plan(Resource("proxmox_virtual_environment_vm.a", """
+                {"name":"a","description":"Domain controller","cpu":[{"cores":2}],"network_device":[{"bridge":"vmbr0","vlan_id":10}]}
+                """)), options);
+
+            var vm = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine);
+            Assert.Equal("Domain controller", vm.Label);
+            // No Vlan or Properties configured: the replacement has neither.
+            Assert.Empty(vm.Properties);
+            Assert.Equal(["external:vmbr0"], NetworksOf(topology, "proxmox_virtual_environment_vm.a"));
+        }
+
+        private const string Admin = "11111111-1111-1111-1111-111111111111";
+        private const string Red = "22222222-2222-2222-2222-222222222222";
+
+        [Fact]
+        public void PlayerRecord_GivesItsMachineConsoleTeams_ByVmId()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""") + "," +
+                Resource("proxmox_virtual_environment_vm.ws", """{"name":"ws","vm_id":201,"node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", $$"""
+                    {"name":"domain controller","team_ids":["{{Admin}}","{{Red}}"],"proxmox_vm_info":[{"id":"200","node":"pve"}]}
+                    """)));
+
+            var dc = topology.Nodes.Single(x => x.Id == "proxmox_virtual_environment_vm.dc").Console;
+            Assert.Equal([Admin, Red], dc.TeamIds);
+            Assert.Equal(TopologyConsoleMatch.Id, dc.Match);
+            // Registered nowhere: no team can open it.
+            var ws = topology.Nodes.Single(x => x.Id == "proxmox_virtual_environment_vm.ws").Console;
+            Assert.Empty(ws.TeamIds);
+            Assert.Null(ws.Match);
+        }
+
+        [Fact]
+        public void PlayerRecord_WhoseVmIdIsKnownAfterApply_IsMatchedByReference()
+        {
+            var configuration = """
+                {"resources":[{"address":"crucible_player_virtual_machine.dc","expressions":
+                  {"proxmox_vm_info":[{"id":{"references":["proxmox_virtual_environment_vm.dc.vm_id","proxmox_virtual_environment_vm.dc"]}}]}}]}
+                """;
+
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", $$"""{"name":"x","team_ids":["{{Admin}}"],"proxmox_vm_info":[{"node":"pve"}]}"""),
+                configuration));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
+            Assert.Equal([Admin], dc.TeamIds);
+            Assert.Equal(TopologyConsoleMatch.Reference, dc.Match);
+        }
+
+        [Fact]
+        public void PlayerRecord_WithOnlyAName_IsAGuessByName()
+        {
+            // for_each over a local map: the record refers to each.value, not the VM.
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.core_dc", """{"name":"core-dc","node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.range[\\\"core-dc\\\"]", $$"""{"name":"core-dc","team_ids":["{{Admin}}"]}""")));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
+            Assert.Equal([Admin], dc.TeamIds);
+            Assert.Equal(TopologyConsoleMatch.Name, dc.Match);
+        }
+
+        [Fact]
+        public void PlayerRecord_WhoseTeamsAreKnownAfterApply_SaysSo()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", """{"name":"dc","proxmox_vm_info":[{"id":"200","node":"pve"}]}""")));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
+            Assert.True(dc.TeamsUnknown);
+            Assert.Empty(dc.TeamIds);
+        }
+
+        [Fact]
+        public void VsphereGuestInfoTeams_AreTheMachinesOwn()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("vsphere_virtual_machine.dc", $$$"""{"name":"dc","extra_config":{"guestinfo.teamId":"{{{Admin}}},{{{Red}}}"}}""")));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
+            Assert.Equal([Admin, Red], dc.TeamIds);
+            Assert.Equal(TopologyConsoleMatch.Self, dc.Match);
+        }
+
+        [Fact]
+        public void WorkspaceThatRegistersNothingInPlayer_SaysNothingAboutConsoles()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""")));
+
+            Assert.Null(topology.Nodes.Single().Console);
         }
 
         [Fact]

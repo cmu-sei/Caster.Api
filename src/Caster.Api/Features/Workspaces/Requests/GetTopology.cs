@@ -13,6 +13,7 @@ using Caster.Api.Domain.Services.Topology;
 using Caster.Api.Features.Shared;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
+using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -31,7 +32,10 @@ namespace Caster.Api.Features.Workspaces
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, WorkspaceTopology>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            CasterContext dbContext,
+            TerraformOptions terraformOptions) : BaseHandler<Query, WorkspaceTopology>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -78,7 +82,7 @@ namespace Caster.Api.Features.Workspaces
                         .Select(x => x.State)
                         .FirstOrDefaultAsync(cancellationToken);
 
-                    topology = AppliedTopology.Read(state, plan, latest?.Status == RunStatus.Failed);
+                    topology = AppliedTopology.Read(state, plan, latest?.Status == RunStatus.Failed, terraformOptions.Topology);
                     result.Source = TopologySource.State;
                 }
 

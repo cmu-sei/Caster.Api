@@ -54,6 +54,41 @@ public class TopologyNode
 
     /// <summary>A few display values, such as cpus and memory_mb, when the plan knows them.</summary>
     public Dictionary<string, string> Properties { get; set; } = [];
+
+    /// <summary>
+    /// Who can open the machine's console in Player. Null for a network, and
+    /// for every machine when the workspace registers nothing in Player, so
+    /// there is nothing to say.
+    /// </summary>
+    public TopologyConsole Console { get; set; }
+}
+
+/// <summary>The Player teams that can open a machine's console.</summary>
+public class TopologyConsole
+{
+    /// <summary>Player team ids. Empty when no team can: the machine has no Player record.</summary>
+    public List<string> TeamIds { get; set; } = [];
+
+    /// <summary>True when a Player record's teams are not known until apply.</summary>
+    public bool TeamsUnknown { get; set; }
+
+    /// <summary>How the machine's Player record was found. Null when it has none.</summary>
+    public TopologyConsoleMatch? Match { get; set; }
+}
+
+public enum TopologyConsoleMatch
+{
+    /// <summary>The machine names its teams itself, in vSphere <c>guestinfo.teamId</c>, and Caster registers it.</summary>
+    Self,
+
+    /// <summary>The Player record's VM id is the machine's.</summary>
+    Id,
+
+    /// <summary>The Player record's VM id refers to the machine in the Terraform.</summary>
+    Reference,
+
+    /// <summary>Only the names match, so it may be wrong.</summary>
+    Name,
 }
 
 public enum TopologyNodeKind
