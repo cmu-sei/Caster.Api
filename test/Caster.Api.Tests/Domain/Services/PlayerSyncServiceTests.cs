@@ -24,6 +24,8 @@ public class PlayerSyncServiceTests(DatabaseFixture fixture)
     private const string ChildFlag = "CASTER_PLAYER_SYNC_CHILD";
     private const string Completed = "player sync child assertions completed";
     private const string DatabaseFlag = "CASTER_PLAYER_SYNC_DATABASE";
+    /// <summary>Allows child discovery and scheduling on a constrained runner, without delaying completion.</summary>
+    private static readonly TimeSpan ChildDeadline = TimeSpan.FromMinutes(2);
 
     [Fact]
     public async Task StartAsync_returns_success_without_logging_when_parallelism_is_zero()
@@ -61,6 +63,8 @@ public class PlayerSyncServiceTests(DatabaseFixture fixture)
         {
             await assertion();
             Console.WriteLine(Completed);
+            Console.Out.Flush();
+            Environment.Exit(0);
             return;
         }
 
@@ -73,6 +77,7 @@ public class PlayerSyncServiceTests(DatabaseFixture fixture)
         start.ArgumentList.Add(typeof(PlayerSyncServiceTests).Assembly.Location);
         start.ArgumentList.Add("-method");
         start.ArgumentList.Add($"{typeof(PlayerSyncServiceTests).FullName}.{method}");
+        start.ArgumentList.Add("-noColor");
         start.Environment[ChildFlag] = "1";
         if (connectionString != null)
             start.Environment[DatabaseFlag] = connectionString;
@@ -97,7 +102,7 @@ public class PlayerSyncServiceTests(DatabaseFixture fixture)
     private static async Task ReadCompletion(Task completion, ConcurrentQueue<string> output)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        deadline.CancelAfter(ChildDeadline);
         try
         {
             await completion.WaitAsync(deadline.Token);
@@ -155,6 +160,7 @@ public class PlayerSyncServiceTests(DatabaseFixture fixture)
         var nextRemoval = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var releaseRemoval = new SemaphoreSlim(0);
         var callerThread = Environment.CurrentManagedThreadId;
+        var startupScopePending = 1;
         var removalCalls = 0;
         var services = new ServiceCollection();
         services.AddScoped(_ => new CasterContext(new DbContextOptionsBuilder<CasterContext>()
@@ -164,14 +170,14 @@ public class PlayerSyncServiceTests(DatabaseFixture fixture)
         var scopes = Substitute.For<IServiceScopeFactory>();
         scopes.CreateScope().Returns(_ =>
         {
-            if (Environment.CurrentManagedThreadId != callerThread)
-            {
-                if (Interlocked.Increment(ref removalCalls) == 1)
-                    firstRemoval.TrySetResult();
-                else
-                    nextRemoval.TrySetResult();
-                releaseRemoval.Wait();
-            }
+            // Only the synchronous startup lookup is exempt; removal can resume on its thread later.
+            if (Environment.CurrentManagedThreadId == callerThread && Interlocked.Exchange(ref startupScopePending, 0) == 1)
+                return provider.CreateScope();
+            if (Interlocked.Increment(ref removalCalls) == 1)
+                firstRemoval.TrySetResult();
+            else
+                nextRemoval.TrySetResult();
+            releaseRemoval.Wait();
             return provider.CreateScope();
         });
         var options = Substitute.For<IOptionsMonitor<PlayerOptions>>();
