@@ -23,13 +23,13 @@ namespace Caster.Api.Tests.Unit.Topology
     {
         private static readonly string Data = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
 
-        private static Domain.Models.Topology Proxmox() =>
+        private static Caster.Api.Domain.Models.Topology Proxmox() =>
             PlanTopologyParser.Parse(File.ReadAllText(Path.Combine(Data, "topology", "proxmox-modules.plan.json")));
 
-        private static Domain.Models.Topology Vsphere() =>
+        private static Caster.Api.Domain.Models.Topology Vsphere() =>
             PlanTopologyParser.Parse(File.ReadAllText(Path.Combine(Data, "plan.json")));
 
-        private static string[] NetworksOf(Domain.Models.Topology topology, string machine) =>
+        private static string[] NetworksOf(Caster.Api.Domain.Models.Topology topology, string machine) =>
             [.. topology.Edges.Where(x => x.From == machine).OrderBy(x => x.Nic).Select(x => x.To)];
 
         #region Proxmox modules

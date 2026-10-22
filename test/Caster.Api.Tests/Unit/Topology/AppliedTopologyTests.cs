@@ -29,7 +29,7 @@ namespace Caster.Api.Tests.Unit.Topology
 
         private static string State() => File.ReadAllText(Path.Combine(Data, "proxmox-modules.tfstate.json"));
 
-        private static Domain.Models.Topology Plan() =>
+        private static Caster.Api.Domain.Models.Topology Plan() =>
             PlanTopologyParser.Parse(File.ReadAllText(Path.Combine(Data, "proxmox-modules.plan.json")));
 
         /// <summary>The state with the router and the web server never built.</summary>

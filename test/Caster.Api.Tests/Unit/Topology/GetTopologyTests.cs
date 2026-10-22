@@ -5,68 +5,51 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
-using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.Topology;
 using Caster.Api.Features.Workspaces;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Serialization;
-using Microsoft.EntityFrameworkCore;
-using NSubstitute;
-using Xunit;
+using Caster.Api.Tests.Support;
 using File = System.IO.File;
 
 namespace Caster.Api.Tests.Unit.Topology
 {
-    [Trait("Category", "Unit")]
+    /// <summary>
+    /// Which topology a workspace shows for the state of its last run. Runs over the shared database harness,
+    /// since the handler reads the workspace, its runs and their plans.
+    /// </summary>
     [Trait("Category", "Topology")]
-    public class GetTopologyTests : IDisposable
+    public class GetTopologyTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
     {
         private static readonly string Data = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data", "topology");
 
-        private readonly CasterContext _db;
-        private readonly GetTopology.Handler _sut;
-        private readonly Guid _workspaceId = Guid.NewGuid();
+        private Guid _workspaceId;
 
-        public GetTopologyTests()
+        private async Task SeedWorkspace(RunStatus? status, bool applied)
         {
-            _db = new CasterContext(new DbContextOptionsBuilder<CasterContext>()
-                .UseInMemoryDatabase($"caster_topology_{Guid.NewGuid():N}")
-                .Options);
-            _sut = new GetTopology.Handler(Substitute.For<ICasterAuthorizationService>(), _db);
-        }
-
-        public void Dispose() => _db.Dispose();
-
-        private void Seed(RunStatus? status, bool applied)
-        {
-            _db.Workspaces.Add(new Domain.Models.Workspace
-            {
-                Id = _workspaceId,
-                Name = "topology",
-                State = applied ? File.ReadAllText(Path.Combine(Data, "proxmox-modules.tfstate.json")) : null,
-            });
+            var project = TestData.Project();
+            var directory = TestData.Directory(project);
+            var workspace = TestData.Workspace(directory, "topology");
+            workspace.State = applied ? File.ReadAllText(Path.Combine(Data, "proxmox-modules.tfstate.json")) : null;
+            _workspaceId = workspace.Id;
+            await Seed(project, directory, workspace);
 
             if (status != null)
             {
-                var plan = PlanTopologyParser.Parse(File.ReadAllText(Path.Combine(Data, "proxmox-modules.plan.json")));
-                var run = new Run { Id = Guid.NewGuid(), WorkspaceId = _workspaceId, Status = status.Value };
-                run.Plan = new Plan
-                {
-                    Id = Guid.NewGuid(),
-                    RunId = run.Id,
-                    Topology = JsonSerializer.Serialize(plan, DefaultJsonSettings.Settings),
-                };
-                _db.Runs.Add(run);
+                var run = TestData.Run(workspace, status.Value);
+                var plan = TestData.Plan(run);
+                plan.Topology = JsonSerializer.Serialize(
+                    PlanTopologyParser.Parse(File.ReadAllText(Path.Combine(Data, "proxmox-modules.plan.json"))),
+                    DefaultJsonSettings.Settings);
+                await Seed(run, plan);
             }
-
-            _db.SaveChanges();
         }
 
         private Task<WorkspaceTopology> Get() =>
-            _sut.HandleRequest(new GetTopology.Query { Id = _workspaceId }, CancellationToken.None);
+            new GetTopology.Handler(Substitute.For<ICasterAuthorizationService>(), Db)
+                .HandleRequest(new GetTopology.Query { Id = _workspaceId }, Ct);
 
         [Theory]
         [InlineData(RunStatus.Planned)]
@@ -75,7 +58,7 @@ namespace Caster.Api.Tests.Unit.Topology
         [InlineData(RunStatus.Applied_StateError)]
         public async Task PlanStillToBeApplied_ShowsWhatItWillDo(RunStatus status)
         {
-            Seed(status, applied: false);
+            await SeedWorkspace(status, applied: false);
 
             var topology = await Get();
 
@@ -87,7 +70,7 @@ namespace Caster.Api.Tests.Unit.Topology
         [Fact]
         public async Task Applied_ShowsTheState()
         {
-            Seed(RunStatus.Applied, applied: true);
+            await SeedWorkspace(RunStatus.Applied, applied: true);
 
             var topology = await Get();
 
@@ -100,7 +83,7 @@ namespace Caster.Api.Tests.Unit.Topology
         [Fact]
         public async Task Rejected_ShowsTheStateWithoutThePlan()
         {
-            Seed(RunStatus.Rejected, applied: false);
+            await SeedWorkspace(RunStatus.Rejected, applied: false);
 
             var topology = await Get();
 
@@ -111,7 +94,7 @@ namespace Caster.Api.Tests.Unit.Topology
         [Fact]
         public async Task Failed_ShowsWhatWasNotCreated()
         {
-            Seed(RunStatus.Failed, applied: false);
+            await SeedWorkspace(RunStatus.Failed, applied: false);
 
             var topology = await Get();
 
@@ -123,7 +106,7 @@ namespace Caster.Api.Tests.Unit.Topology
         [Fact]
         public async Task NoPlan_ShowsTheState()
         {
-            Seed(null, applied: true);
+            await SeedWorkspace(null, applied: true);
 
             var topology = await Get();
 
