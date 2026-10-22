@@ -72,7 +72,8 @@ public class CreateFromAiDraft
 
         /// <summary>
         /// The Design is created disabled, so it is not written into any Workspace until a
-        /// planner enables it. Each module must still be complete, as a hand-built one must.
+        /// planner enables it, which it cannot while a value is a placeholder. Each module must
+        /// still be complete, as a hand-built one must.
         /// </summary>
         public override async Task<Design> HandleRequest(Command request, CancellationToken cancellationToken)
         {
@@ -88,21 +89,27 @@ public class CreateFromAiDraft
             for (var i = 0; i < request.Modules.Length; i++)
             {
                 var fields = request.Modules[i];
+                var version = await dbContext.ModuleVersions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(v => v.ModuleId == fields.ModuleId && v.Name == fields.ModuleVersion, cancellationToken);
+
+                // A required value the planner has not got yet is saved as a placeholder,
+                // which keeps the Design from being enabled until it is replaced.
+                var values = DesignModules.ModuleValue.ToDomain(fields.Values ?? []);
+                if (version != null)
+                    AiDesignDraftBuilder.FillMissingRequired(version, values);
+
                 var designModule = new Domain.Models.DesignModule
                 {
                     DesignId = design.Id,
                     ModuleId = fields.ModuleId,
                     Name = fields.Name,
                     ModuleVersion = fields.ModuleVersion,
-                    Values = DesignModules.ModuleValue.ToDomain(fields.Values ?? [])
+                    Values = values
                 };
 
                 // name, version and required variables, as DesignModules.Create checks them
                 await DesignModuleValidation.EnsureComplete(dbContext, designModule, cancellationToken);
-
-                var version = await dbContext.ModuleVersions
-                    .AsNoTracking()
-                    .FirstAsync(v => v.ModuleId == fields.ModuleId && v.Name == fields.ModuleVersion, cancellationToken);
                 var unknown = designModule.Values
                     .Select(v => v.Name)
                     .Where(n => !version.Variables.Any(v => v.Name == n))

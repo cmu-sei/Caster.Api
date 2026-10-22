@@ -129,6 +129,47 @@ namespace Caster.Api.Tests.Features.Designs
         }
 
         [Fact]
+        public void Review_Gives_A_Required_Value_Left_Out_A_Placeholder()
+        {
+            var vm = Module("crucible-modules/proxmox-vm", "bpg/proxmox");
+            vm.Versions.Single().Variables.AddRange(
+            [
+                new ModuleVariable { Name = "name", VariableType = "string" },
+                new ModuleVariable { Name = "template_name", VariableType = "string" },
+                new ModuleVariable { Name = "node_name", VariableType = "string" },
+            ]);
+            var catalog = AiDesignDraftBuilder.SelectCatalog([vm], Sources, null, null);
+
+            using var input = JsonDocument.Parse($$"""
+                {
+                  "designName": "domain",
+                  "modules": [
+                    { "moduleId": "{{vm.Id}}", "name": "dc01", "values": { "name": "dc01", "template_name": "REPLACE_WITH_DC_TEMPLATE" } }
+                  ]
+                }
+                """);
+
+            var draft = AiDesignDraftBuilder.Review(input.RootElement, catalog, null);
+
+            var dc = draft.Modules.Single();
+            Assert.Equal(["node_name"], dc.MissingRequiredVariables);
+            Assert.Equal("REPLACE_WITH_NODE_NAME", dc.Values.Single(v => v.Name == "node_name").Value);
+            Assert.Equal(["template_name", "node_name"], dc.Placeholders);
+            Assert.Contains("dc01: replace the placeholders in template_name, node_name before enabling the design.", draft.Warnings);
+        }
+
+        [Fact]
+        public void BuildSystemPrompt_Asks_For_Placeholders_Instead_Of_Guessed_Names()
+        {
+            var catalog = AiDesignDraftBuilder.SelectCatalog([Module("crucible-modules/vm", "bpg/proxmox")], Sources, null, null);
+
+            var prompt = AiDesignDraftBuilder.BuildSystemPrompt(catalog);
+
+            Assert.Contains("Never guess a name that has to exist in the range", prompt);
+            Assert.Contains("REPLACE_WITH_DC_TEMPLATE", prompt);
+        }
+
+        [Fact]
         public void HypervisorProblems_Allows_Generic_Modules_Either_Way()
         {
             var problems = AiDesignDraftBuilder.HypervisorProblems(

@@ -15,6 +15,7 @@ public class MappingProfile : Profile
 
         CreateMap<Domain.Models.DesignModule, DesignModule>()
             .ForMember(dest => dest.Values, opt => opt.Ignore())
+            .ForMember(dest => dest.Placeholders, opt => opt.Ignore())
             .ForMember("ValuesJson", opt => opt.ExplicitExpansion());
         CreateMap<Domain.Models.ModuleValue, ModuleValue>();
 

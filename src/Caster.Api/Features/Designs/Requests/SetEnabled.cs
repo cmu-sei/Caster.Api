@@ -46,6 +46,9 @@ public class SetEnabled
             if (design == null)
                 throw new EntityNotFoundException<Design>();
 
+            if (request.Enabled && !design.Enabled)
+                await DesignModules.DesignModuleValidation.EnsureNoPlaceholders(dbContext, design.Id, cancellationToken);
+
             design.Enabled = request.Enabled;
             await dbContext.SaveChangesAsync(cancellationToken);
 

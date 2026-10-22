@@ -49,7 +49,8 @@ public class GetByDesign
         {
             var designModules = await dbContext.DesignModules
                 .Where(x => x.DesignId == request.DesignId)
-                .ProjectTo<DesignModule>(mapper.ConfigurationProvider)
+                // with values, so each module says which of them are still placeholders
+                .ProjectTo<DesignModule>(mapper.ConfigurationProvider, null, membersToExpand: new[] { "ValuesJson" })
                 .ToArrayAsync();
 
             return designModules;

@@ -55,6 +55,12 @@ public class AiDraftModule
 
     public List<DesignModules.ModuleValue> Values { get; set; } = [];
     public string[] MissingRequiredVariables { get; set; } = [];
+
+    /// <summary>
+    /// The variables whose values are placeholders, for the planner to replace before the
+    /// Design can be enabled. A required variable the model left out is one of them.
+    /// </summary>
+    public string[] Placeholders { get; set; } = [];
 }
 
 /// <summary>
@@ -163,6 +169,9 @@ public static class AiDesignDraftBuilder
         sb.AppendLine("- Use only modules from the catalog below, by moduleId. Never invent a module, variable or output.");
         sb.AppendLine("- Give each module instance a unique name: letters, digits, underscores and dashes, starting with a letter or underscore.");
         sb.AppendLine("- Set every required variable. Leave optional variables out unless the request needs a non-default value.");
+        sb.AppendLine($"- Never guess a name that has to exist in the range, such as a VM template, node, datastore, network zone or ID, unless the request gives it.");
+        sb.AppendLine($"  Set it to a placeholder instead: {Placeholders.Prefix} and what it is, in capitals, such as {Placeholders.Prefix}DC_TEMPLATE.");
+        sb.AppendLine("  The planner replaces placeholders before the design can be enabled.");
         sb.AppendLine("- For a variable of type string, give the plain text with no surrounding quotes. Caster adds the quotes.");
         sb.AppendLine("  To use another module's output in a string, interpolate it: ${module.<name>.<output>}.");
         sb.AppendLine("- For any other type, give an HCL expression: 2, true, [\"a\", \"b\"], { key = \"value\" }, or module.<name>.<output> directly.");
@@ -336,9 +345,10 @@ public static class AiDesignDraftBuilder
                 }
             }
 
-            var missing = entry.Version.MissingRequiredVariables(values);
-            if (missing.Length > 0)
-                draft.Warnings.Add($"{name}: required variables without a value: {string.Join(", ", missing)}.");
+            var missing = FillMissingRequired(entry.Version, values);
+            var placeholders = Domain.Models.Placeholders.In(values);
+            if (placeholders.Length > 0)
+                draft.Warnings.Add($"{name}: replace the placeholders in {string.Join(", ", placeholders)} before enabling the design.");
 
             kept.Add((new AiDraftModule
             {
@@ -350,7 +360,8 @@ public static class AiDesignDraftBuilder
                 Hypervisor = entry.Hypervisor,
                 Source = entry.Source,
                 Values = values.Select(v => new DesignModules.ModuleValue(v)).ToList(),
-                MissingRequiredVariables = missing
+                MissingRequiredVariables = missing,
+                Placeholders = placeholders
             }, entry.Version, values));
         }
 
@@ -457,6 +468,23 @@ public static class AiDesignDraftBuilder
     }
 
     // ToSnippet wraps string values in quotes, so a quoted or bare reference would be written wrong.
+    /// <summary>
+    /// Gives each required variable left without a value a placeholder, so the draft can be
+    /// saved and the gap is marked where the planner fills it in. Returns the ones it filled.
+    /// </summary>
+    public static string[] FillMissingRequired(ModuleVersion version, ICollection<Domain.Models.ModuleValue> values)
+    {
+        var missing = version.MissingRequiredVariables(values);
+        foreach (var name in missing)
+        {
+            var empty = values.FirstOrDefault(v => v.Name == name);
+            if (empty != null)
+                values.Remove(empty);
+            values.Add(new Domain.Models.ModuleValue { Name = name, Value = Domain.Models.Placeholders.For(name) });
+        }
+        return missing;
+    }
+
     private static string Normalize(string moduleName, ModuleVariable variable, string value, List<string> warnings)
     {
         value = value?.Trim();

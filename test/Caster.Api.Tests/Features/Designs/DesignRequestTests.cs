@@ -266,6 +266,23 @@ public class DesignRequestTests(DatabaseFixture fixture, CasterAppFactory factor
         Assert.True((await StoredDesign(design.Id)).Enabled);
     }
 
+    /// <summary>An AI draft saves what it could not know as placeholders; Terraform must never be handed them.</summary>
+    [Fact]
+    public async Task Enable_is_refused_while_an_enabled_module_holds_a_placeholder()
+    {
+        var (_, _, design) = await SeedDesign(enabled: false);
+        var module = TestData.Module();
+        var designModule = TestData.DesignModule(design, module, "dc01");
+        designModule.Values = [new ModuleValue { Name = "template_name", Value = "REPLACE_WITH_DC_TEMPLATE" }];
+        await Seed(module, designModule);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PostAsync($"api/designs/{design.Id}/actions/enable", null, Ct);
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
+        Assert.False((await StoredDesign(design.Id)).Enabled);
+    }
+
     [Fact]
     public async Task Disable_is_forbidden_for_a_caller_holding_only_ViewProject()
     {

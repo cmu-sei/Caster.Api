@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Caster.Api.Features.DesignModules;
 
@@ -22,6 +23,12 @@ public class DesignModule
         }
     }
     private string ValuesJson { get; set; }
+
+    /// <summary>
+    /// The variables whose values are still placeholders to fill in. The Design cannot be
+    /// enabled while an enabled module has any.
+    /// </summary>
+    public string[] Placeholders => Domain.Models.Placeholders.In(Values?.Select(v => v.ToDomain()));
 }
 
 public class ModuleValue
