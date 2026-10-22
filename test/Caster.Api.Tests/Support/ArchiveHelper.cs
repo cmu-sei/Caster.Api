@@ -1,0 +1,58 @@
+// Copyright 2026 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Caster.Api.Tests.Support;
+
+/// <summary>Builds the zip archives the project and directory import endpoints read.</summary>
+public static class ArchiveHelper
+{
+    /// <summary>
+    /// A multipart form holding a zip with one file at <paramref name="entryPath"/> (relative to the imported
+    /// directory, or prefixed with a directory name for a project), under the form field the endpoints bind.
+    /// </summary>
+    public static MultipartFormDataContent Zip(string entryPath, string content)
+    {
+        using var buffer = new MemoryStream();
+
+        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        using (var writer = new StreamWriter(zip.CreateEntry(entryPath).Open(), Encoding.ASCII))
+        {
+            writer.Write(content);
+        }
+
+        return new MultipartFormDataContent { { new ByteArrayContent(buffer.ToArray()), "archive", "import.zip" } };
+    }
+
+    /// <summary>A multipart form holding a zip with each of <paramref name="entries"/>, as raw bytes.</summary>
+    public static MultipartFormDataContent Zip(params (string Path, byte[] Content)[] entries)
+    {
+        using var buffer = new MemoryStream();
+
+        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (path, content) in entries)
+            {
+                using var stream = zip.CreateEntry(path).Open();
+                stream.Write(content);
+            }
+        }
+
+        return new MultipartFormDataContent { { new ByteArrayContent(buffer.ToArray()), "archive", "import.zip" } };
+    }
+
+    /// <summary>The entry names of the zip an export endpoint answered with.</summary>
+    public static async Task<string[]> EntryNames(HttpResponseMessage response, CancellationToken ct)
+    {
+        using var zip = new ZipArchive(await response.Content.ReadAsStreamAsync(ct), ZipArchiveMode.Read);
+
+        return [.. zip.Entries.Select(x => x.FullName)];
+    }
+}
