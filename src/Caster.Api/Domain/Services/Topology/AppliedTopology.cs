@@ -28,16 +28,9 @@ public static class AppliedTopology
 
         // A state file has no variables, so a team named after one is named
         // by the plan.
-        var planned = (plan?.Nodes ?? [])
+        TopologyTeamNames.Fill(topology, (plan?.Nodes ?? [])
             .SelectMany(x => x.Console?.Teams ?? [])
-            .Where(x => x.Name != null)
-            .GroupBy(x => x.Id, System.StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(x => x.Key, x => x.First(), System.StringComparer.OrdinalIgnoreCase);
-
-        foreach (var console in topology.Nodes.Select(x => x.Console).Where(x => x != null))
-        {
-            console.Teams = [.. console.Teams.Select(x => x.Name == null ? planned.GetValueOrDefault(x.Id) ?? x : x)];
-        }
+            .Where(x => x.Name != null));
 
         if (!applyFailed || plan == null)
         {
