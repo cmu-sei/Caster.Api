@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.Serialization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -51,7 +52,7 @@ namespace Caster.Api.Features.Workspaces
                 RuleForEach(x => x.Nodes)
                     .Must(x => !string.IsNullOrWhiteSpace(x.Key))
                     .WithMessage("A node id must not be empty.")
-                    .Must(x => x.Value == null || (IsPosition(x.Value.X) && IsPosition(x.Value.Y)))
+                    .Must(x => x.Value == null || new[] { x.Value.X, x.Value.Y, x.Value.TreeX, x.Value.TreeY }.All(IsPosition))
                     .WithMessage("A node's position must be a finite number.")
                     .When(x => x.Nodes != null);
             }
@@ -74,7 +75,7 @@ namespace Caster.Api.Features.Workspaces
                 foreach (var (id, node) in request.Nodes)
                 {
                     // Nothing left to remember is the same as never having moved it.
-                    if (node == null || (node.X == null && node.Y == null && node.Role == null))
+                    if (node == null || (node.X == null && node.Y == null && node.TreeX == null && node.TreeY == null && node.Role == null))
                         layout.Remove(id);
                     else
                         layout[id] = node;

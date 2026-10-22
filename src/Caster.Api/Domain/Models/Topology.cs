@@ -69,9 +69,13 @@ public enum TopologyNodeKind
 /// </summary>
 public class TopologyNodeLayout
 {
-    /// <summary>The node's position in the view. Null until someone moves it, so the layout places it.</summary>
+    /// <summary>The node's position in the force layout. Null until someone moves it there, so the layout places it.</summary>
     public double? X { get; set; }
     public double? Y { get; set; }
+
+    /// <summary>The node's position in the tree layout, kept apart from the force layout's so each keeps its own arrangement.</summary>
+    public double? TreeX { get; set; }
+    public double? TreeY { get; set; }
 
     /// <summary>What the node is for, which picks its icon. Null shows the icon for its kind.</summary>
     public TopologyNodeRole? Role { get; set; }
