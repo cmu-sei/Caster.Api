@@ -38,8 +38,11 @@ namespace Caster.Api.Features.Workspaces
 
             public override async Task<WorkspaceTopology> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                if (!await dbContext.Workspaces.AnyAsync(x => x.Id == request.Id, cancellationToken))
-                    throw new EntityNotFoundException<Workspace>();
+                var workspace = await dbContext.Workspaces
+                    .Where(x => x.Id == request.Id)
+                    .Select(x => new { x.TopologyLayout })
+                    .FirstOrDefaultAsync(cancellationToken)
+                    ?? throw new EntityNotFoundException<Workspace>();
 
                 var latest = await dbContext.Plans
                     .Where(x => x.Run.WorkspaceId == request.Id && x.Topology != null)
@@ -81,6 +84,13 @@ namespace Caster.Api.Features.Workspaces
 
                 result.Nodes = topology.Nodes;
                 result.Edges = topology.Edges;
+
+                // A node the topology no longer draws keeps its saved layout, so
+                // it is back where it was if a later plan draws it again.
+                var ids = topology.Nodes.Select(x => x.Id).ToHashSet();
+                result.Layout = EditTopologyLayout.Read(workspace.TopologyLayout)
+                    .Where(x => ids.Contains(x.Key))
+                    .ToDictionary(x => x.Key, x => x.Value);
 
                 return result;
             }

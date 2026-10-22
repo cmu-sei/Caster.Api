@@ -32,5 +32,11 @@ namespace Caster.Api.Features.Workspaces
 
         public List<TopologyNode> Nodes { get; set; } = [];
         public List<TopologyEdge> Edges { get; set; } = [];
+
+        /// <summary>
+        /// The position and role saved for each node, by node id. Only nodes in
+        /// <see cref="Nodes"/>; a node nobody has moved or given a role is absent.
+        /// </summary>
+        public Dictionary<string, TopologyNodeLayout> Layout { get; set; } = [];
     }
 }

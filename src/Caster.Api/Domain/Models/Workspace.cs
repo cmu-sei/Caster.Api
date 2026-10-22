@@ -45,6 +45,12 @@ namespace Caster.Api.Domain.Models
 
         public int? AzureDestroyFailureThreshold { get; set; }
 
+        /// <summary>
+        /// JSON of the <see cref="TopologyNodeLayout"/>s people have set in the
+        /// topology view, by node id, or null when nobody has.
+        /// </summary>
+        public string TopologyLayout { get; set; }
+
         public virtual ICollection<Run> Runs { get; set; } = new List<Run>();
         public virtual ICollection<File> Files { get; set; } = new List<File>();
 

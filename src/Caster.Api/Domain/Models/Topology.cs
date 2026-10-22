@@ -62,6 +62,37 @@ public enum TopologyNodeKind
     Network,
 }
 
+/// <summary>
+/// Where someone put a node in the topology view, and what it is for. Saved on
+/// the workspace by node id, so everyone who opens the view sees the same
+/// arrangement, and it outlives the runs that drew the node.
+/// </summary>
+public class TopologyNodeLayout
+{
+    /// <summary>The node's position in the view. Null until someone moves it, so the layout places it.</summary>
+    public double? X { get; set; }
+    public double? Y { get; set; }
+
+    /// <summary>What the node is for, which picks its icon. Null shows the icon for its kind.</summary>
+    public TopologyNodeRole? Role { get; set; }
+}
+
+/// <summary>What a machine is for in the exercise, shown as its icon.</summary>
+public enum TopologyNodeRole
+{
+    Server,
+    Workstation,
+    DomainController,
+    Firewall,
+    Router,
+    WebServer,
+    Database,
+    MailServer,
+    Linux,
+    Windows,
+    Attacker,
+}
+
 /// <summary>Where a workspace's topology was read from.</summary>
 public enum TopologySource
 {

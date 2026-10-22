@@ -50,6 +50,21 @@ namespace Caster.Api.Features.Workspaces
         }
 
         /// <summary>
+        /// Save where nodes sit in a Workspace's topology view, and their roles
+        /// </summary>
+        /// <param name="id">The Id of the Workspace</param>
+        /// <param name="command">The nodes to save, by node id</param>
+        [HttpPatch("workspaces/{id}/topology/layout")]
+        [ProducesResponseType(typeof(System.Collections.Generic.Dictionary<string, Domain.Models.TopologyNodeLayout>), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "EditWorkspaceTopologyLayout")]
+        public async Task<IActionResult> EditTopologyLayout([FromRoute] Guid id, EditTopologyLayout.Command command)
+        {
+            command.Id = id;
+            var result = await this._mediator.Send(command);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Get all Workspaces
         /// </summary>
         [HttpGet("workspaces")]

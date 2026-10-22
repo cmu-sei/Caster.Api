@@ -992,6 +992,10 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("terraform_version");
 
+                    b.Property<string>("TopologyLayout")
+                        .HasColumnType("text")
+                        .HasColumnName("topology_layout");
+
                     b.HasKey("Id");
 
                     b.HasIndex("DirectoryId");
