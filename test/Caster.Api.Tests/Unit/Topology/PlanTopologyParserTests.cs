@@ -597,6 +597,7 @@ namespace Caster.Api.Tests.Unit.Topology
 
             var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
             Assert.Equal(vmId, dc.VmId);
+            Assert.Equal("dc", dc.Name);
             Assert.Equal($"http://console/vm/{vmId}/console", dc.Url);
         }
 
@@ -632,6 +633,27 @@ namespace Caster.Api.Tests.Unit.Topology
             var teams = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console.Teams;
             Assert.Equal(["Admin", "Red Cell"], teams.Select(x => x.Name));
             Assert.All(teams, x => Assert.Null(x.Variable));
+        }
+
+        [Fact]
+        public void TeamInAWorkspaceTfvarsFile_IsNamedAfterItsVariable()
+        {
+            // A state, or a plan stored before teams were named, has only ids.
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", $$"""
+                    {"name":"dc","team_ids":["{{Admin}}","{{Red}}"],"proxmox_vm_info":[{"id":"200","node":"pve"}]}
+                    """)));
+
+            TopologyTeamNames.Fill(topology, TopologyTeamNames.FromTfvars([$$"""
+                exercise_id = "not an id"
+                admin = "{{Admin}}"
+                # red = "{{Red}}"
+                """]));
+
+            var teams = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console.Teams;
+            Assert.Equal("admin", teams[0].Name);
+            Assert.Null(teams[1].Name);
         }
 
         [Fact]

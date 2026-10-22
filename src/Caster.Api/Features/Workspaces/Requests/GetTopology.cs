@@ -44,7 +44,7 @@ namespace Caster.Api.Features.Workspaces
             {
                 var workspace = await dbContext.Workspaces
                     .Where(x => x.Id == request.Id)
-                    .Select(x => new { x.TopologyLayout })
+                    .Select(x => new { x.TopologyLayout, x.DirectoryId })
                     .FirstOrDefaultAsync(cancellationToken)
                     ?? throw new EntityNotFoundException<Workspace>();
 
@@ -84,6 +84,20 @@ namespace Caster.Api.Features.Workspaces
 
                     topology = AppliedTopology.Read(state, plan, latest?.Status == RunStatus.Failed, terraformOptions.Topology);
                     result.Source = TopologySource.State;
+                }
+
+                // A plan stored before teams were named, and a state, name
+                // teams from the variables the workspace's runs are given.
+                if (topology.Nodes.Any(x => x.Console?.Teams.Any(t => t.Name == null) == true))
+                {
+                    var tfvars = await dbContext.Files
+                        .Where(x => !x.IsDeleted && x.Name.EndsWith(".tfvars") &&
+                            (x.WorkspaceId == request.Id || (x.WorkspaceId == null && x.DirectoryId == workspace.DirectoryId)))
+                        .OrderBy(x => x.WorkspaceId == null)
+                        .Select(x => x.Content)
+                        .ToListAsync(cancellationToken);
+
+                    TopologyTeamNames.Fill(topology, TopologyTeamNames.FromTfvars(tfvars));
                 }
 
                 result.Nodes = topology.Nodes;

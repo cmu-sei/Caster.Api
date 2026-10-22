@@ -397,6 +397,7 @@ public static partial class PlanTopologyParser
                     TeamIds = teams,
                     Match = TopologyConsoleMatch.Self,
                     VmId = GetScalar(instance.Values, "id"),
+                    Name = GetScalar(instance.Values, "name"),
                 };
             }
         }
@@ -456,6 +457,8 @@ public static partial class PlanTopologyParser
             {
                 console.Match = match;
             }
+
+            console.Name ??= GetScalar(record.Values, "name");
 
             // A machine with two records keeps the first one's console.
             if (console.VmId == null && GetScalar(record.Values, "id") is { } vmId)

@@ -78,6 +78,9 @@ public class TopologyConsole
     /// <summary>The machine's own VM id in Player. Null until apply, or when it has no Player record.</summary>
     public string VmId { get; set; }
 
+    /// <summary>The machine's name in Player, as its console shows it.</summary>
+    public string Name { get; set; }
+
     /// <summary>The machine's console in Player. Null while <see cref="VmId"/> is.</summary>
     public string Url { get; set; }
 
