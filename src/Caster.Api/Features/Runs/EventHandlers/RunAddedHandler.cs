@@ -284,7 +284,7 @@ namespace Caster.Api.Features.Runs.EventHandlers
                     return;
                 }
 
-                var topology = PlanTopologyParser.Parse(showResult.Output);
+                var topology = PlanTopologyParser.Parse(showResult.Output, _options.Topology);
                 _plan.Topology = JsonSerializer.Serialize(topology, DefaultJsonSettings.Settings);
             }
             catch (Exception ex)

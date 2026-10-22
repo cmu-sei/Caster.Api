@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Caster.Api.Domain.Models;
+using Caster.Api.Infrastructure.Options;
 
 namespace Caster.Api.Domain.Services.Topology;
 
@@ -21,9 +22,9 @@ public static class AppliedTopology
     /// destroyed is still in the state if the apply did not get to it, and is
     /// drawn as it is.
     /// </remarks>
-    public static Models.Topology Read(string state, Models.Topology plan, bool applyFailed)
+    public static Models.Topology Read(string state, Models.Topology plan, bool applyFailed, TopologyOptions options = null)
     {
-        var topology = string.IsNullOrEmpty(state) ? new Models.Topology() : PlanTopologyParser.ParseState(state);
+        var topology = string.IsNullOrEmpty(state) ? new Models.Topology() : PlanTopologyParser.ParseState(state, options);
 
         if (!applyFailed || plan == null)
         {

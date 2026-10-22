@@ -46,6 +46,8 @@ public class TerraformOptions
     /// </summary>
     public bool GenerateTopology { get; set; } = true;
 
+    public TopologyOptions Topology { get; set; } = new();
+
     /// <summary>
     /// Maximum number of simultaneous terraform operations (plans + applies).
     /// 0 = unlimited. Applies are prioritized over plans when queued.

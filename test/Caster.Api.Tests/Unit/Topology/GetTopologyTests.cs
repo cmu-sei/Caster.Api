@@ -10,6 +10,7 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.Topology;
 using Caster.Api.Features.Workspaces;
 using Caster.Api.Infrastructure.Authorization;
+using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
 using Caster.Api.Tests.Support;
 using File = System.IO.File;
@@ -48,7 +49,7 @@ namespace Caster.Api.Tests.Unit.Topology
         }
 
         private Task<WorkspaceTopology> Get() =>
-            new GetTopology.Handler(Substitute.For<ICasterAuthorizationService>(), Db)
+            new GetTopology.Handler(Substitute.For<ICasterAuthorizationService>(), Db, new TerraformOptions())
                 .HandleRequest(new GetTopology.Query { Id = _workspaceId }, Ct);
 
         [Theory]
