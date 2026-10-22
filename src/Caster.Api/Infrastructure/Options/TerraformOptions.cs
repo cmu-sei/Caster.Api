@@ -40,6 +40,13 @@ public class TerraformOptions
     public bool SelectWorkspace { get; set; }
 
     /// <summary>
+    /// Read each successful plan's machines and networks for the Topology view.
+    /// Costs one <c>terraform show -json</c> per plan, which in Kubernetes job
+    /// mode is one more pod.
+    /// </summary>
+    public bool GenerateTopology { get; set; } = true;
+
+    /// <summary>
     /// Maximum number of simultaneous terraform operations (plans + applies).
     /// 0 = unlimited. Applies are prioritized over plans when queued.
     /// </summary>
