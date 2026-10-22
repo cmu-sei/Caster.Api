@@ -70,6 +70,7 @@ public static class AppliedTopology
             External = node.External,
             NotCreated = !node.External,
             Properties = node.Properties,
+            Console = node.Console,
         });
         ids.Add(node.Id);
     }

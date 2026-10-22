@@ -509,6 +509,91 @@ namespace Caster.Api.Tests.Unit.Topology
             Assert.Equal(["external:vmbr0"], NetworksOf(topology, "proxmox_virtual_environment_vm.a"));
         }
 
+        private const string Admin = "11111111-1111-1111-1111-111111111111";
+        private const string Red = "22222222-2222-2222-2222-222222222222";
+
+        [Fact]
+        public void PlayerRecord_GivesItsMachineConsoleTeams_ByVmId()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""") + "," +
+                Resource("proxmox_virtual_environment_vm.ws", """{"name":"ws","vm_id":201,"node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", $$"""
+                    {"name":"domain controller","team_ids":["{{Admin}}","{{Red}}"],"proxmox_vm_info":[{"id":"200","node":"pve"}]}
+                    """)));
+
+            var dc = topology.Nodes.Single(x => x.Id == "proxmox_virtual_environment_vm.dc").Console;
+            Assert.Equal([Admin, Red], dc.TeamIds);
+            Assert.Equal(TopologyConsoleMatch.Id, dc.Match);
+            // Registered nowhere: no team can open it.
+            var ws = topology.Nodes.Single(x => x.Id == "proxmox_virtual_environment_vm.ws").Console;
+            Assert.Empty(ws.TeamIds);
+            Assert.Null(ws.Match);
+        }
+
+        [Fact]
+        public void PlayerRecord_WhoseVmIdIsKnownAfterApply_IsMatchedByReference()
+        {
+            var configuration = """
+                {"resources":[{"address":"crucible_player_virtual_machine.dc","expressions":
+                  {"proxmox_vm_info":[{"id":{"references":["proxmox_virtual_environment_vm.dc.vm_id","proxmox_virtual_environment_vm.dc"]}}]}}]}
+                """;
+
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", $$"""{"name":"x","team_ids":["{{Admin}}"],"proxmox_vm_info":[{"node":"pve"}]}"""),
+                configuration));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
+            Assert.Equal([Admin], dc.TeamIds);
+            Assert.Equal(TopologyConsoleMatch.Reference, dc.Match);
+        }
+
+        [Fact]
+        public void PlayerRecord_WithOnlyAName_IsAGuessByName()
+        {
+            // for_each over a local map: the record refers to each.value, not the VM.
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.core_dc", """{"name":"core-dc","node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.range[\\\"core-dc\\\"]", $$"""{"name":"core-dc","team_ids":["{{Admin}}"]}""")));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
+            Assert.Equal([Admin], dc.TeamIds);
+            Assert.Equal(TopologyConsoleMatch.Name, dc.Match);
+        }
+
+        [Fact]
+        public void PlayerRecord_WhoseTeamsAreKnownAfterApply_SaysSo()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", """{"name":"dc","proxmox_vm_info":[{"id":"200","node":"pve"}]}""")));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
+            Assert.True(dc.TeamsUnknown);
+            Assert.Empty(dc.TeamIds);
+        }
+
+        [Fact]
+        public void VsphereGuestInfoTeams_AreTheMachinesOwn()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("vsphere_virtual_machine.dc", $$$"""{"name":"dc","extra_config":{"guestinfo.teamId":"{{{Admin}}},{{{Red}}}"}}""")));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
+            Assert.Equal([Admin, Red], dc.TeamIds);
+            Assert.Equal(TopologyConsoleMatch.Self, dc.Match);
+        }
+
+        [Fact]
+        public void WorkspaceThatRegistersNothingInPlayer_SaysNothingAboutConsoles()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""")));
+
+            Assert.Null(topology.Nodes.Single().Console);
+        }
+
         [Fact]
         public void PlanWithNoKnownTypes_IsEmpty()
         {

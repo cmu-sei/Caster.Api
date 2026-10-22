@@ -268,6 +268,8 @@ public static partial class PlanTopologyParser
             }
         }
 
+        var machines = new List<(Instance Instance, TopologyNode Node)>();
+
         // A machine data source is a template lookup, not a machine in the
         // topology. Networks are different: vsphere_network only exists as one.
         foreach (var instance in instances.Values.Where(x => x.Mode == "managed" && types.Machines.ContainsKey(x.Type)))
@@ -294,6 +296,7 @@ public static partial class PlanTopologyParser
             }
 
             topology.Nodes.Add(node);
+            machines.Add((instance, node));
 
             var nics = Nics(instance.Values, type);
             JsonElement? expressions = configuration.TryGetValue(ConfigAddress(instance.Address), out var found) ? found : null;
@@ -353,9 +356,171 @@ public static partial class PlanTopologyParser
             }
         }
 
+        ReadConsoles(instances, configuration, machines);
+
         topology.Nodes = [.. topology.Nodes.OrderBy(x => x.Kind).ThenBy(x => x.Id, StringComparer.Ordinal)];
 
         return topology;
+    }
+
+    private const string PlayerVm = "crucible_player_virtual_machine";
+
+    private static readonly string[] GuestInfoTeamIds = ["guestinfo.teamId", "guestinfo.team_id"];
+
+    /// <summary>
+    /// Which Player teams can open each machine's console: the teams of the
+    /// <c>crucible_player_virtual_machine</c> records that point at it, or a
+    /// vSphere machine's own <c>guestinfo.teamId</c>, which Caster's Player
+    /// sync registers. A record is matched by VM id, else by a reference to
+    /// the machine, else by name alone. Nothing is said about any machine when
+    /// the workspace uses neither.
+    /// </summary>
+    private static void ReadConsoles(
+        Dictionary<string, Instance> instances,
+        Dictionary<string, JsonElement> configuration,
+        List<(Instance Instance, TopologyNode Node)> machines)
+    {
+        var records = instances.Values.Where(x => x.Mode == "managed" && x.Type == PlayerVm).ToList();
+        var consoles = new Dictionary<TopologyNode, TopologyConsole>();
+
+        foreach (var (instance, node) in machines)
+        {
+            if (GuestInfoTeams(instance.Values) is { } teams)
+            {
+                consoles[node] = new TopologyConsole { TeamIds = teams, Match = TopologyConsoleMatch.Self };
+            }
+        }
+
+        if (records.Count == 0 && consoles.Count == 0)
+        {
+            return;
+        }
+
+        var byId = new Dictionary<string, TopologyNode>(StringComparer.Ordinal);
+
+        foreach (var (instance, node) in machines)
+        {
+            if (PlayerId(instance.Values) is { } id)
+            {
+                byId.TryAdd(id, node);
+            }
+        }
+
+        foreach (var record in records)
+        {
+            TopologyNode node = null;
+            var match = TopologyConsoleMatch.Id;
+
+            if (RecordId(record.Values) is { } id)
+            {
+                node = byId.GetValueOrDefault(id);
+            }
+
+            if (node == null && configuration.TryGetValue(ConfigAddress(record.Address), out var expressions))
+            {
+                match = TopologyConsoleMatch.Reference;
+                node = ReferencesAt(expressions, "proxmox_vm_info.0.id")
+                    .Concat(References(expressions, "virtual_machine_id"))
+                    .Select(reference => FindInModule(machines.Select(x => x.Instance), record.Module, reference))
+                    .Where(x => x != null)
+                    .Select(x => machines.First(m => m.Instance == x).Node)
+                    .FirstOrDefault();
+            }
+
+            if (node == null && GetScalar(record.Values, "name") is { Length: > 0 } name)
+            {
+                match = TopologyConsoleMatch.Name;
+                var named = machines.Where(x => x.Node.Label == name).ToList();
+                node = named.Count == 1 ? named[0].Node : null;
+            }
+
+            if (node == null)
+            {
+                continue;
+            }
+
+            var console = consoles.TryGetValue(node, out var found) ? found : consoles[node] = new TopologyConsole { Match = match };
+
+            // Two records for one machine: the surer match describes both.
+            if (console.Match == null || match < console.Match)
+            {
+                console.Match = match;
+            }
+
+            if (record.Values.ValueKind == JsonValueKind.Object &&
+                record.Values.TryGetProperty("team_ids", out var teamIds) &&
+                teamIds.ValueKind == JsonValueKind.Array)
+            {
+                console.TeamIds = [.. console.TeamIds.Union(teamIds.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String)
+                    .Select(x => x.GetString()))];
+            }
+            else
+            {
+                console.TeamsUnknown = true;
+            }
+        }
+
+        foreach (var (_, node) in machines)
+        {
+            node.Console = consoles.GetValueOrDefault(node) ?? new TopologyConsole();
+        }
+    }
+
+    /// <summary>A vSphere machine's teams in <c>extra_config</c>, comma-separated, as Caster's Player sync reads them.</summary>
+    private static List<string> GuestInfoTeams(JsonElement values)
+    {
+        if (values.ValueKind != JsonValueKind.Object ||
+            !values.TryGetProperty("extra_config", out var extraConfig) ||
+            extraConfig.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var teams = GuestInfoTeamIds
+            .Select(x => extraConfig.TryGetProperty(x, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null)
+            .Where(x => x != null)
+            .SelectMany(x => x.Split(','))
+            .Select(x => x.Trim())
+            .Where(x => Guid.TryParse(x, out _))
+            .Distinct()
+            .ToList();
+
+        return teams.Count > 0 ? teams : null;
+    }
+
+    /// <summary>
+    /// The VM id a Player record would use for a machine: a Proxmox VM's node
+    /// and id, or a vSphere VM's uuid. Null until apply when it isn't set.
+    /// </summary>
+    private static string PlayerId(JsonElement values)
+    {
+        var vmId = GetScalar(values, "vm_id") ?? GetScalar(values, "vmid");
+        var node = GetScalar(values, "node_name") ?? GetScalar(values, "target_node");
+
+        if (vmId != null && node != null)
+        {
+            return $"proxmox:{node}/{vmId}";
+        }
+
+        var uuid = GetScalar(values, "uuid");
+
+        return uuid == null ? null : "vm:" + uuid;
+    }
+
+    private static string RecordId(JsonElement values)
+    {
+        var vmId = GetScalar(values, "proxmox_vm_info.0.id");
+        var node = GetScalar(values, "proxmox_vm_info.0.node");
+
+        if (vmId != null && node != null)
+        {
+            return $"proxmox:{node}/{vmId}";
+        }
+
+        var id = GetScalar(values, "virtual_machine_id");
+
+        return id == null ? null : "vm:" + id;
     }
 
     /// <summary>
