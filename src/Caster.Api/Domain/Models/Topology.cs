@@ -74,6 +74,35 @@ public class TopologyConsole
 
     /// <summary>How the machine's Player record was found. Null when it has none.</summary>
     public TopologyConsoleMatch? Match { get; set; }
+
+    /// <summary>The machine's own VM id in Player. Null until apply, or when it has no Player record.</summary>
+    public string VmId { get; set; }
+
+    /// <summary>The machine's console in Player. Null while <see cref="VmId"/> is.</summary>
+    public string Url { get; set; }
+
+    /// <summary>
+    /// The teams in <see cref="TeamIds"/>, named where the Terraform names
+    /// them. Caster does not ask Player.
+    /// </summary>
+    public List<TopologyTeam> Teams { get; set; } = [];
+}
+
+/// <summary>A Player team, named as the workspace's Terraform knows it.</summary>
+public class TopologyTeam
+{
+    public string Id { get; set; }
+
+    /// <summary>
+    /// The team's name, from a <c>crucible_player_team</c> or
+    /// <c>crucible_player_view</c> the workspace creates. Else the name of
+    /// the root variable that holds the id: Alloy names each team's variable
+    /// after the team, lower case, spaces as underscores. Null when neither.
+    /// </summary>
+    public string Name { get; set; }
+
+    /// <summary>The root variable <see cref="Name"/> came from. Null when it came from a resource.</summary>
+    public string Variable { get; set; }
 }
 
 public enum TopologyConsoleMatch

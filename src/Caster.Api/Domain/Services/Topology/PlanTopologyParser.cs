@@ -189,7 +189,7 @@ public static partial class PlanTopologyParser
         using var document = JsonDocument.Parse(planJson);
         var root = document.RootElement;
 
-        return Build(ReadInstances(root), ReadConfiguration(root), Resolve(options));
+        return Build(ReadInstances(root), ReadConfiguration(root), Resolve(options), ReadVariables(root));
     }
 
     /// <summary>
@@ -205,13 +205,14 @@ public static partial class PlanTopologyParser
     {
         using var document = JsonDocument.Parse(stateJson);
 
-        return Build(ReadStateFile(document.RootElement), [], Resolve(options));
+        return Build(ReadStateFile(document.RootElement), [], Resolve(options), []);
     }
 
     private static Models.Topology Build(
         Dictionary<string, Instance> instances,
         Dictionary<string, JsonElement> configuration,
-        TypeTable types)
+        TypeTable types,
+        Dictionary<string, string> variables)
     {
         var topology = new Models.Topology();
         var networkByKey = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -356,7 +357,7 @@ public static partial class PlanTopologyParser
             }
         }
 
-        ReadConsoles(instances, configuration, machines);
+        ReadConsoles(instances, configuration, machines, variables);
 
         topology.Nodes = [.. topology.Nodes.OrderBy(x => x.Kind).ThenBy(x => x.Id, StringComparer.Ordinal)];
 
@@ -364,6 +365,8 @@ public static partial class PlanTopologyParser
     }
 
     private const string PlayerVm = "crucible_player_virtual_machine";
+    private const string PlayerTeam = "crucible_player_team";
+    private const string PlayerView = "crucible_player_view";
 
     private static readonly string[] GuestInfoTeamIds = ["guestinfo.teamId", "guestinfo.team_id"];
 
@@ -378,7 +381,8 @@ public static partial class PlanTopologyParser
     private static void ReadConsoles(
         Dictionary<string, Instance> instances,
         Dictionary<string, JsonElement> configuration,
-        List<(Instance Instance, TopologyNode Node)> machines)
+        List<(Instance Instance, TopologyNode Node)> machines,
+        Dictionary<string, string> variables)
     {
         var records = instances.Values.Where(x => x.Mode == "managed" && x.Type == PlayerVm).ToList();
         var consoles = new Dictionary<TopologyNode, TopologyConsole>();
@@ -387,7 +391,13 @@ public static partial class PlanTopologyParser
         {
             if (GuestInfoTeams(instance.Values) is { } teams)
             {
-                consoles[node] = new TopologyConsole { TeamIds = teams, Match = TopologyConsoleMatch.Self };
+                // Caster's Player sync registers the machine under its own id.
+                consoles[node] = new TopologyConsole
+                {
+                    TeamIds = teams,
+                    Match = TopologyConsoleMatch.Self,
+                    VmId = GetScalar(instance.Values, "id"),
+                };
             }
         }
 
@@ -447,6 +457,13 @@ public static partial class PlanTopologyParser
                 console.Match = match;
             }
 
+            // A machine with two records keeps the first one's console.
+            if (console.VmId == null && GetScalar(record.Values, "id") is { } vmId)
+            {
+                console.VmId = vmId;
+                console.Url = GetScalar(record.Values, "url");
+            }
+
             if (record.Values.ValueKind == JsonValueKind.Object &&
                 record.Values.TryGetProperty("team_ids", out var teamIds) &&
                 teamIds.ValueKind == JsonValueKind.Array)
@@ -461,10 +478,80 @@ public static partial class PlanTopologyParser
             }
         }
 
+        var teamNames = TeamNames(instances, variables);
+
         foreach (var (_, node) in machines)
         {
             node.Console = consoles.GetValueOrDefault(node) ?? new TopologyConsole();
+            node.Console.Teams = [.. node.Console.TeamIds.Select(id => teamNames.GetValueOrDefault(id) ?? new TopologyTeam { Id = id })];
         }
+    }
+
+    /// <summary>
+    /// Team names the Terraform knows: teams the workspace creates, by their
+    /// own name, then teams passed in as a root variable, by the variable's
+    /// name, which is how Alloy passes in its view's teams.
+    /// </summary>
+    private static Dictionary<string, TopologyTeam> TeamNames(
+        Dictionary<string, Instance> instances,
+        Dictionary<string, string> variables)
+    {
+        var teams = new Dictionary<string, TopologyTeam>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(string id, string name, string variable = null)
+        {
+            if (id != null && name != null)
+            {
+                teams.TryAdd(id, new TopologyTeam { Id = id, Name = name, Variable = variable });
+            }
+        }
+
+        foreach (var instance in instances.Values.Where(x => x.Mode == "managed"))
+        {
+            if (instance.Type == PlayerTeam)
+            {
+                Add(GetScalar(instance.Values, "id"), GetScalar(instance.Values, "name"));
+            }
+            else if (instance.Type == PlayerView &&
+                instance.Values.ValueKind == JsonValueKind.Object &&
+                instance.Values.TryGetProperty("team", out var viewTeams) &&
+                viewTeams.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var team in viewTeams.EnumerateArray())
+                {
+                    Add(GetScalar(team, "team_id"), GetScalar(team, "name"));
+                }
+            }
+        }
+
+        foreach (var (name, value) in variables.OrderBy(x => x.Key, StringComparer.Ordinal))
+        {
+            Add(value, name, name);
+        }
+
+        return teams;
+    }
+
+    /// <summary>The plan's root variables that hold a single id.</summary>
+    private static Dictionary<string, string> ReadVariables(JsonElement root)
+    {
+        var variables = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (root.TryGetProperty("variables", out var all) && all.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var variable in all.EnumerateObject())
+            {
+                if (variable.Value.ValueKind == JsonValueKind.Object &&
+                    variable.Value.TryGetProperty("value", out var value) &&
+                    value.ValueKind == JsonValueKind.String &&
+                    Guid.TryParse(value.GetString(), out _))
+                {
+                    variables[variable.Name] = value.GetString();
+                }
+            }
+        }
+
+        return variables;
     }
 
     /// <summary>A vSphere machine's teams in <c>extra_config</c>, comma-separated, as Caster's Player sync reads them.</summary>

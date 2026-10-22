@@ -26,13 +26,26 @@ public static class AppliedTopology
     {
         var topology = string.IsNullOrEmpty(state) ? new Models.Topology() : PlanTopologyParser.ParseState(state, options);
 
+        // A state file has no variables, so a team named after one is named
+        // by the plan.
+        var planned = (plan?.Nodes ?? [])
+            .SelectMany(x => x.Console?.Teams ?? [])
+            .Where(x => x.Name != null)
+            .GroupBy(x => x.Id, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.First(), System.StringComparer.OrdinalIgnoreCase);
+
+        foreach (var console in topology.Nodes.Select(x => x.Console).Where(x => x != null))
+        {
+            console.Teams = [.. console.Teams.Select(x => x.Name == null ? planned.GetValueOrDefault(x.Id) ?? x : x)];
+        }
+
         if (!applyFailed || plan == null)
         {
             return topology;
         }
 
         var ids = topology.Nodes.Select(x => x.Id).ToHashSet();
-        var planned = plan.Nodes.ToDictionary(x => x.Id);
+        var plannedNodes = plan.Nodes.ToDictionary(x => x.Id);
         var notCreated = plan.Nodes
             .Where(x => !x.External && (x.Action == "create" || x.Action == "replace") && !ids.Contains(x.Id))
             .Select(x => x.Id)
@@ -40,12 +53,12 @@ public static class AppliedTopology
 
         foreach (var id in notCreated)
         {
-            Add(topology, ids, planned[id]);
+            Add(topology, ids, plannedNodes[id]);
         }
 
         foreach (var edge in plan.Edges.Where(x => notCreated.Contains(x.From)))
         {
-            if (!ids.Contains(edge.To) && planned.TryGetValue(edge.To, out var network))
+            if (!ids.Contains(edge.To) && plannedNodes.TryGetValue(edge.To, out var network))
             {
                 Add(topology, ids, network);
             }
