@@ -586,6 +586,55 @@ namespace Caster.Api.Tests.Unit.Topology
         }
 
         [Fact]
+        public void PlayerRecord_GivesItsMachineItsOwnConsole()
+        {
+            const string vmId = "33333333-3333-3333-3333-333333333333";
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", $$"""
+                    {"id":"{{vmId}}","url":"http://console/vm/{{vmId}}/console","name":"dc","team_ids":["{{Admin}}"],"proxmox_vm_info":[{"id":"200","node":"pve"}]}
+                    """)));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console;
+            Assert.Equal(vmId, dc.VmId);
+            Assert.Equal($"http://console/vm/{vmId}/console", dc.Url);
+        }
+
+        [Fact]
+        public void TeamPassedInAsAVariable_IsNamedAfterIt()
+        {
+            // How Alloy passes in its view's teams.
+            var plan = Plan(
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", $$"""
+                    {"name":"dc","team_ids":["{{Admin}}","{{Red}}"],"proxmox_vm_info":[{"id":"200","node":"pve"}]}
+                    """));
+            plan = $$$"""{"variables":{"admin_user":{"value":"{{{Admin}}}"},"view_id":{"value":"44444444-4444-4444-4444-444444444444"},"username":{"value":"admin"}},""" + plan[1..];
+
+            var teams = PlanTopologyParser.Parse(plan).Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console.Teams;
+            Assert.Equal([Admin, Red], teams.Select(x => x.Id));
+            Assert.Equal("admin_user", teams[0].Name);
+            Assert.Equal("admin_user", teams[0].Variable);
+            Assert.Null(teams[1].Name);
+        }
+
+        [Fact]
+        public void TeamTheWorkspaceCreates_IsNamedByIt()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Resource("crucible_player_view.v", $$"""{"name":"view","team":[{"team_id":"{{Admin}}","name":"Admin"}]}""") + "," +
+                Resource("crucible_player_team.red", $$"""{"id":"{{Red}}","name":"Red Cell"}""") + "," +
+                Resource("proxmox_virtual_environment_vm.dc", """{"name":"dc","vm_id":200,"node_name":"pve"}""") + "," +
+                Resource("crucible_player_virtual_machine.dc", $$"""
+                    {"name":"dc","team_ids":["{{Admin}}","{{Red}}"],"proxmox_vm_info":[{"id":"200","node":"pve"}]}
+                    """)));
+
+            var teams = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine).Console.Teams;
+            Assert.Equal(["Admin", "Red Cell"], teams.Select(x => x.Name));
+            Assert.All(teams, x => Assert.Null(x.Variable));
+        }
+
+        [Fact]
         public void WorkspaceThatRegistersNothingInPlayer_SaysNothingAboutConsoles()
         {
             var topology = PlanTopologyParser.Parse(Plan(
