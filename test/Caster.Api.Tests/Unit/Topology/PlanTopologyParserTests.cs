@@ -657,6 +657,21 @@ namespace Caster.Api.Tests.Unit.Topology
         }
 
         [Fact]
+        public void PlayerRecordThatChanges_ChangesItsMachine()
+        {
+            var topology = PlanTopologyParser.Parse(Plan("""
+                {"address":"proxmox_virtual_environment_vm.dc","mode":"managed","type":"proxmox_virtual_environment_vm","name":"dc",
+                 "change":{"actions":["no-op"],"after":{"name":"dc-1234","vm_id":200,"node_name":"pve"}}},
+                {"address":"crucible_player_virtual_machine.dc","mode":"managed","type":"crucible_player_virtual_machine","name":"dc",
+                 "change":{"actions":["update"],"after":{"name":"dc","team_ids":[],"proxmox_vm_info":[{"id":"200","node":"pve"}]}}}
+                """));
+
+            var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine);
+            Assert.Equal("update", dc.Action);
+            Assert.Equal("update", dc.Console.Action);
+        }
+
+        [Fact]
         public void WorkspaceThatRegistersNothingInPlayer_SaysNothingAboutConsoles()
         {
             var topology = PlanTopologyParser.Parse(Plan(
