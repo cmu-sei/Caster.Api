@@ -459,6 +459,7 @@ public static partial class PlanTopologyParser
             }
 
             console.Name ??= GetScalar(record.Values, "name");
+            console.Address ??= record.Address;
 
             if (record.Action is { } action and not "no-op" and not "read")
             {
@@ -492,12 +493,6 @@ public static partial class PlanTopologyParser
         {
             node.Console = consoles.GetValueOrDefault(node) ?? new TopologyConsole();
             node.Console.Teams = [.. node.Console.TeamIds.Select(id => teamNames.GetValueOrDefault(id) ?? new TopologyTeam { Id = id })];
-
-            // To a planner, a machine whose console changes is a machine that changes.
-            if (node.Action == "no-op" && node.Console.Action != null)
-            {
-                node.Action = "update";
-            }
         }
     }
 

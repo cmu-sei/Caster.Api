@@ -657,7 +657,7 @@ namespace Caster.Api.Tests.Unit.Topology
         }
 
         [Fact]
-        public void PlayerRecordThatChanges_ChangesItsMachine()
+        public void PlayerRecordThatChanges_SaysSoOnItsMachine()
         {
             var topology = PlanTopologyParser.Parse(Plan("""
                 {"address":"proxmox_virtual_environment_vm.dc","mode":"managed","type":"proxmox_virtual_environment_vm","name":"dc",
@@ -667,8 +667,10 @@ namespace Caster.Api.Tests.Unit.Topology
                 """));
 
             var dc = topology.Nodes.Single(x => x.Kind == TopologyNodeKind.Machine);
-            Assert.Equal("update", dc.Action);
+            // The machine itself is left alone; its Player record changes.
+            Assert.Equal("no-op", dc.Action);
             Assert.Equal("update", dc.Console.Action);
+            Assert.Equal("crucible_player_virtual_machine.dc", dc.Console.Address);
         }
 
         [Fact]

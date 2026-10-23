@@ -79,6 +79,13 @@ public class TopologyConsole
     public string VmId { get; set; }
 
     /// <summary>
+    /// The address of the machine's Player record, such as
+    /// <c>crucible_player_virtual_machine.dc</c>. Null when Caster's own Player
+    /// sync registers it.
+    /// </summary>
+    public string Address { get; set; }
+
+    /// <summary>
     /// What the plan does to the machine's Player record: create, update,
     /// replace or delete. Null when it leaves it alone, and when read from the state.
     /// </summary>
