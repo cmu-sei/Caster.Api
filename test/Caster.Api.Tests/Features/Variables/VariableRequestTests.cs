@@ -142,6 +142,25 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
     }
 
     [Fact]
+    public async Task Create_stores_a_type_outside_the_enum_in_the_design_file()
+    {
+        var (_, design) = await SeedDesign();
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/variables", new { designId = design.Id, name = "numeric_type", type = 7 }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        await using var context = NewContext();
+        var stored = await context.Variables.SingleAsync(x => x.DesignId == design.Id, Ct);
+        Assert.Equal((VariableType)7, stored.Type);
+        var directory = await context.Directories.SingleAsync(x => x.Id == design.DirectoryId, Ct);
+        var workspace = TestData.Workspace(directory);
+        var file = Assert.Single(await context.GetWorkspaceFiles(workspace, directory));
+        Assert.Equal($"{design.Name}-design.tf", file.Name);
+        Assert.Contains("type = 7", file.Content);
+    }
+
+    [Fact]
     public async Task Create_is_forbidden_for_a_caller_holding_only_ViewProject()
     {
         var (project, design) = await SeedDesign();
@@ -198,6 +217,25 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var response = await Client(actor).PutAsJsonAsync($"api/variables/{variable.Id}", new { name = variable.Name, type = "string", defaultValue = "changed" }, Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
+    }
+
+    [Fact]
+    public async Task Edit_stores_a_type_outside_the_enum_in_the_design_file()
+    {
+        var (_, design, variable) = await SeedVariable();
+
+        var response = await RootClient.PutAsJsonAsync(
+            $"api/variables/{variable.Id}", new { name = variable.Name, type = 7 }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        await using var context = NewContext();
+        var stored = await context.Variables.SingleAsync(x => x.Id == variable.Id, Ct);
+        Assert.Equal((VariableType)7, stored.Type);
+        var directory = await context.Directories.SingleAsync(x => x.Id == design.DirectoryId, Ct);
+        var workspace = TestData.Workspace(directory);
+        var file = Assert.Single(await context.GetWorkspaceFiles(workspace, directory));
+        Assert.Equal($"{design.Name}-design.tf", file.Name);
+        Assert.Contains("type = 7", file.Content);
     }
 
     [Fact]

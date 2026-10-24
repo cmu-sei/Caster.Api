@@ -440,6 +440,19 @@ public class GroupRequestTests(DatabaseFixture fixture, CasterAppFactory factory
     }
 
     [Fact]
+    public async Task CreateMembership_stores_a_role_outside_the_enum()
+    {
+        var group = await SeedGroup();
+        var user = await SeedUser();
+
+        var response = await RootClient.PostAsJsonAsync(
+            $"api/groups/{group.Id}/memberships", new { userId = user.Id, role = 7 }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        Assert.Equal((GroupMembershipRole)7, (await StoredMembership(group.Id, user.Id)).Role);
+    }
+
+    [Fact]
     public async Task EditMembership_by_the_groups_manager_stores_the_new_role()
     {
         var (group, membership) = await SeedGroupWithAMember();

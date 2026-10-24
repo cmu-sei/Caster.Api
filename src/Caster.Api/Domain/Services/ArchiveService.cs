@@ -359,17 +359,36 @@ namespace Caster.Api.Domain.Services
                         continue;
                     }
 
-                    var file = this.EnsureCreated(project, directory, archiveEntry.Name, archiveEntry.IsFile, directoryKeys, workspaceKeys);
-
-                    if (file != null && archiveEntry.IsFile)
+                    if (IsOperatingSystemMetadata(pathParts))
                     {
-                        var buffer = new byte[4096];
+                        continue;
+                    }
 
+                    byte[] content = null;
+
+                    if (archiveEntry.IsFile)
+                    {
                         using (var contentStream = new System.IO.MemoryStream())
                         {
-                            StreamUtils.Copy(archiveInputStream.Stream, contentStream, buffer);
-                            file.Content = Utf8.GetString(contentStream.ToArray());
+                            StreamUtils.Copy(archiveInputStream.Stream, contentStream, new byte[4096]);
+                            content = contentStream.ToArray();
                         }
+
+                        // File content is stored as text, and the database rejects a NUL
+                        // character in text, failing the entire Import. A NUL byte is also the
+                        // usual sign of a binary file, which is not Terraform configuration.
+                        if (Array.IndexOf(content, (byte)0) >= 0)
+                        {
+                            result.Warnings.Add($"'{string.Join('/', pathParts)}' is a binary file and was not imported.");
+                            continue;
+                        }
+                    }
+
+                    var file = this.EnsureCreated(project, directory, archiveEntry.Name, archiveEntry.IsFile, directoryKeys, workspaceKeys);
+
+                    if (file != null && content != null)
+                    {
+                        file.Content = Utf8.GetString(content);
                     }
                 }
             }
@@ -685,6 +704,26 @@ namespace Caster.Api.Domain.Services
             }
 
             return file;
+        }
+
+        /// <summary>
+        /// Files an operating system adds when it compresses a folder, which are not part of
+        /// the user's content. macOS Finder adds a __MACOSX folder of AppleDouble "._" files,
+        /// macOS tar adds the "._" files alongside the originals, and Finder writes .DS_Store
+        /// into any folder it has displayed.
+        /// </summary>
+        private static bool IsOperatingSystemMetadata(string[] pathParts)
+        {
+            if (pathParts.Length == 0)
+            {
+                return false;
+            }
+
+            var name = pathParts[^1];
+
+            return pathParts.Contains("__MACOSX", StringComparer.Ordinal) ||
+                name.Equals(".DS_Store", StringComparison.Ordinal) ||
+                name.StartsWith("._", StringComparison.Ordinal);
         }
 
         private string[] SplitPath(string path)
