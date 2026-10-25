@@ -45,18 +45,25 @@ namespace Caster.Api.Features.Inventory
         public InventoryItem[] Items { get; set; } = [];
 
         /// <summary>
-        /// When the cache was last populated successfully, in UTC. Null if never.
+        /// When the items were read, in UTC. Null if never.
         /// </summary>
         public DateTime? LastUpdated { get; set; }
 
         /// <summary>
-        /// False when the inventory is not configured, not supported, or the last
-        /// read failed.
+        /// False when the inventory is not configured, not supported, or could not
+        /// be read and no earlier read is kept.
         /// </summary>
         public bool Available { get; set; }
 
         /// <summary>
-        /// Human readable reason, set when <see cref="Available"/> is false.
+        /// True when the latest read failed and the items are from the last read
+        /// that succeeded, at <see cref="LastUpdated"/>. They may be out of date.
+        /// </summary>
+        public bool Stale { get; set; }
+
+        /// <summary>
+        /// Human readable reason, set when <see cref="Available"/> is false or
+        /// <see cref="Stale"/> is true.
         /// </summary>
         public string Error { get; set; }
 
@@ -75,8 +82,9 @@ namespace Caster.Api.Features.Inventory
                         Properties = x.Properties ?? []
                     })
                     .ToArray(),
-                LastUpdated = snapshot.LastUpdated,
+                LastUpdated = result.LastUpdated ?? snapshot.LastUpdated,
                 Available = result.Available,
+                Stale = result.Stale,
                 Error = result.Error
             };
         }

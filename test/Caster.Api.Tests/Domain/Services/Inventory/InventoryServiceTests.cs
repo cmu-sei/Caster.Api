@@ -247,6 +247,202 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             }
         }
 
+        #region Keeping the last good read
+
+        private static readonly DateTime FirstRead = new(2026, 10, 24, 9, 30, 0, DateTimeKind.Utc);
+        private static readonly DateTime ThirdRead = new(2026, 10, 24, 10, 30, 0, DateTimeKind.Utc);
+
+        private const string Refused = "Could not connect to Proxmox at https://pve.test:8006: Connection refused";
+
+        [Fact]
+        public async Task ProviderDown_AfterAGoodRead_KeepsThatReadAsStale()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedAt(FirstRead),
+                () => InventorySnapshot.AllUnavailable(Refused)));
+
+            await RunReads(sut, refreshes: 1);
+
+            var snapshot = sut.GetSnapshot();
+            var templates = snapshot.VmTemplates;
+
+            Assert.True(templates.Available);
+            Assert.True(templates.Stale);
+            Assert.Equal("win2019-template", Assert.Single(templates.Entries).Name);
+            Assert.Equal(FirstRead, templates.LastUpdated);
+            Assert.Equal(Refused, templates.Error);
+
+            Assert.True(snapshot.Networks.Stale);
+            Assert.Equal(FirstRead, snapshot.LastUpdated);
+            Assert.Equal(FirstRead, Assert.Single(sut.GetConnections()).LastUpdated);
+
+            // never read, so there is nothing to keep
+            Assert.False(snapshot.Isos.Available);
+            Assert.False(snapshot.Isos.Stale);
+            Assert.Equal(Refused, snapshot.Isos.Error);
+        }
+
+        [Fact]
+        public async Task EveryCategoryFails_AfterConnecting_IsNotANewerRead()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedAt(FirstRead),
+                () =>
+                {
+                    // connected, so the provider stamped the read, then nothing came back
+                    var read = InventorySnapshot.AllUnavailable("Proxmox returned 500 InternalServerError.");
+                    read.LastUpdated = ThirdRead;
+                    return read;
+                }));
+
+            await RunReads(sut, refreshes: 1);
+
+            Assert.Equal(FirstRead, sut.GetSnapshot().LastUpdated);
+            Assert.True(sut.GetSnapshot().VmTemplates.Stale);
+        }
+
+        [Fact]
+        public async Task ProviderThrows_AfterAGoodRead_KeepsThatReadAsStale()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedAt(FirstRead),
+                () => throw new InvalidOperationException($"login failed for {Password}")));
+
+            await RunReads(sut, refreshes: 1);
+
+            var templates = sut.GetSnapshot().VmTemplates;
+
+            Assert.True(templates.Stale);
+            Assert.Equal("win2019-template", Assert.Single(templates.Entries).Name);
+            Assert.DoesNotContain(Password, templates.Error);
+            Assert.Contains("***", templates.Error);
+        }
+
+        [Fact]
+        public async Task PartialRead_KeepsOnlyTheCategoryThatFailed()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedAt(FirstRead),
+                () =>
+                {
+                    var read = LoadedAt(ThirdRead);
+                    read.VmTemplates = InventoryCategoryResult.Ok([new InventoryEntry { Id = "vm-3", Name = "win2022-template" }]);
+                    read.Networks = InventoryCategoryResult.Unavailable("Proxmox returned 500 InternalServerError when reading networks.");
+                    return read;
+                }));
+
+            await RunReads(sut, refreshes: 1);
+
+            var snapshot = sut.GetSnapshot();
+
+            Assert.False(snapshot.VmTemplates.Stale);
+            Assert.Equal("win2022-template", Assert.Single(snapshot.VmTemplates.Entries).Name);
+            Assert.Equal(ThirdRead, snapshot.VmTemplates.LastUpdated);
+
+            Assert.True(snapshot.Networks.Stale);
+            Assert.Equal("vlan-200", Assert.Single(snapshot.Networks.Entries).Name);
+            Assert.Equal(FirstRead, snapshot.Networks.LastUpdated);
+        }
+
+        [Fact]
+        public async Task ProviderBack_ReplacesTheKeptRead()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedAt(FirstRead),
+                () => InventorySnapshot.AllUnavailable(Refused),
+                () => LoadedAt(ThirdRead)));
+
+            await RunReads(sut, refreshes: 2);
+
+            var templates = sut.GetSnapshot().VmTemplates;
+
+            Assert.False(templates.Stale);
+            Assert.Null(templates.Error);
+            Assert.Equal(ThirdRead, templates.LastUpdated);
+        }
+
+        [Fact]
+        public async Task UrlChange_DoesNotKeepTheOtherSystemsRead()
+        {
+            var monitor = new TestOptionsMonitor<InfrastructureOptions>(EnabledOptions());
+            var sut = Build(monitor, new FakeProviderClient(options => options.Url == EnabledOptions().Url
+                ? LoadedAt(FirstRead)
+                : InventorySnapshot.AllUnavailable(Refused)));
+
+            await RunReads(sut, refreshes: 1, beforeRefresh: () =>
+            {
+                var moved = EnabledOptions();
+                moved.Url = "https://vcenter2.test";
+                monitor.Set(moved);
+            });
+
+            var snapshot = sut.GetSnapshot();
+
+            Assert.False(snapshot.VmTemplates.Available);
+            Assert.Empty(snapshot.VmTemplates.Entries);
+            Assert.Null(snapshot.LastUpdated);
+        }
+
+        [Fact]
+        public async Task Disabled_AfterAGoodRead_DropsIt()
+        {
+            var monitor = new TestOptionsMonitor<InfrastructureOptions>(EnabledOptions());
+            var sut = Build(monitor, new FakeProviderClient(_ => LoadedAt(FirstRead)));
+
+            await RunReads(sut, refreshes: 1, beforeRefresh: () =>
+            {
+                var disabled = EnabledOptions();
+                disabled.Enabled = false;
+                monitor.Set(disabled);
+            });
+
+            var templates = sut.GetSnapshot().VmTemplates;
+
+            Assert.False(templates.Available);
+            Assert.False(templates.Stale);
+            Assert.Equal(InventoryMessages.NotEnabled, templates.Error);
+        }
+
+        /// <summary>
+        /// Answers each read with the next responder in turn, then repeats the last.
+        /// </summary>
+        private static FakeProviderClient Reads(params Func<InventorySnapshot>[] reads)
+        {
+            var calls = -1;
+            return new FakeProviderClient(_ => reads[Math.Min(Interlocked.Increment(ref calls), reads.Length - 1)]());
+        }
+
+        private static InventorySnapshot LoadedAt(DateTime stamp)
+        {
+            var snapshot = Loaded();
+            snapshot.LastUpdated = stamp;
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Starts the service, which reads once, then forces <paramref name="refreshes"/>
+        /// more reads, waiting for each to land.
+        /// </summary>
+        private static async Task RunReads(InventoryService sut, int refreshes, Action beforeRefresh = null)
+        {
+            try
+            {
+                await sut.StartAsync(CancellationToken.None);
+                beforeRefresh?.Invoke();
+
+                for (var i = 0; i < refreshes; i++)
+                {
+                    Assert.True(await sut.ForceRefreshAsync(TimeSpan.FromSeconds(10), CancellationToken.None));
+                }
+            }
+            finally
+            {
+                await sut.StopAsync(CancellationToken.None);
+            }
+        }
+
+        #endregion
+
         #region Connections
 
         [Fact]

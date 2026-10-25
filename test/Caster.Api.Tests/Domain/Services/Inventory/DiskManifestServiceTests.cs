@@ -1,6 +1,7 @@
 // Copyright 2021 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Caster.Api.Domain.Models;
@@ -162,6 +163,43 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Contains("ISOs on connection 'default' could not be read", warning);
         }
 
+        /// <summary>
+        /// Templates kept from a read at 09:30 because the latest one failed.
+        /// </summary>
+        private static InventorySnapshot StaleTemplates(params InventoryEntry[] templates)
+        {
+            var snapshot = Snapshot([], [Entry(Iso)]);
+
+            snapshot.VmTemplates = new InventoryCategoryResult
+            {
+                Entries = templates,
+                Available = true,
+                Stale = true,
+                LastUpdated = new DateTime(2026, 10, 24, 9, 30, 0, DateTimeKind.Utc),
+                Error = "Could not connect to Proxmox at https://pve.test:8006: Connection refused"
+            };
+
+            return snapshot;
+        }
+
+        [Fact]
+        public void A_Kept_Category_Is_Listed_And_Says_How_Old_It_Is()
+        {
+            var service = new DiskManifestService(Inventory(("default", "proxmox", StaleTemplates(Entry("ubuntu-2404")))));
+
+            var manifest = service.Build([File("main.tf", "template_name = \"ubuntu-2404\"\n")]);
+
+            var disk = Assert.Single(manifest.Disks);
+            Assert.Equal("ubuntu-2404", disk.Name);
+            Assert.Equal("default", disk.Connection);
+            Assert.Equal("proxmox", disk.Provider);
+
+            var warning = Assert.Single(manifest.Warnings);
+            Assert.Contains("VM templates on connection 'default' could not be read", warning);
+            Assert.Contains("stale inventory read at 2026-10-24 09:30 UTC", warning);
+            Assert.Contains("Connection refused", warning);
+        }
+
         [Fact]
         public void With_Inventory_Disabled_The_Manifest_Is_Empty_And_Says_Why()
         {
@@ -224,6 +262,17 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var disk = Assert.Single(service.Check(Manifest((DiskKind.Iso, Iso))));
 
             Assert.Equal(DiskStatus.Unknown, disk.Status);
+        }
+
+        [Fact]
+        public void Check_Trusts_A_Kept_Category_For_Present_But_Not_For_Missing()
+        {
+            var service = new DiskManifestService(Inventory(("default", "proxmox", StaleTemplates(Entry("ubuntu-2404")))));
+
+            var disks = service.Check(Manifest((DiskKind.VmTemplate, "ubuntu-2404"), (DiskKind.VmTemplate, "kali-2026")));
+
+            Assert.Equal(DiskStatus.Present, disks.Single(x => x.Name == "ubuntu-2404").Status);
+            Assert.Equal(DiskStatus.Unknown, disks.Single(x => x.Name == "kali-2026").Status);
         }
 
         [Fact]

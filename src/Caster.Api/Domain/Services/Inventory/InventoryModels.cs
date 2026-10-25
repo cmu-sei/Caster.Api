@@ -55,13 +55,27 @@ public class InventoryCategoryResult
     public InventoryEntry[] Entries { get; set; } = [];
 
     /// <summary>
-    /// False when the category could not be read, or is not supported.
+    /// False when the category has nothing to serve: it is not supported, or it
+    /// could not be read and no earlier read is kept. An earlier read that is
+    /// kept is still available, with <see cref="Stale"/> set.
     /// </summary>
     public bool Available { get; set; }
 
     /// <summary>
-    /// Human readable reason, set when <see cref="Available"/> is false.
-    /// Must never contain credentials.
+    /// True when the latest read of this category failed and <see cref="Entries"/>
+    /// are kept from the last one that succeeded, so they may be out of date.
+    /// </summary>
+    public bool Stale { get; set; }
+
+    /// <summary>
+    /// When <see cref="Entries"/> were read, in UTC. Null when the category has
+    /// never been read successfully.
+    /// </summary>
+    public DateTime? LastUpdated { get; set; }
+
+    /// <summary>
+    /// Human readable reason, set when <see cref="Available"/> is false or
+    /// <see cref="Stale"/> is true. Must never contain credentials.
     /// </summary>
     public string Error { get; set; }
 
@@ -109,6 +123,53 @@ public class InventorySnapshot
         Networks = InventoryCategoryResult.Unavailable(error),
         Datastores = InventoryCategoryResult.Unavailable(error)
     };
+
+    /// <summary>
+    /// Fills each category this read could not get from <paramref name="previous"/>,
+    /// when that one holds a successful read. A provider that is down or powered off
+    /// would otherwise empty the cache at the moment callers most need the list.
+    /// A category is always one whole read, this one or the kept one, never a mix.
+    /// </summary>
+    public InventorySnapshot KeepingLastGood(InventorySnapshot previous)
+    {
+        VmTemplates = Keep(VmTemplates, previous?.VmTemplates);
+        Isos = Keep(Isos, previous?.Isos);
+        Networks = Keep(Networks, previous?.Networks);
+        Datastores = Keep(Datastores, previous?.Datastores);
+
+        // A provider can connect and then fail every category. That is not a newer
+        // read, so the snapshot keeps the time of the last one that got anything.
+        var categories = new[] { VmTemplates, Isos, Networks, Datastores };
+
+        if (!categories.Any(x => x.Available && !x.Stale))
+            LastUpdated = previous?.LastUpdated;
+
+        return this;
+    }
+
+    private InventoryCategoryResult Keep(InventoryCategoryResult current, InventoryCategoryResult previous)
+    {
+        current ??= InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
+
+        if (current.Available)
+        {
+            current.Stale = false;
+            current.LastUpdated ??= LastUpdated;
+            return current;
+        }
+
+        if (previous is not { Available: true })
+            return current;
+
+        return new InventoryCategoryResult
+        {
+            Entries = previous.Entries,
+            Available = true,
+            Stale = true,
+            LastUpdated = previous.LastUpdated,
+            Error = current.Error
+        };
+    }
 }
 
 public static class InventoryDefaults

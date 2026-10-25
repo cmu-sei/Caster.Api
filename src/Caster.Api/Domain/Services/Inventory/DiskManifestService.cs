@@ -149,7 +149,16 @@ public partial class DiskManifestService(IInventoryService inventoryService) : I
                     continue;
                 }
 
-                readable?.Add(kind);
+                if (result.Stale)
+                {
+                    warnings?.Add($"{label} on connection '{connection.Name}' could not be read, so they are listed from a stale inventory read at {result.LastUpdated:yyyy-MM-dd HH:mm} UTC and may be out of date. {result.Error}".TrimEnd());
+                }
+                else
+                {
+                    // A kept read can say a disk is present, but not that it is missing,
+                    // since it may have been added since.
+                    readable?.Add(kind);
+                }
 
                 foreach (var entry in result.Entries)
                 {

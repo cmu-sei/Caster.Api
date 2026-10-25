@@ -303,13 +303,13 @@ public class InventoryService : BackgroundService, IInventoryService
             if (!options.Enabled)
             {
                 _logger.LogInformation("Infrastructure inventory connection {Connection} disabled, skipping inventory query", connection.Name);
-                connection.Snapshot = connection.Scoped(InventorySnapshot.AllUnavailable(InventoryMessages.NotEnabled));
+                connection.Replace(InventorySnapshot.AllUnavailable(InventoryMessages.NotEnabled), null);
                 return;
             }
 
             _logger.LogInformation("Querying {Provider} inventory for connection {Connection} at {ProviderUrl}...",
                 options.Provider, connection.Name, options.Url);
-            connection.Snapshot = connection.Scoped(await _client.GetInventoryAsync(options, cancellationToken));
+            connection.Replace(await _client.GetInventoryAsync(options, cancellationToken), options);
         }
         catch (OperationCanceledException)
         {
@@ -322,7 +322,7 @@ public class InventoryService : BackgroundService, IInventoryService
             var message = InventoryRedaction.Redact(
                 $"Could not read the infrastructure inventory: {ex.Message}", options);
 
-            connection.Snapshot = connection.Scoped(InventorySnapshot.AllUnavailable(message, connection.Snapshot?.LastUpdated));
+            connection.Replace(InventorySnapshot.AllUnavailable(message), options);
         }
         finally
         {
@@ -348,7 +348,10 @@ public class InventoryService : BackgroundService, IInventoryService
 
         public InfrastructureConnectionOptions Options { get; set; } = options;
 
-        public InventorySnapshot Snapshot { get; set; } = InventorySnapshot.AllUnavailable(InventoryMessages.NotEnabled);
+        public InventorySnapshot Snapshot { get; private set; } = InventorySnapshot.AllUnavailable(InventoryMessages.NotEnabled);
+
+        // The provider and url Snapshot was read from. Null when it was not read.
+        private string _snapshotTarget;
 
         public Task Loop { get; set; }
 
@@ -403,6 +406,22 @@ public class InventoryService : BackgroundService, IInventoryService
             {
                 _wake = new TaskCompletionSource<bool>();
             }
+        }
+
+        /// <summary>
+        /// Caches <paramref name="read"/>, keeping the last successful read of any
+        /// category it is missing. Pass the options it was read with, or null for a
+        /// snapshot that was not read; nothing is kept across a change of provider
+        /// or url, since the old entries describe a different system.
+        /// </summary>
+        public void Replace(InventorySnapshot read, InfrastructureConnectionOptions readWith)
+        {
+            var target = readWith is null ? null : $"{readWith.Provider}|{readWith.Url}".ToLowerInvariant();
+
+            var previous = target is not null && target == _snapshotTarget ? Snapshot : null;
+
+            Snapshot = Scoped(read.KeepingLastGood(previous));
+            _snapshotTarget = target;
         }
 
         /// <summary>
