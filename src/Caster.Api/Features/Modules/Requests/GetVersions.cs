@@ -45,11 +45,12 @@ namespace Caster.Api.Features.Modules
 
             public override async Task<ModuleVersion[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                return await dbContext.ModuleVersions
+                var versions = await dbContext.ModuleVersions
                     .Where(v => v.ModuleId == request.ModuleId)
                     .ProjectTo<ModuleVersion>(mapper.ConfigurationProvider)
-                    .OrderByDescending(v => v.DateCreated)
                     .ToArrayAsync(cancellationToken);
+
+                return Domain.Models.ModuleVersionOrder.HighestFirst(versions, v => v.Name, v => v.DateCreated).ToArray();
             }
         }
     }

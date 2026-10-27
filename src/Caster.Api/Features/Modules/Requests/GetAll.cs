@@ -11,10 +11,13 @@ using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Modules;
 using System;
 using System.Linq;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
+using Caster.Api.Infrastructure.Exceptions;
+using Microsoft.Extensions.Logging;
 
 namespace Caster.Api.Features.Modules
 {
@@ -52,29 +55,38 @@ namespace Caster.Api.Features.Modules
             ICasterAuthorizationService authorizationService,
             IMapper mapper,
             CasterContext dbContext,
-            IGitlabRepositoryService gitlabRepositoryService) : BaseHandler<Query, Module[]>
+            IModuleRepositoryService moduleRepositoryService,
+            ILogger<GetAll> logger) : BaseHandler<Query, Module[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                if (authorizationService.GetAuthorizedProjectIds().Any())
-                {
-                    return true;
-                }
-                else
-                {
-                    return await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
-                }
+                var canViewCatalog = authorizationService.GetAuthorizedProjectIds().Any()
+                    || await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+
+                if (!canViewCatalog)
+                    return false;
+
+                return !request.DesignId.HasValue
+                    || await authorizationService.Authorize<Domain.Models.Design>(
+                        request.DesignId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
             }
 
             public override async Task<Module[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
-                // TODO: add handling for other repositories?
-                // get all modules from the repository and update the database
+                // Sync every configured module source into the database first.
+                // A failed sync still serves what is stored: every page that
+                // lists Modules sends this, and one unreachable source should
+                // not fail them all. Each source's failure is kept instead and
+                // reported by GET api/modules/sources, so it stays
+                // distinguishable from a source that has no Modules.
                 try
                 {
-                    await gitlabRepositoryService.GetModulesAsync(request.ForceUpdate, cancellationToken);
+                    await moduleRepositoryService.GetModulesAsync(request.ForceUpdate, cancellationToken);
                 }
-                catch (Exception) { }
+                catch (Exception ex) when (ex is ModuleSyncException or ModuleSourceNotConfiguredException)
+                {
+                    logger.LogWarning("Serving the stored Modules: {Message}", ex.Message);
+                }
 
                 IQueryable<Domain.Models.Module> query = dbContext.Modules;
 
@@ -101,6 +113,11 @@ namespace Caster.Api.Features.Modules
                 var modules = await query
                     .ProjectTo<Module>(mapper.ConfigurationProvider, request.IncludeVersionCount ? (dest => dest.VersionsCount) : null)
                     .ToArrayAsync(cancellationToken);
+
+                foreach (var module in modules.Where(m => m.Versions != null))
+                {
+                    module.Versions = Domain.Models.ModuleVersionOrder.HighestFirst(module.Versions, v => v.Name, v => v.DateCreated);
+                }
 
                 return modules;
             }

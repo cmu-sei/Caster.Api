@@ -20,7 +20,7 @@ namespace Caster.Api.Features.Workspaces.Interfaces
             RuleFor(x => x.Name)
                 .MinimumLength(1)
                 .MaximumLength(90)
-                .Must(x => x.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.'))
+                .Must(x => x.All(c => char.IsAsciiLetterOrDigit(c) || c == '-' || c == '_' || c == '.'))
                 .WithMessage($"Workspace names can only include letters, numbers, -, _, and .")
                 .When(x => x.Name != null);
 

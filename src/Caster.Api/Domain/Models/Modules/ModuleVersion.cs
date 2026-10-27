@@ -27,6 +27,22 @@ public class ModuleVersion : IEntity
     public List<ModuleVariable> Variables { get; set; } = new List<ModuleVariable>();
     public List<ModuleOutput> Outputs { get; set; } = new List<ModuleOutput>();
 
+    /// <summary>
+    /// Names of the required variables (those without a default) that have no value.
+    /// </summary>
+    public string[] MissingRequiredVariables(IEnumerable<ModuleValue> values)
+    {
+        var set = (values ?? [])
+            .Where(x => !string.IsNullOrEmpty(x.Value))
+            .Select(x => x.Name)
+            .ToHashSet();
+
+        return Variables
+            .Where(v => !v.IsOptional && !set.Contains(v.Name))
+            .Select(v => v.Name)
+            .ToArray();
+    }
+
     public string ToSnippet(string name, IEnumerable<ModuleValue> values)
     {
         var snippet = $"module \"{name}\" {{\n" +
@@ -42,6 +58,22 @@ public class ModuleVersion : IEntity
             }
 
             var value = variable.Value;
+
+            // Writing a blank required value as "" would count as set, so plan would
+            // pass and the module would fail later. Left commented, Terraform reports
+            // the missing argument and the user sees what still needs filling in.
+            if (!v.IsOptional && string.IsNullOrEmpty(value))
+            {
+                snippet = $"{snippet}\n  # {variable.Name} = (required)";
+                continue;
+            }
+
+            // A blank number, bool, list or map would be written as "name = ", which
+            // isn't valid HCL. Leaving it out lets the variable's default apply.
+            if (v.IsOptional && !v.RequiresQuotes && string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
 
             if (v.RequiresQuotes)
             {

@@ -11,9 +11,9 @@ namespace Caster.Api.Features.Directories.Interfaces
         string TerraformVersion { get; set; }
     }
 
-    public class IWorkspaceUpdateValidator : AbstractValidator<IDirectoryUpdateRequest>
+    public class IDirectoryUpdateValidator : AbstractValidator<IDirectoryUpdateRequest>
     {
-        public IWorkspaceUpdateValidator(ITerraformService terraformService)
+        public IDirectoryUpdateValidator(ITerraformService terraformService)
         {
             RuleFor(x => x.TerraformVersion)
                 .Must(x => terraformService.IsValidVersion(x))

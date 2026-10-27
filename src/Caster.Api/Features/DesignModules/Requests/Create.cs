@@ -22,35 +22,13 @@ namespace Caster.Api.Features.DesignModules;
 public class Create
 {
     [DataContract(Name = "CreateDesignModuleCommand")]
-    public record Command : IRequest<DesignModule>
+    public record Command : DesignModuleFields, IRequest<DesignModule>
     {
         /// <summary>
         /// The Id of the Design to add this DesignModule
         /// </summary>
         public Guid DesignId { get; set; }
 
-        /// <summary>
-        /// The Id of the selected Module for this DesignModule
-        /// </summary>
-        public Guid ModuleId { get; init; }
-
-        /// <summary>
-        /// Name of the DesignModule.
-        /// </summary>
-        [DataMember]
-        public string Name { get; init; }
-
-        /// <summary>
-        /// Version of the selected Module to use
-        /// </summary>
-        [DataMember]
-        public string ModuleVersion { get; init; }
-
-        /// <summary>
-        /// Values for each input
-        /// </summary>
-        [DataMember]
-        public ModuleValue[] Values { get; init; }
     }
 
     public class Validator : AbstractValidator<Command>
@@ -59,6 +37,11 @@ public class Create
         {
             RuleFor(x => x.DesignId).DesignExists(validationService);
             RuleFor(x => x.ModuleId).ModuleExists(validationService);
+            RuleFor(x => x.Name)
+                .NotEmpty()
+                .Matches(DesignModuleValidation.TerraformNamePattern)
+                .WithMessage(DesignModuleValidation.TerraformNameMessage);
+            RuleFor(x => x.ModuleVersion).NotEmpty();
         }
     }
 
@@ -70,6 +53,8 @@ public class Create
         public override async Task<DesignModule> HandleRequest(Command request, CancellationToken cancellationToken)
         {
             var designModule = mapper.Map<Domain.Models.DesignModule>(request);
+
+            await DesignModuleValidation.EnsureComplete(dbContext, designModule, cancellationToken);
 
             dbContext.DesignModules.Add(designModule);
             await dbContext.SaveChangesAsync(cancellationToken);
