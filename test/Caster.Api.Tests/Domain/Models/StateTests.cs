@@ -165,6 +165,69 @@ namespace Caster.Api.Tests.Domain.Models
         }
 
         #endregion
+
+        #region Non-string attributes
+
+        // Plugin Framework resources may type id as something other than a string, e.g. bpg/proxmox's proxmox_cloned_vm.
+        private static Resource[] GetResources(string attributes)
+        {
+            var workspace = new Workspace
+            {
+                State = $$"""
+                {
+                  "version": 4,
+                  "resources": [
+                    {
+                      "mode": "managed",
+                      "type": "proxmox_cloned_vm",
+                      "name": "v",
+                      "provider": "provider[\"registry.terraform.io/bpg/proxmox\"]",
+                      "instances": [ { "attributes": {{attributes}} } ]
+                    }
+                  ]
+                }
+                """
+            };
+
+            return workspace.GetState().GetResources();
+        }
+
+        [Fact]
+        public void A_numeric_id_is_read_as_its_text()
+        {
+            var resource = Assert.Single(GetResources("""{ "id": 100, "name": "t", "node_name": "pve" }"""));
+
+            Assert.Equal("100", resource.Id);
+            Assert.Equal("t", resource.Name);
+            Assert.Equal("proxmox_cloned_vm.v", resource.Address);
+        }
+
+        [Fact]
+        public void A_non_string_name_is_read_as_its_text()
+        {
+            var resource = Assert.Single(GetResources("""{ "id": "a", "name": 42 }"""));
+
+            Assert.Equal("42", resource.Name);
+        }
+
+        [Fact]
+        public void A_resource_without_an_id_is_listed_with_no_id()
+        {
+            var resource = Assert.Single(GetResources("""{ "node_name": "pve" }"""));
+
+            Assert.Null(resource.Id);
+            Assert.Equal("v", resource.Name);
+        }
+
+        [Fact]
+        public void A_null_id_is_read_as_no_id()
+        {
+            var resource = Assert.Single(GetResources("""{ "id": null }"""));
+
+            Assert.Null(resource.Id);
+        }
+
+        #endregion
     }
 
     public class StateFixture
