@@ -50,6 +50,35 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         """;
 
         /// <summary>
+        /// GET /api2/json/nodes/pve/qemu/105/config, as the dev Proxmox returns it.
+        /// The cloud-init password only ever comes back masked.
+        /// </summary>
+        private const string AlpineConfigBody = """
+        { "data": {
+          "agent": "enabled=1", "bios": "ovmf", "boot": "c", "bootdisk": "scsi0",
+          "cicustom": "user=local:snippets/crucible-alpine-user-data.yaml", "cipassword": "**********", "ciuser": "root",
+          "cores": 1, "digest": "0123456789abcdef", "efidisk0": "local-lvm:base-105-disk-1,efitype=4m,pre-enrolled-keys=0,size=4M",
+          "ide2": "local-lvm:vm-105-cloudinit,media=cdrom", "ipconfig0": "ip=dhcp", "memory": "512",
+          "meta": "creation-qemu=10.1.2,ctime=1783612846", "name": "alpine-linux-template",
+          "net0": "virtio=BC:24:11:44:67:F8,bridge=vmbr0", "ostype": "l26",
+          "scsi0": "local-lvm:base-105-disk-0,discard=on,size=212M", "serial0": "socket",
+          "smbios1": "uuid=47906021-a751-43a4-a08d-4aa5c6ef0683", "template": 1, "vga": "serial0",
+          "vmgenid": "45b8f3b6-53f8-4e3e-9948-f3315976e3d5"
+        } }
+        """;
+
+        /// <summary>
+        /// GET /api2/json/nodes/pve/qemu/106/config: a template that boots an ISO.
+        /// </summary>
+        private const string TinyCoreConfigBody = """
+        { "data": {
+          "boot": "order=ide2", "cores": 1, "ide2": "local:iso/TinyCore-current.iso,media=cdrom,size=24M",
+          "memory": "512", "name": "tinycore-linux-template", "net0": "virtio=BC:24:11:37:39:D5,bridge=vmbr0",
+          "ostype": "l26", "template": 1
+        } }
+        """;
+
+        /// <summary>
         /// GET /api2/json/storage. "content" is a comma separated list.
         /// </summary>
         private const string StorageBody = """
@@ -124,23 +153,42 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         /// <summary>
-        /// bpg clones by VMID and Telmate by name for a VM, and both by VMID for a container.
+        /// bpg clones by VMID. Telmate clones by name and needs the template's hardware,
+        /// read from its config, and is not given for a container.
         /// </summary>
         [Fact]
-        public async Task GetInventoryAsync_GivesEachTemplateTerraformForBothProviders()
+        public async Task GetInventoryAsync_GivesEachTemplateTerraformForItsProviders()
         {
             var snapshot = await Read(DefaultResponder());
 
-            var container = snapshot.VmTemplates.Entries.Single(x => x.Id == "lxc/120");
-            Assert.Equal([TerraformSnippets.Bpg, TerraformSnippets.Telmate], container.Terraform.Keys.Order());
-            Assert.Contains("proxmox_virtual_environment_container", container.Terraform[TerraformSnippets.Bpg]);
-            Assert.Contains("vm_id     = 120", container.Terraform[TerraformSnippets.Bpg]);
-            Assert.Contains("node_name = \"pve2\"", container.Terraform[TerraformSnippets.Bpg]);
-            Assert.Contains("clone       = \"120\"", container.Terraform[TerraformSnippets.Telmate]);
+            var alpine = snapshot.VmTemplates.Entries.Single(x => x.Id == "qemu/105");
+            Assert.Equal([TerraformSnippets.Bpg, TerraformSnippets.Telmate], alpine.Terraform.Keys.Order());
+            Assert.Contains("vm_id     = 105", alpine.Terraform[TerraformSnippets.Bpg]);
+            Assert.Contains("clone       = \"alpine-linux-template\"", alpine.Terraform[TerraformSnippets.Telmate]);
+            Assert.Contains("size    = \"212M\"", alpine.Terraform[TerraformSnippets.Telmate]);
 
-            var vm = snapshot.VmTemplates.Entries.First(x => x.Id.StartsWith("qemu/"));
-            Assert.Contains("proxmox_virtual_environment_vm", vm.Terraform[TerraformSnippets.Bpg]);
-            Assert.Contains($"clone       = \"{vm.Name}\"", vm.Terraform[TerraformSnippets.Telmate]);
+            var container = snapshot.VmTemplates.Entries.Single(x => x.Id == "lxc/120");
+            Assert.Equal([TerraformSnippets.Bpg], container.Terraform.Keys);
+            Assert.Contains("proxmox_virtual_environment_container", container.Terraform[TerraformSnippets.Bpg]);
+            Assert.Contains("node_name = \"pve2\"", container.Terraform[TerraformSnippets.Bpg]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_UnreadableConfig_LeavesOnlyTheBpgSnippet()
+        {
+            var requested = new List<string>();
+            var snapshot = await Read(Track(requested, request => request.RequestUri.AbsolutePath.EndsWith("/qemu/105/config")
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : DefaultResponder()(request)));
+
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.Equal([TerraformSnippets.Bpg], snapshot.VmTemplates.Entries.Single(x => x.Id == "qemu/105").Terraform.Keys);
+            Assert.Contains(TerraformSnippets.Telmate, snapshot.VmTemplates.Entries.Single(x => x.Id == "qemu/106").Terraform.Keys);
+
+            // one config read per VM template, none for the container or the plain VM
+            Assert.Equal(
+                ["/api2/json/nodes/pve/qemu/105/config", "/api2/json/nodes/pve/qemu/106/config"],
+                requested.Where(x => x.EndsWith("/config")).Order());
         }
 
         [Fact]
@@ -942,6 +990,16 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 if (path.EndsWith("/network"))
                 {
                     return Json(network ?? NetworkBody);
+                }
+
+                if (path.EndsWith("/qemu/105/config"))
+                {
+                    return Json(AlpineConfigBody);
+                }
+
+                if (path.EndsWith("/qemu/106/config"))
+                {
+                    return Json(TinyCoreConfigBody);
                 }
 
                 return path switch

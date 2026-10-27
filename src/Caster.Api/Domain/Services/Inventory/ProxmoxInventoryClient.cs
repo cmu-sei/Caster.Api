@@ -309,8 +309,19 @@ public class ProxmoxInventoryClient(
         if (!read.Ok)
             return InventoryCategoryResult.Unavailable(read.Error);
 
-        var entries = read.Values
-            .Where(x => x.Template == true)
+        var templates = read.Values.Where(x => x.Template == true).ToArray();
+        var configs = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal);
+
+        // Telmate's snippet repeats the template's hardware, which only its config has.
+        foreach (var template in templates.Where(x => x.Type == "qemu" && x.VmId != null && !string.IsNullOrWhiteSpace(x.Node)))
+        {
+            var config = await ReadConfigAsync(client, credential, template.Node, template.VmId.Value, options, cancellationToken);
+
+            if (config != null)
+                configs[template.Id ?? string.Empty] = config;
+        }
+
+        var entries = templates
             .Select(x =>
             {
                 var properties = new Dictionary<string, string>();
@@ -331,13 +342,50 @@ public class ProxmoxInventoryClient(
                     // vSphere reader and repeat the name rather than fabricate one.
                     Path = x.Name,
                     Properties = properties,
-                    Terraform = TerraformSnippets.ProxmoxTemplate(x.Name, x.VmId, x.Node, x.Type)
+                    Terraform = TerraformSnippets.ProxmoxTemplate(x.Name, x.VmId, x.Node, x.Type, configs.GetValueOrDefault(x.Id ?? string.Empty))
                 };
             })
             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         return InventoryCategoryResult.Ok(entries);
+    }
+
+    /// <summary>
+    /// GET nodes/{node}/qemu/{vmid}/config, flattened to strings. Null when it cannot
+    /// be read: the template is still listed, just without a Telmate snippet.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, string>> ReadConfigAsync(
+        HttpClient client, ProxmoxCredential credential, string node, long vmId, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
+    {
+        var path = $"nodes/{Uri.EscapeDataString(node)}/qemu/{vmId.ToString(CultureInfo.InvariantCulture)}/config";
+
+        try
+        {
+            using var request = NewRequest(HttpMethod.Get, path, credential);
+            using var response = await client.SendAsync(request, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Proxmox returned {StatusCode} reading the config of template {VmId} at {ProxmoxUrl}", (int)response.StatusCode, vmId, options.Url);
+                return null;
+            }
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+
+            if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+                return null;
+
+            return data.EnumerateObject().ToDictionary(
+                x => x.Name,
+                x => x.Value.ValueKind == JsonValueKind.String ? x.Value.GetString() : x.Value.GetRawText(),
+                StringComparer.Ordinal);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not read the config of template {VmId} at {ProxmoxUrl}", vmId, options.Url);
+            return null;
+        }
     }
 
     /// <summary>
