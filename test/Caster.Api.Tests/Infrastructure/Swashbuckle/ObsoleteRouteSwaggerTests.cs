@@ -9,14 +9,16 @@ using Caster.Api.Tests.Support;
 namespace Caster.Api.Tests.Infrastructure.Swashbuckle;
 
 /// <summary>
-/// The corrected routes are what the swagger document offers a client generator; the stacked routes they
-/// replace stay as aliases, with operation ids of their own and marked deprecated.
+/// The corrected routes are what the swagger document offers a client generator; the stacked and misspelled
+/// routes they replace stay as aliases, with operation ids of their own and marked deprecated.
 /// </summary>
 public class ObsoleteRouteSwaggerTests(DatabaseFixture fixture, CasterAppFactory factory) : ApiTestBase(fixture, factory)
 {
     [Theory]
     [InlineData("/api/projects/{id}/actions/export", "get", "ExportProject")]
     [InlineData("/api/projects/{id}/actions/import", "post", "ImportProject")]
+    [InlineData("/api/designs/{designId}/variables", "get", "GetVariablesByDesign")]
+    [InlineData("/api/designModules/{id}", "delete", "DeleteDesignModule")]
     public async Task The_corrected_route_carries_the_operation_id_and_is_not_deprecated(
         string path, string method, string operationId)
     {
@@ -31,6 +33,8 @@ public class ObsoleteRouteSwaggerTests(DatabaseFixture fixture, CasterAppFactory
     [Theory]
     [InlineData("/api/projects/projects/{id}/actions/export", "get", "ExportProjectObsolete")]
     [InlineData("/api/projects/projects/{id}/actions/import", "post", "ImportProjectObsolete")]
+    [InlineData("/api/designss/{designId}/variables", "get", "GetVariablesByDesignObsolete")]
+    [InlineData("/api/designsModules/{id}", "delete", "DeleteDesignModuleObsolete")]
     public async Task The_obsolete_alias_has_its_own_operation_id_and_is_deprecated(
         string path, string method, string operationId)
     {
