@@ -88,6 +88,20 @@ namespace Caster.Api.Features.Inventory
         }
 
         /// <summary>
+        /// Get the cached content library VM templates available on an
+        /// infrastructure connection, the default unless connection names another.
+        /// Applies is false for a provider without content libraries.
+        /// </summary>
+        [HttpGet("content-library")]
+        [ProducesResponseType(typeof(InventoryResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetInventoryContentLibrary")]
+        public async Task<IActionResult> GetContentLibrary([FromQuery] string connection = null)
+        {
+            var result = await _mediator.Send(new GetContentLibrary.Query { Connection = connection });
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Trigger an immediate refresh of one connection's cached inventory, the
         /// default unless connection names another. Waits for the
         /// refresh to land, up to a fixed bound, so the get endpoints return the

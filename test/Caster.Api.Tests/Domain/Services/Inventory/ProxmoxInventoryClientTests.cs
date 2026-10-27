@@ -123,6 +123,26 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal("8589934592", entry.Properties["maxdisk"]);
         }
 
+        /// <summary>
+        /// bpg clones by VMID and Telmate by name for a VM, and both by VMID for a container.
+        /// </summary>
+        [Fact]
+        public async Task GetInventoryAsync_GivesEachTemplateTerraformForBothProviders()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            var container = snapshot.VmTemplates.Entries.Single(x => x.Id == "lxc/120");
+            Assert.Equal([TerraformSnippets.Bpg, TerraformSnippets.Telmate], container.Terraform.Keys.Order());
+            Assert.Contains("proxmox_virtual_environment_container", container.Terraform[TerraformSnippets.Bpg]);
+            Assert.Contains("vm_id     = 120", container.Terraform[TerraformSnippets.Bpg]);
+            Assert.Contains("node_name = \"pve2\"", container.Terraform[TerraformSnippets.Bpg]);
+            Assert.Contains("clone       = \"120\"", container.Terraform[TerraformSnippets.Telmate]);
+
+            var vm = snapshot.VmTemplates.Entries.First(x => x.Id.StartsWith("qemu/"));
+            Assert.Contains("proxmox_virtual_environment_vm", vm.Terraform[TerraformSnippets.Bpg]);
+            Assert.Contains($"clone       = \"{vm.Name}\"", vm.Terraform[TerraformSnippets.Telmate]);
+        }
+
         [Fact]
         public async Task GetInventoryAsync_TemplateFlagAbsent_IsNotATemplate()
         {
@@ -653,6 +673,31 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             Assert.True(snapshot.VmTemplates.Available);
             Assert.DoesNotContain(paths, x => x.Contains("/access/ticket"));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ContentLibraryDoesNotApply()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            Assert.False(snapshot.ContentLibrary.Applies);
+            Assert.False(snapshot.ContentLibrary.Available);
+            Assert.Equal(InventoryMessages.ContentLibraryNotOnProxmox, snapshot.ContentLibrary.Error);
+        }
+
+        /// <summary>
+        /// A failed connection makes every other category unavailable, but Proxmox still
+        /// has no content libraries to be unable to read.
+        /// </summary>
+        [Fact]
+        public async Task GetInventoryAsync_RejectedApiToken_ContentLibraryStillDoesNotApply()
+        {
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api2/json/version"
+                ? new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                : DefaultResponder()(request));
+
+            Assert.False(snapshot.ContentLibrary.Applies);
+            Assert.Equal(InventoryMessages.ContentLibraryNotOnProxmox, snapshot.ContentLibrary.Error);
         }
 
         [Fact]

@@ -34,6 +34,13 @@ namespace Caster.Api.Features.Inventory
         /// Extra provider detail, flattened to strings.
         /// </summary>
         public Dictionary<string, string> Properties { get; set; } = [];
+
+        /// <summary>
+        /// Terraform that references this object, ready to paste, keyed by the
+        /// provider source it is written for, e.g. "bpg/proxmox". Empty for objects
+        /// that are not referenced this way.
+        /// </summary>
+        public Dictionary<string, string> Terraform { get; set; } = [];
     }
 
     /// <summary>
@@ -54,6 +61,13 @@ namespace Caster.Api.Features.Inventory
         /// be read and no earlier read is kept.
         /// </summary>
         public bool Available { get; set; }
+
+        /// <summary>
+        /// False when the provider has no such kind of object, e.g. content
+        /// libraries on Proxmox, so there is nothing to show rather than nothing
+        /// that could be read.
+        /// </summary>
+        public bool Applies { get; set; } = true;
 
         /// <summary>
         /// True when the latest read failed and the items are from the last read
@@ -79,11 +93,13 @@ namespace Caster.Api.Features.Inventory
                         Id = x.Id,
                         Name = x.Name,
                         Path = x.Path,
-                        Properties = x.Properties ?? []
+                        Properties = x.Properties ?? [],
+                        Terraform = x.Terraform ?? []
                     })
                     .ToArray(),
                 LastUpdated = result.LastUpdated ?? snapshot.LastUpdated,
                 Available = result.Available,
+                Applies = result.Applies,
                 Stale = result.Stale,
                 Error = result.Error
             };

@@ -16,7 +16,8 @@ public enum InventoryCategory
     VmTemplate,
     Iso,
     Network,
-    Datastore
+    Datastore,
+    ContentLibrary
 }
 
 /// <summary>
@@ -44,6 +45,14 @@ public class InventoryEntry
     /// Extra provider detail, flattened to strings so the shape stays stable.
     /// </summary>
     public Dictionary<string, string> Properties { get; set; } = [];
+
+    /// <summary>
+    /// Terraform that references this object, ready to paste, keyed by the provider
+    /// source it is written for, e.g. "bpg/proxmox". A provider can be reached by more
+    /// than one Terraform provider, and only the workspace knows which it uses. Empty
+    /// for objects that are not referenced this way. See <see cref="TerraformSnippets"/>.
+    /// </summary>
+    public Dictionary<string, string> Terraform { get; set; } = [];
 }
 
 /// <summary>
@@ -60,6 +69,13 @@ public class InventoryCategoryResult
     /// kept is still available, with <see cref="Stale"/> set.
     /// </summary>
     public bool Available { get; set; }
+
+    /// <summary>
+    /// False when the provider has no such kind of object, e.g. content libraries
+    /// on Proxmox. Such a category is never <see cref="Available"/>, and a client
+    /// can leave it out instead of reporting it as unavailable.
+    /// </summary>
+    public bool Applies { get; set; } = true;
 
     /// <summary>
     /// True when the latest read of this category failed and <see cref="Entries"/>
@@ -84,6 +100,9 @@ public class InventoryCategoryResult
 
     public static InventoryCategoryResult Unavailable(string error) =>
         new() { Entries = [], Available = false, Error = error };
+
+    public static InventoryCategoryResult NotApplicable(string reason) =>
+        new() { Entries = [], Available = false, Applies = false, Error = reason };
 }
 
 /// <summary>
@@ -101,6 +120,7 @@ public class InventorySnapshot
     public InventoryCategoryResult Isos { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
     public InventoryCategoryResult Networks { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
     public InventoryCategoryResult Datastores { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
+    public InventoryCategoryResult ContentLibrary { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
 
     public InventoryCategoryResult Get(InventoryCategory category) => category switch
     {
@@ -108,6 +128,7 @@ public class InventorySnapshot
         InventoryCategory.Iso => Isos,
         InventoryCategory.Network => Networks,
         InventoryCategory.Datastore => Datastores,
+        InventoryCategory.ContentLibrary => ContentLibrary,
         _ => InventoryCategoryResult.Unavailable($"Unknown inventory category '{category}'.")
     };
 
@@ -121,7 +142,8 @@ public class InventorySnapshot
         VmTemplates = InventoryCategoryResult.Unavailable(error),
         Isos = InventoryCategoryResult.Unavailable(error),
         Networks = InventoryCategoryResult.Unavailable(error),
-        Datastores = InventoryCategoryResult.Unavailable(error)
+        Datastores = InventoryCategoryResult.Unavailable(error),
+        ContentLibrary = InventoryCategoryResult.Unavailable(error)
     };
 
     /// <summary>
@@ -136,10 +158,11 @@ public class InventorySnapshot
         Isos = Keep(Isos, previous?.Isos);
         Networks = Keep(Networks, previous?.Networks);
         Datastores = Keep(Datastores, previous?.Datastores);
+        ContentLibrary = Keep(ContentLibrary, previous?.ContentLibrary);
 
         // A provider can connect and then fail every category. That is not a newer
         // read, so the snapshot keeps the time of the last one that got anything.
-        var categories = new[] { VmTemplates, Isos, Networks, Datastores };
+        var categories = new[] { VmTemplates, Isos, Networks, Datastores, ContentLibrary };
 
         if (!categories.Any(x => x.Available && !x.Stale))
             LastUpdated = previous?.LastUpdated;
@@ -212,6 +235,8 @@ public static class InventoryMessages
     /// </para>
     /// </summary>
     public const string IsoNotSupported = "ISO discovery is not supported by the vSphere Automation REST API. Listing ISO files requires datastore file browsing, which is only available through the vim25 (SOAP) API. Enter ISO paths manually for now.";
+
+    public const string ContentLibraryNotOnProxmox = "Proxmox has no content libraries. Its VM templates are listed under VM templates.";
 
     public static string UnsupportedProvider(string provider) =>
         $"Infrastructure provider '{provider}' is not supported. Supported providers are {Quoted(InfrastructureProviders.All)}.";

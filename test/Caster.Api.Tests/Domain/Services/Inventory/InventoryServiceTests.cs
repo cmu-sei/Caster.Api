@@ -283,6 +283,52 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
+        public async Task ContentLibraryDown_AfterAGoodRead_KeepsItAsStale()
+        {
+            var library = new InventoryEntry { Id = "item-1", Name = "ubuntu-2404", Path = "Golden/ubuntu-2404" };
+            var sut = Build(EnabledOptions(), Reads(
+                () =>
+                {
+                    var read = LoadedAt(FirstRead);
+                    read.ContentLibrary = InventoryCategoryResult.Ok([library]);
+                    return read;
+                },
+                () =>
+                {
+                    var read = LoadedAt(ThirdRead);
+                    read.ContentLibrary = InventoryCategoryResult.Unavailable("vCenter returned 403 Forbidden when reading content libraries.");
+                    return read;
+                }));
+
+            await RunReads(sut, refreshes: 1);
+
+            var kept = sut.GetSnapshot().ContentLibrary;
+            Assert.True(kept.Available);
+            Assert.True(kept.Stale);
+            Assert.Equal(FirstRead, kept.LastUpdated);
+            Assert.Equal("Golden/ubuntu-2404", Assert.Single(kept.Entries).Path);
+            Assert.Contains("403", kept.Error);
+        }
+
+        [Fact]
+        public async Task ANotApplicableCategory_IsNeverKeptAsStale()
+        {
+            var sut = Build(EnabledOptions(), Reads(() =>
+            {
+                var read = LoadedAt(FirstRead);
+                read.ContentLibrary = InventoryCategoryResult.NotApplicable(InventoryMessages.ContentLibraryNotOnProxmox);
+                return read;
+            }));
+
+            await RunReads(sut, refreshes: 1);
+
+            var library = sut.GetSnapshot().ContentLibrary;
+            Assert.False(library.Applies);
+            Assert.False(library.Available);
+            Assert.False(library.Stale);
+        }
+
+        [Fact]
         public async Task EveryCategoryFails_AfterConnecting_IsNotANewerRead()
         {
             var sut = Build(EnabledOptions(), Reads(

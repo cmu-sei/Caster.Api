@@ -434,7 +434,7 @@ public class InventoryService : BackgroundService, IInventoryService
             if (IsDefault || snapshot is null)
                 return snapshot;
 
-            foreach (var category in new[] { snapshot.VmTemplates, snapshot.Isos, snapshot.Networks, snapshot.Datastores })
+            foreach (var category in new[] { snapshot.VmTemplates, snapshot.Isos, snapshot.Networks, snapshot.Datastores, snapshot.ContentLibrary })
             {
                 if (category?.Error is not null)
                     category.Error = TopLevelKey.Replace(category.Error, $"Infrastructure:Connections:{Name}:");

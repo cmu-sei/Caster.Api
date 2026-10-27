@@ -48,6 +48,29 @@ public class VsphereInventoryClient(
     private const string VmPath = "api/vcenter/vm";
     private const string DatastorePath = "api/vcenter/datastore";
     private const string NetworkPath = "api/vcenter/network";
+    private const string DatacenterPath = "api/vcenter/datacenter";
+    private const string FolderPath = "api/vcenter/folder";
+    private const string LibraryPath = "api/content/library";
+    private const string LibraryItemPath = "api/content/library/item";
+
+    /// <summary>
+    /// The folder walk costs two requests per folder, so it stops here. Templates
+    /// it did not reach keep their bare name as their path.
+    /// </summary>
+    internal const int MaxFolders = 500;
+
+    /// <summary>
+    /// Each content library item costs a request. Past this the category reports
+    /// itself unavailable rather than list some of the templates, since a partial
+    /// list would let a disk manifest call a template missing.
+    /// </summary>
+    internal const int MaxLibraryItems = 2000;
+
+    /// <summary>
+    /// Content library item types that are VM templates: "vm-template" clones like
+    /// an inventory template, "ovf" deploys as one. ISOs and other files are not.
+    /// </summary>
+    private static readonly HashSet<string> TemplateItemTypes = new(StringComparer.OrdinalIgnoreCase) { "vm-template", "ovf" };
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -87,6 +110,7 @@ public class VsphereInventoryClient(
                 VmTemplates = await ReadVmTemplatesAsync(client, sessionToken, options, cancellationToken),
                 Networks = await ReadNetworksAsync(client, sessionToken, options, cancellationToken),
                 Datastores = await ReadDatastoresAsync(client, sessionToken, options, cancellationToken),
+                ContentLibrary = await ReadContentLibraryAsync(client, sessionToken, options, cancellationToken),
                 // See InventoryMessages.IsoNotSupported / CRU-2828.
                 Isos = InventoryCategoryResult.Unavailable(InventoryMessages.IsoNotSupported)
             };
@@ -183,6 +207,24 @@ public class VsphereInventoryClient(
     private async Task<InventoryCategoryResult> ReadVmTemplatesAsync(
         HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
+        var result = await ReadTemplateVmsAsync(client, sessionToken, options, cancellationToken);
+
+        if (result.Available && result.Entries.Length > 0)
+            await AddFolderPathsAsync(client, sessionToken, result.Entries, options, cancellationToken);
+
+        // After the walk, so a template it placed is found by its path and datacenter.
+        foreach (var template in result.Entries)
+        {
+            template.Terraform = TerraformSnippets.VsphereTemplate(
+                template.Name, template.Path, template.Properties.GetValueOrDefault("datacenter"));
+        }
+
+        return result;
+    }
+
+    private async Task<InventoryCategoryResult> ReadTemplateVmsAsync(
+        HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
+    {
         return await ReadCategoryAsync<VsphereVm>(client, sessionToken, VmPath, "VM templates", options, cancellationToken, vms =>
         {
             if (vms.Length == 0)
@@ -221,6 +263,186 @@ public class VsphereInventoryClient(
 
             return InventoryCategoryResult.Ok(entries);
         });
+    }
+
+    /// <summary>
+    /// Gives each template its folder path below its datacenter's VM folder, e.g.
+    /// "Templates/Linux/ubuntu-22", which is the relative path Terraform's
+    /// vsphere_virtual_machine data source accepts in place of a name. The
+    /// Automation REST api puts no path on a VM and no parent on a folder, so the
+    /// walk lists each folder's children from the datacenter's VM folder down.
+    /// A template takes the path of the deepest folder that lists it, which is
+    /// right whether the folders filter matches direct children or a subtree.
+    /// <para>
+    /// The path is extra detail, so a failed walk is logged and the templates keep
+    /// their bare names. It never makes the category unavailable.
+    /// </para>
+    /// </summary>
+    private async Task AddFolderPathsAsync(
+        HttpClient client, string sessionToken, InventoryEntry[] templates, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
+    {
+        var templateIds = templates.Select(x => x.Id).Where(x => x != null).ToHashSet(StringComparer.Ordinal);
+        var placed = new Dictionary<string, (int Depth, string Folder, string Datacenter)>(StringComparer.Ordinal);
+        var walked = 0;
+
+        try
+        {
+            var datacenters = DeserializeList<VsphereDatacenter>(await GetAsync(client, sessionToken, DatacenterPath, cancellationToken));
+
+            foreach (var datacenter in datacenters)
+            {
+                var info = DeserializeObject<VsphereDatacenterInfo>(
+                    await GetAsync(client, sessionToken, $"{DatacenterPath}/{Uri.EscapeDataString(datacenter.Datacenter)}", cancellationToken));
+
+                if (string.IsNullOrWhiteSpace(info?.VmFolder))
+                    continue;
+
+                var folders = new Queue<(string Id, string Path, int Depth)>();
+                folders.Enqueue((info.VmFolder, string.Empty, 0));
+
+                while (folders.Count > 0)
+                {
+                    if (++walked > MaxFolders)
+                    {
+                        logger.LogWarning("Stopped the vCenter folder walk at {MaxFolders} folders; templates beyond it are listed without a folder path", MaxFolders);
+                        return;
+                    }
+
+                    var (folder, path, depth) = folders.Dequeue();
+                    var escaped = Uri.EscapeDataString(folder);
+
+                    foreach (var vm in DeserializeList<VsphereVm>(await GetAsync(client, sessionToken, $"{VmPath}?folders={escaped}", cancellationToken)))
+                    {
+                        if (vm.Vm != null && templateIds.Contains(vm.Vm) &&
+                            (!placed.TryGetValue(vm.Vm, out var current) || depth > current.Depth))
+                        {
+                            placed[vm.Vm] = (depth, path, datacenter.Name);
+                        }
+                    }
+
+                    foreach (var child in DeserializeList<VsphereFolder>(
+                        await GetAsync(client, sessionToken, $"{FolderPath}?type=VIRTUAL_MACHINE&parent_folders={escaped}", cancellationToken)))
+                    {
+                        if (!string.IsNullOrEmpty(child.Folder))
+                            folders.Enqueue((child.Folder, depth == 0 ? child.Name : $"{path}/{child.Name}", depth + 1));
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not read the vCenter folders at {VsphereUrl}; some VM templates are listed without a folder path", options.Url);
+        }
+        finally
+        {
+            foreach (var template in templates)
+            {
+                if (template.Id == null || !placed.TryGetValue(template.Id, out var place))
+                    continue;
+
+                AddIfPresent(template.Properties, "datacenter", place.Datacenter);
+
+                if (!string.IsNullOrEmpty(place.Folder))
+                {
+                    template.Path = $"{place.Folder}/{template.Name}";
+                    template.Properties["folder"] = place.Folder;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The VM templates kept in content libraries. Terraform finds one with the
+    /// vsphere_content_library_item data source, by its name in its library, and
+    /// clones it through template_uuid.
+    /// </summary>
+    private async Task<InventoryCategoryResult> ReadContentLibraryAsync(
+        HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
+    {
+        const string description = "content libraries";
+
+        try
+        {
+            var libraryIds = DeserializeList<string>(await GetAsync(client, sessionToken, LibraryPath, cancellationToken));
+            var entries = new List<InventoryEntry>();
+            var read = 0;
+
+            foreach (var libraryId in libraryIds)
+            {
+                VsphereLibrary library;
+                string[] itemIds;
+
+                try
+                {
+                    library = DeserializeObject<VsphereLibrary>(
+                        await GetAsync(client, sessionToken, $"{LibraryPath}/{Uri.EscapeDataString(libraryId)}", cancellationToken));
+                    itemIds = DeserializeList<string>(
+                        await GetAsync(client, sessionToken, $"{LibraryItemPath}?library_id={Uri.EscapeDataString(libraryId)}", cancellationToken));
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    // Deleted between the list and the read.
+                    continue;
+                }
+
+                var libraryName = string.IsNullOrWhiteSpace(library?.Name) ? libraryId : library.Name;
+
+                foreach (var itemId in itemIds)
+                {
+                    if (++read > MaxLibraryItems)
+                    {
+                        return InventoryCategoryResult.Unavailable(
+                            $"vCenter has more than {MaxLibraryItems} content library items, more than Caster reads, so content library templates are not listed.");
+                    }
+
+                    VsphereLibraryItem item;
+
+                    try
+                    {
+                        item = DeserializeObject<VsphereLibraryItem>(
+                            await GetAsync(client, sessionToken, $"{LibraryItemPath}/{Uri.EscapeDataString(itemId)}", cancellationToken));
+                    }
+                    catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        // Deleted between the list and the read.
+                        continue;
+                    }
+
+                    if (item == null || string.IsNullOrWhiteSpace(item.Name) || !TemplateItemTypes.Contains(item.Type ?? string.Empty))
+                        continue;
+
+                    var properties = new Dictionary<string, string> { ["library"] = libraryName };
+                    AddIfPresent(properties, "libraryType", library?.Type);
+                    AddIfPresent(properties, "type", item.Type);
+                    AddIfPresent(properties, "size", item.Size?.ToString());
+
+                    entries.Add(new InventoryEntry
+                    {
+                        Id = item.Id ?? itemId,
+                        Name = item.Name,
+                        Path = $"{libraryName}/{item.Name}",
+                        Properties = properties,
+                        Terraform = TerraformSnippets.VsphereLibraryItem(item.Name, item.Type, libraryName)
+                    });
+                }
+            }
+
+            logger.LogInformation("Read {Count} content library templates from {LibraryCount} libraries at {VsphereUrl}", entries.Count, libraryIds.Length, options.Url);
+
+            return InventoryCategoryResult.Ok(entries
+                .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
+        {
+            return InventoryCategoryResult.Unavailable(
+                $"vCenter returned {(int)ex.StatusCode} {ex.StatusCode} when reading {description}.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Exception reading {Description} from {VsphereUrl}", description, options.Url);
+            return InventoryCategoryResult.Unavailable(Redact($"Could not read {description} from vCenter: {ex.Message}", options));
+        }
     }
 
     private async Task<InventoryCategoryResult> ReadNetworksAsync(
@@ -313,6 +535,44 @@ public class VsphereInventoryClient(
         }
     }
 
+    /// <summary>
+    /// A GET body, or an <see cref="HttpRequestException"/> carrying the status code.
+    /// </summary>
+    private static async Task<string> GetAsync(HttpClient client, string sessionToken, string path, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Add(SessionHeader, sessionToken);
+
+        using var response = await client.SendAsync(request, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(
+                $"vCenter returned {(int)response.StatusCode} {response.StatusCode}", null, response.StatusCode);
+        }
+
+        return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    internal static T DeserializeObject<T>(string body) where T : class
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+
+        using var document = JsonDocument.Parse(body);
+        var element = document.RootElement;
+
+        // 7.0U2+ /api returns the object, older /rest wraps it in { "value": {...} }
+        if (element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty("value", out var value) &&
+            value.ValueKind == JsonValueKind.Object)
+        {
+            element = value;
+        }
+
+        return element.ValueKind == JsonValueKind.Object ? element.Deserialize<T>(JsonOptions) : null;
+    }
+
     internal static T[] DeserializeList<T>(string body)
     {
         if (string.IsNullOrWhiteSpace(body))
@@ -367,6 +627,54 @@ public class VsphereInventoryClient(
 
         [JsonPropertyName("template")]
         public bool? Template { get; set; }
+    }
+
+    private class VsphereDatacenter
+    {
+        [JsonPropertyName("datacenter")]
+        public string Datacenter { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+    }
+
+    private class VsphereDatacenterInfo
+    {
+        [JsonPropertyName("vm_folder")]
+        public string VmFolder { get; set; }
+    }
+
+    private class VsphereFolder
+    {
+        [JsonPropertyName("folder")]
+        public string Folder { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+    }
+
+    private class VsphereLibrary
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; }
+    }
+
+    private class VsphereLibraryItem
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; }
+
+        [JsonPropertyName("size")]
+        public long? Size { get; set; }
     }
 
     private class VsphereNetwork

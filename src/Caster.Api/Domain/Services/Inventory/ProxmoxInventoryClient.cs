@@ -64,6 +64,16 @@ public class ProxmoxInventoryClient(
 
     public async Task<InventorySnapshot> GetInventoryAsync(InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
+        var snapshot = await ReadInventoryAsync(options, cancellationToken);
+
+        // Set on every path, failures included, so a Proxmox connection never
+        // reports content libraries as something it could not read.
+        snapshot.ContentLibrary = InventoryCategoryResult.NotApplicable(InventoryMessages.ContentLibraryNotOnProxmox);
+        return snapshot;
+    }
+
+    private async Task<InventorySnapshot> ReadInventoryAsync(InfrastructureConnectionOptions options, CancellationToken cancellationToken)
+    {
         // Provider selection lives in InventoryProviderDispatcher, so reaching
         // this method means proxmox was asked for.
         var hasToken = !string.IsNullOrWhiteSpace(options.ApiToken);
@@ -320,7 +330,8 @@ public class ProxmoxInventoryClient(
                     // Proxmox has no inventory path for a VM, so follow the
                     // vSphere reader and repeat the name rather than fabricate one.
                     Path = x.Name,
-                    Properties = properties
+                    Properties = properties,
+                    Terraform = TerraformSnippets.ProxmoxTemplate(x.Name, x.VmId, x.Node, x.Type)
                 };
             })
             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)

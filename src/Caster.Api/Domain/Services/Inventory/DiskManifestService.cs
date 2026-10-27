@@ -34,6 +34,7 @@ public partial class DiskManifestService(IInventoryService inventoryService) : I
     private static readonly (DiskKind Kind, InventoryCategory Category, string Label)[] Categories =
     [
         (DiskKind.VmTemplate, InventoryCategory.VmTemplate, "VM templates"),
+        (DiskKind.VmTemplate, InventoryCategory.ContentLibrary, "Content library templates"),
         (DiskKind.Iso, InventoryCategory.Iso, "ISOs")
     ];
 
@@ -92,7 +93,7 @@ public partial class DiskManifestService(IInventoryService inventoryService) : I
         if (manifest?.Disks == null || manifest.Disks.Count == 0)
             return [];
 
-        // Only categories that were actually read can say a disk is missing.
+        // Only a kind whose every list was actually read can say a disk is missing.
         var readable = new HashSet<DiskKind>();
         var catalog = ReadCatalog(null, readable);
 
@@ -123,10 +124,15 @@ public partial class DiskManifestService(IInventoryService inventoryService) : I
 
     /// <summary>
     /// Every template and ISO on every enabled connection, keyed by both name and path.
+    /// <paramref name="readable"/> gets each kind that was read fresh everywhere it can
+    /// be kept: a template can sit in a folder or a content library, on any connection,
+    /// and a list that was not read could hold the one a file names.
     /// </summary>
     private Dictionary<string, List<CatalogMatch>> ReadCatalog(List<string> warnings, HashSet<DiskKind> readable = null)
     {
         var catalog = new Dictionary<string, List<CatalogMatch>>(StringComparer.Ordinal);
+        var read = new HashSet<DiskKind>();
+        var unread = new HashSet<DiskKind>();
         var connections = inventoryService.GetConnections().Where(x => x.Enabled).ToArray();
 
         if (connections.Length == 0)
@@ -143,21 +149,27 @@ public partial class DiskManifestService(IInventoryService inventoryService) : I
             {
                 var result = snapshot?.Get(category);
 
+                // e.g. content libraries on Proxmox: nothing there to read or miss.
+                if (result is { Applies: false })
+                    continue;
+
                 if (result == null || !result.Available)
                 {
+                    unread.Add(kind);
                     warnings?.Add($"{label} on connection '{connection.Name}' could not be read, so any it holds are not listed. {result?.Error}".TrimEnd());
                     continue;
                 }
 
                 if (result.Stale)
                 {
+                    // A kept read can say a disk is present, but not that it is missing,
+                    // since it may have been added since.
+                    unread.Add(kind);
                     warnings?.Add($"{label} on connection '{connection.Name}' could not be read, so they are listed from a stale inventory read at {result.LastUpdated:yyyy-MM-dd HH:mm} UTC and may be out of date. {result.Error}".TrimEnd());
                 }
                 else
                 {
-                    // A kept read can say a disk is present, but not that it is missing,
-                    // since it may have been added since.
-                    readable?.Add(kind);
+                    read.Add(kind);
                 }
 
                 foreach (var entry in result.Entries)
@@ -175,6 +187,7 @@ public partial class DiskManifestService(IInventoryService inventoryService) : I
             }
         }
 
+        readable?.UnionWith(read.Except(unread));
         return catalog;
     }
 

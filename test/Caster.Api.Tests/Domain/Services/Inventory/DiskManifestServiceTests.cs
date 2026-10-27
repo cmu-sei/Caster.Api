@@ -27,15 +27,30 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             return entry;
         }
 
-        private static InventorySnapshot Snapshot(InventoryEntry[] templates, InventoryEntry[] isos = null) => new()
+        /// <summary>
+        /// Without <paramref name="library"/> the connection has no content libraries at all,
+        /// as on Proxmox.
+        /// </summary>
+        private static InventorySnapshot Snapshot(InventoryEntry[] templates, InventoryEntry[] isos = null, InventoryEntry[] library = null) => new()
         {
             VmTemplates = InventoryCategoryResult.Ok(templates),
             Isos = isos == null
                 ? InventoryCategoryResult.Unavailable(InventoryMessages.IsoNotSupported)
                 : InventoryCategoryResult.Ok(isos),
             Networks = InventoryCategoryResult.Ok([]),
-            Datastores = InventoryCategoryResult.Ok([])
+            Datastores = InventoryCategoryResult.Ok([]),
+            ContentLibrary = library == null
+                ? InventoryCategoryResult.NotApplicable(InventoryMessages.ContentLibraryNotOnProxmox)
+                : InventoryCategoryResult.Ok(library)
         };
+
+        private static InventoryEntry LibraryItem(string library, string name)
+        {
+            var entry = new InventoryEntry { Id = $"item-{name}", Name = name, Path = $"{library}/{name}" };
+            entry.Properties["library"] = library;
+            entry.Properties["type"] = "vm-template";
+            return entry;
+        }
 
         private static IInventoryService Inventory(params (string Name, string Provider, InventorySnapshot Snapshot)[] connections)
         {
@@ -163,6 +178,33 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Contains("ISOs on connection 'default' could not be read", warning);
         }
 
+        [Fact]
+        public void A_Content_Library_Template_Is_Listed_As_A_VM_Template()
+        {
+            var service = new DiskManifestService(Inventory(
+                ("default", "vsphere", Snapshot([Entry("win2022")], library: [LibraryItem("Golden", "ubuntu-2404")]))));
+
+            var manifest = service.Build([File("main.tf", "name = \"ubuntu-2404\"\n")]);
+
+            var disk = Assert.Single(manifest.Disks);
+            Assert.Equal(DiskKind.VmTemplate, disk.Kind);
+            Assert.Equal("Golden/ubuntu-2404", disk.Path);
+            Assert.Equal("Golden", disk.Properties["library"]);
+        }
+
+        [Fact]
+        public void A_Content_Library_That_Could_Not_Be_Read_Is_Reported()
+        {
+            var snapshot = Snapshot([Entry("win2022")], library: []);
+            snapshot.ContentLibrary = InventoryCategoryResult.Unavailable("vCenter returned 403 Forbidden when reading content libraries.");
+            var service = new DiskManifestService(Inventory(("default", "vsphere", snapshot)));
+
+            var manifest = service.Build([File("main.tf", "template_name = \"win2022\"\n")]);
+
+            Assert.Single(manifest.Disks);
+            Assert.Contains(manifest.Warnings, x => x.StartsWith("Content library templates on connection 'default' could not be read") && x.Contains("403"));
+        }
+
         /// <summary>
         /// Templates kept from a read at 09:30 because the latest one failed.
         /// </summary>
@@ -260,6 +302,48 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var service = new DiskManifestService(Inventory(("default", "vsphere", Snapshot([Entry("ubuntu-2404")]))));
 
             var disk = Assert.Single(service.Check(Manifest((DiskKind.Iso, Iso))));
+
+            Assert.Equal(DiskStatus.Unknown, disk.Status);
+        }
+
+        [Fact]
+        public void Check_Finds_A_Template_In_A_Content_Library()
+        {
+            var service = new DiskManifestService(Inventory(
+                ("default", "vsphere", Snapshot([Entry("win2022")], library: [LibraryItem("Golden", "ubuntu-2404")]))));
+
+            var disks = service.Check(Manifest((DiskKind.VmTemplate, "ubuntu-2404"), (DiskKind.VmTemplate, "kali-2026")));
+
+            Assert.Equal(DiskStatus.Present, disks.Single(x => x.Name == "ubuntu-2404").Status);
+            Assert.Equal(DiskStatus.Missing, disks.Single(x => x.Name == "kali-2026").Status);
+        }
+
+        /// <summary>
+        /// The folders were read, but the template could be in the library that was not.
+        /// </summary>
+        [Fact]
+        public void Check_Cannot_Call_A_Template_Missing_While_The_Content_Library_Is_Unread()
+        {
+            var snapshot = Snapshot([Entry("win2022")], library: []);
+            snapshot.ContentLibrary = InventoryCategoryResult.Unavailable("vCenter returned 403 Forbidden when reading content libraries.");
+            var service = new DiskManifestService(Inventory(("default", "vsphere", snapshot)));
+
+            var disks = service.Check(Manifest((DiskKind.VmTemplate, "win2022"), (DiskKind.VmTemplate, "kali-2026")));
+
+            Assert.Equal(DiskStatus.Present, disks.Single(x => x.Name == "win2022").Status);
+            Assert.Equal(DiskStatus.Unknown, disks.Single(x => x.Name == "kali-2026").Status);
+        }
+
+        [Fact]
+        public void Check_Cannot_Call_A_Template_Missing_While_Another_Connection_Is_Unread()
+        {
+            var down = Snapshot([]);
+            down.VmTemplates = InventoryCategoryResult.Unavailable("Could not connect to Proxmox at https://pve.test:8006: Connection refused");
+            var service = new DiskManifestService(Inventory(
+                ("default", "proxmox", Snapshot([Entry("ubuntu-2404")])),
+                ("lab", "proxmox", down)));
+
+            var disk = Assert.Single(service.Check(Manifest((DiskKind.VmTemplate, "kali-2026"))));
 
             Assert.Equal(DiskStatus.Unknown, disk.Status);
         }

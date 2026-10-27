@@ -258,6 +258,162 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         #region Helpers
 
+        #region Folders and content libraries
+
+        /// <summary>
+        /// DC1's VM folder holds Templates, which holds Linux. win2019-template sits in
+        /// Templates, alpine-template in Templates/Linux and running-vm at the top. With
+        /// <paramref name="subtree"/> the folders filter matches everything below a folder,
+        /// otherwise only its direct children. The api docs leave it open, so both are covered.
+        /// </summary>
+        private static Func<HttpRequestMessage, HttpResponseMessage> FolderResponder(bool subtree) => request =>
+        {
+            var query = request.RequestUri.Query;
+
+            return request.RequestUri.AbsolutePath switch
+            {
+                "/api/vcenter/datacenter" => Json("""[{ "datacenter": "datacenter-1", "name": "DC1" }]"""),
+                "/api/vcenter/datacenter/datacenter-1" => Json("""{ "name": "DC1", "vm_folder": "group-v1" }"""),
+                "/api/vcenter/folder" when query.EndsWith("parent_folders=group-v1") =>
+                    Json("""[{ "folder": "group-v10", "name": "Templates", "type": "VIRTUAL_MACHINE" }]"""),
+                "/api/vcenter/folder" when query.EndsWith("parent_folders=group-v10") =>
+                    Json("""[{ "folder": "group-v11", "name": "Linux", "type": "VIRTUAL_MACHINE" }]"""),
+                "/api/vcenter/folder" => Json("[]"),
+                "/api/vcenter/vm" when query == "?folders=group-v11" => Json(Vms("vm-3")),
+                "/api/vcenter/vm" when query == "?folders=group-v10" => Json(subtree ? Vms("vm-2", "vm-3") : Vms("vm-2")),
+                "/api/vcenter/vm" when query == "?folders=group-v1" => Json(subtree ? Vms("vm-1", "vm-2", "vm-3") : Vms("vm-1")),
+                _ => DefaultResponder()(request)
+            };
+        };
+
+        private static string Vms(params string[] ids) =>
+            "[" + string.Join(",", ids.Select(x => $$"""{ "vm": "{{x}}", "name": "{{x}}" }""")) + "]";
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task GetInventoryAsync_GivesEachTemplateItsFolderPath(bool subtree)
+        {
+            var snapshot = await Read(FolderResponder(subtree));
+
+            Assert.True(snapshot.VmTemplates.Available);
+            var alpine = snapshot.VmTemplates.Entries.Single(x => x.Id == "vm-3");
+            Assert.Equal("alpine-template", alpine.Name);
+            Assert.Equal("Templates/Linux/alpine-template", alpine.Path);
+            Assert.Equal("Templates/Linux", alpine.Properties["folder"]);
+            Assert.Equal("DC1", alpine.Properties["datacenter"]);
+
+            var windows = snapshot.VmTemplates.Entries.Single(x => x.Id == "vm-2");
+            Assert.Equal("Templates/win2019-template", windows.Path);
+
+            // the Terraform to copy finds the template by that path in that datacenter
+            var terraform = Assert.Single(alpine.Terraform);
+            Assert.Equal(TerraformSnippets.Vsphere, terraform.Key);
+            Assert.Contains("name          = \"Templates/Linux/alpine-template\"", terraform.Value);
+            Assert.Contains("name = \"DC1\"", terraform.Value);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_KeepsBareTemplateNamesWhenTheFoldersCannotBeRead()
+        {
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api/vcenter/datacenter"
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : DefaultResponder()(request));
+
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.All(snapshot.VmTemplates.Entries, x => Assert.Equal(x.Name, x.Path));
+            Assert.All(snapshot.VmTemplates.Entries, x => Assert.False(x.Properties.ContainsKey("folder")));
+            Assert.All(snapshot.VmTemplates.Entries, x => Assert.Contains($"name = \"{x.Name}\"", x.Terraform[TerraformSnippets.Vsphere]));
+        }
+
+        private static Func<HttpRequestMessage, HttpResponseMessage> LibraryResponder() => request =>
+            request.RequestUri.AbsolutePath switch
+            {
+                "/api/content/library" => Json("""["lib-1"]"""),
+                "/api/content/library/lib-1" => Json("""{ "id": "lib-1", "name": "Golden", "type": "LOCAL" }"""),
+                "/api/content/library/item" when request.RequestUri.Query == "?library_id=lib-1" =>
+                    Json("""["item-1", "item-2", "item-3", "item-gone"]"""),
+                "/api/content/library/item/item-1" => Json("""{ "id": "item-1", "name": "win2022", "type": "ovf", "size": 2048, "library_id": "lib-1" }"""),
+                "/api/content/library/item/item-2" => Json("""{ "id": "item-2", "name": "ubuntu-2404", "type": "vm-template", "library_id": "lib-1" }"""),
+                "/api/content/library/item/item-3" => Json("""{ "id": "item-3", "name": "kali.iso", "type": "iso", "library_id": "lib-1" }"""),
+                _ => DefaultResponder()(request)
+            };
+
+        [Fact]
+        public async Task GetInventoryAsync_ListsContentLibraryTemplates()
+        {
+            var snapshot = await Read(LibraryResponder());
+
+            Assert.True(snapshot.ContentLibrary.Available);
+            Assert.True(snapshot.ContentLibrary.Applies);
+            Assert.Null(snapshot.ContentLibrary.Error);
+
+            // the ISO is left out, and the item deleted mid-read is skipped
+            Assert.Equal(["Golden/ubuntu-2404", "Golden/win2022"], snapshot.ContentLibrary.Entries.Select(x => x.Path));
+
+            var ovf = snapshot.ContentLibrary.Entries.Single(x => x.Id == "item-1");
+            Assert.Equal("win2022", ovf.Name);
+            Assert.Equal("Golden", ovf.Properties["library"]);
+            Assert.Equal("LOCAL", ovf.Properties["libraryType"]);
+            Assert.Equal("ovf", ovf.Properties["type"]);
+            Assert.Equal("2048", ovf.Properties["size"]);
+            Assert.Contains("type       = \"ovf\"", ovf.Terraform[TerraformSnippets.Vsphere]);
+            Assert.Contains("name = \"Golden\"", ovf.Terraform[TerraformSnippets.Vsphere]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_SkipsALibraryDeletedMidRead()
+        {
+            var libraries = LibraryResponder();
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath switch
+            {
+                "/api/content/library" => Json("""["lib-gone", "lib-1"]"""),
+                "/api/content/library/lib-gone" => new HttpResponseMessage(HttpStatusCode.NotFound),
+                _ => libraries(request)
+            });
+
+            Assert.True(snapshot.ContentLibrary.Available);
+            Assert.Equal(["Golden/ubuntu-2404", "Golden/win2022"], snapshot.ContentLibrary.Entries.Select(x => x.Path));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ContentLibraryFailureLeavesOtherCategoriesAlone()
+        {
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api/content/library"
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : DefaultResponder()(request));
+
+            Assert.False(snapshot.ContentLibrary.Available);
+            Assert.True(snapshot.ContentLibrary.Applies);
+            Assert.Equal("vCenter returned 403 Forbidden when reading content libraries.", snapshot.ContentLibrary.Error);
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.True(snapshot.Networks.Available);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_EmptyContentLibraryIsAvailable()
+        {
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api/content/library"
+                ? Json("[]")
+                : DefaultResponder()(request));
+
+            Assert.True(snapshot.ContentLibrary.Available);
+            Assert.Empty(snapshot.ContentLibrary.Entries);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_FolderWalkReadsLegacyWrappedObjects()
+        {
+            var folders = FolderResponder(subtree: false);
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api/vcenter/datacenter/datacenter-1"
+                ? Json("""{ "value": { "name": "DC1", "vm_folder": "group-v1" } }""")
+                : folders(request));
+
+            Assert.Equal("Templates/Linux/alpine-template", snapshot.VmTemplates.Entries.Single(x => x.Id == "vm-3").Path);
+        }
+
+        #endregion
+
         private static Func<HttpRequestMessage, HttpResponseMessage> DefaultResponder() =>
             request => request.RequestUri.AbsolutePath switch
             {
@@ -288,7 +444,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             snapshot.VmTemplates.Error,
             snapshot.Isos.Error,
             snapshot.Networks.Error,
-            snapshot.Datastores.Error
+            snapshot.Datastores.Error,
+            snapshot.ContentLibrary.Error
         ];
 
         private static void AssertAllUnavailable(InventorySnapshot snapshot)
@@ -297,6 +454,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.False(snapshot.Isos.Available);
             Assert.False(snapshot.Networks.Available);
             Assert.False(snapshot.Datastores.Available);
+            Assert.False(snapshot.ContentLibrary.Available);
         }
 
         private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
