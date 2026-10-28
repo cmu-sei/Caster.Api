@@ -72,7 +72,7 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (project, design, variable) = await SeedVariable();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
-        var response = await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct);
+        var response = await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct);
 
         Assert.Equal([variable.Id], (await ReadAsync<VariableView[]>(response)).Select(x => x.Id));
     }
@@ -83,7 +83,7 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (_, design, variable) = await SeedVariable();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
-        var response = await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct);
+        var response = await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct);
 
         Assert.Equal([variable.Id], (await ReadAsync<VariableView[]>(response)).Select(x => x.Id));
     }
@@ -94,7 +94,7 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (_, design, _) = await SeedVariable();
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct));
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct));
     }
 
     [Fact]
@@ -103,11 +103,32 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (_, design, _) = await SeedVariable();
         var actor = await Actor().OnNewProject(ProjectPermission.ViewProject).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct));
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct));
     }
 
     [Fact]
     public async Task GetByDesign_is_forbidden_for_a_caller_holding_only_EditProject()
+    {
+        var (project, design, _) = await SeedVariable();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct));
+    }
+
+    /// <summary>The misspelled api/designss route stays as an alias of api/designs/{designId}/variables.</summary>
+    [Fact]
+    public async Task GetByDesign_through_the_obsolete_route_lists_the_variables_for_a_member_holding_ViewProject()
+    {
+        var (project, design, variable) = await SeedVariable();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct);
+
+        Assert.Equal([variable.Id], (await ReadAsync<VariableView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetByDesign_through_the_obsolete_route_is_forbidden_for_a_caller_holding_only_EditProject()
     {
         var (project, design, _) = await SeedVariable();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
