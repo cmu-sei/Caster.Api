@@ -1,0 +1,255 @@
+// Copyright 2021 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Caster.Api.Infrastructure.Options;
+
+namespace Caster.Api.Domain.Services.Inventory;
+
+/// <summary>
+/// The kinds of infrastructure objects Caster can discover.
+/// </summary>
+public enum InventoryCategory
+{
+    VmTemplate,
+    Iso,
+    Network,
+    Datastore,
+    ContentLibrary
+}
+
+/// <summary>
+/// A single discovered infrastructure object. Provider agnostic.
+/// </summary>
+public class InventoryEntry
+{
+    /// <summary>
+    /// Provider native identifier, e.g. a vSphere managed object id like
+    /// "vm-1024", or a Proxmox resource id like "qemu/105".
+    /// </summary>
+    public string Id { get; set; }
+
+    /// <summary>
+    /// Display name, which is also the value a terraform variable normally expects.
+    /// </summary>
+    public string Name { get; set; }
+
+    /// <summary>
+    /// Inventory path, where the provider exposes one. Falls back to Name.
+    /// </summary>
+    public string Path { get; set; }
+
+    /// <summary>
+    /// Extra provider detail, flattened to strings so the shape stays stable.
+    /// </summary>
+    public Dictionary<string, string> Properties { get; set; } = [];
+
+    /// <summary>
+    /// Terraform that references this object, ready to paste, keyed by the provider
+    /// source it is written for, e.g. "bpg/proxmox". A provider can be reached by more
+    /// than one Terraform provider, and only the workspace knows which it uses. Empty
+    /// for objects that are not referenced this way. See <see cref="TerraformSnippets"/>.
+    /// </summary>
+    public Dictionary<string, string> Terraform { get; set; } = [];
+}
+
+/// <summary>
+/// The result of reading one <see cref="InventoryCategory"/>. Categories fail
+/// independently, so a datastore permission problem does not hide networks.
+/// </summary>
+public class InventoryCategoryResult
+{
+    public InventoryEntry[] Entries { get; set; } = [];
+
+    /// <summary>
+    /// False when the category has nothing to serve: it is not supported, or it
+    /// could not be read and no earlier read is kept. An earlier read that is
+    /// kept is still available, with <see cref="Stale"/> set.
+    /// </summary>
+    public bool Available { get; set; }
+
+    /// <summary>
+    /// False when the provider has no such kind of object, e.g. content libraries
+    /// on Proxmox. Such a category is never <see cref="Available"/>, and a client
+    /// can leave it out instead of reporting it as unavailable.
+    /// </summary>
+    public bool Applies { get; set; } = true;
+
+    /// <summary>
+    /// True when the latest read of this category failed and <see cref="Entries"/>
+    /// are kept from the last one that succeeded, so they may be out of date.
+    /// </summary>
+    public bool Stale { get; set; }
+
+    /// <summary>
+    /// When <see cref="Entries"/> were read, in UTC. Null when the category has
+    /// never been read successfully.
+    /// </summary>
+    public DateTime? LastUpdated { get; set; }
+
+    /// <summary>
+    /// Human readable reason, set when <see cref="Available"/> is false or
+    /// <see cref="Stale"/> is true. Must never contain credentials.
+    /// </summary>
+    public string Error { get; set; }
+
+    public static InventoryCategoryResult Ok(InventoryEntry[] entries) =>
+        new() { Entries = entries ?? [], Available = true };
+
+    public static InventoryCategoryResult Unavailable(string error) =>
+        new() { Entries = [], Available = false, Error = error };
+
+    public static InventoryCategoryResult NotApplicable(string reason) =>
+        new() { Entries = [], Available = false, Applies = false, Error = reason };
+}
+
+/// <summary>
+/// One complete read of the provider inventory.
+/// </summary>
+public class InventorySnapshot
+{
+    /// <summary>
+    /// When the data was read, in UTC. Null when the inventory has never been
+    /// read successfully.
+    /// </summary>
+    public DateTime? LastUpdated { get; set; }
+
+    public InventoryCategoryResult VmTemplates { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
+    public InventoryCategoryResult Isos { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
+    public InventoryCategoryResult Networks { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
+    public InventoryCategoryResult Datastores { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
+    public InventoryCategoryResult ContentLibrary { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
+
+    public InventoryCategoryResult Get(InventoryCategory category) => category switch
+    {
+        InventoryCategory.VmTemplate => VmTemplates,
+        InventoryCategory.Iso => Isos,
+        InventoryCategory.Network => Networks,
+        InventoryCategory.Datastore => Datastores,
+        InventoryCategory.ContentLibrary => ContentLibrary,
+        _ => InventoryCategoryResult.Unavailable($"Unknown inventory category '{category}'.")
+    };
+
+    /// <summary>
+    /// Builds a snapshot where every category carries the same failure reason,
+    /// used when the provider connection itself could not be established.
+    /// </summary>
+    public static InventorySnapshot AllUnavailable(string error, DateTime? lastUpdated = null) => new()
+    {
+        LastUpdated = lastUpdated,
+        VmTemplates = InventoryCategoryResult.Unavailable(error),
+        Isos = InventoryCategoryResult.Unavailable(error),
+        Networks = InventoryCategoryResult.Unavailable(error),
+        Datastores = InventoryCategoryResult.Unavailable(error),
+        ContentLibrary = InventoryCategoryResult.Unavailable(error)
+    };
+
+    /// <summary>
+    /// Fills each category this read could not get from <paramref name="previous"/>,
+    /// when that one holds a successful read. A provider that is down or powered off
+    /// would otherwise empty the cache at the moment callers most need the list.
+    /// A category is always one whole read, this one or the kept one, never a mix.
+    /// </summary>
+    public InventorySnapshot KeepingLastGood(InventorySnapshot previous)
+    {
+        VmTemplates = Keep(VmTemplates, previous?.VmTemplates);
+        Isos = Keep(Isos, previous?.Isos);
+        Networks = Keep(Networks, previous?.Networks);
+        Datastores = Keep(Datastores, previous?.Datastores);
+        ContentLibrary = Keep(ContentLibrary, previous?.ContentLibrary);
+
+        // A provider can connect and then fail every category. That is not a newer
+        // read, so the snapshot keeps the time of the last one that got anything.
+        var categories = new[] { VmTemplates, Isos, Networks, Datastores, ContentLibrary };
+
+        if (!categories.Any(x => x.Available && !x.Stale))
+            LastUpdated = previous?.LastUpdated;
+
+        return this;
+    }
+
+    private InventoryCategoryResult Keep(InventoryCategoryResult current, InventoryCategoryResult previous)
+    {
+        current ??= InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
+
+        if (current.Available)
+        {
+            current.Stale = false;
+            current.LastUpdated ??= LastUpdated;
+            return current;
+        }
+
+        if (previous is not { Available: true })
+            return current;
+
+        return new InventoryCategoryResult
+        {
+            Entries = previous.Entries,
+            Available = true,
+            Stale = true,
+            LastUpdated = previous.LastUpdated,
+            Error = current.Error
+        };
+    }
+}
+
+public static class InventoryDefaults
+{
+    /// <summary>
+    /// Upper bound on how long a forced refresh waits for the background read to
+    /// finish before it gives up waiting. The read itself keeps going, so a slow
+    /// or unreachable provider can never hang the http request. Deliberately a
+    /// constant rather than a config key.
+    /// </summary>
+    public static readonly TimeSpan ForceRefreshTimeout = TimeSpan.FromSeconds(15);
+}
+
+public static class InventoryMessages
+{
+    public const string NotLoaded = "Infrastructure inventory has not been loaded yet.";
+
+    public const string NotEnabled = "Infrastructure inventory is not enabled. Set Infrastructure:Enabled to true and supply a provider connection.";
+
+    public const string NotConfigured = "Infrastructure inventory is enabled but the provider connection is incomplete. Infrastructure:Url, Infrastructure:Username and Infrastructure:Password are all required.";
+
+    /// <summary>
+    /// Proxmox accepts either an api token or a username/password ticket, so its
+    /// "incomplete" case is different from vSphere's.
+    /// </summary>
+    public const string ProxmoxNotConfigured = "Infrastructure inventory is enabled but the Proxmox connection is incomplete. Infrastructure:Url is required, plus either Infrastructure:ApiToken or both Infrastructure:Username and Infrastructure:Password.";
+
+    /// <summary>
+    /// Deliberately describes the shape without ever echoing the configured value.
+    /// </summary>
+    public const string ProxmoxApiTokenMalformed = "Infrastructure:ApiToken is not a valid Proxmox api token. It must be a single string of the form 'user@realm!tokenid=secret'.";
+
+    /// <summary>
+    /// ISO discovery requires datastore file browsing. The vSphere Automation
+    /// REST api does not expose it, so the category is reported as unsupported
+    /// rather than silently empty. Tracked as CRU-2828.
+    /// <para>
+    /// vSphere only. Proxmox lists storage content over rest, so the proxmox
+    /// provider returns real ISOs and never uses this message.
+    /// </para>
+    /// </summary>
+    public const string IsoNotSupported = "ISO discovery is not supported by the vSphere Automation REST API. Listing ISO files requires datastore file browsing, which is only available through the vim25 (SOAP) API. Enter ISO paths manually for now.";
+
+    public const string ContentLibraryNotOnProxmox = "Proxmox has no content libraries. Its VM templates are listed under VM templates.";
+
+    public static string UnsupportedProvider(string provider) =>
+        $"Infrastructure provider '{provider}' is not supported. Supported providers are {Quoted(InfrastructureProviders.All)}.";
+
+    private static string Quoted(IReadOnlyList<string> values)
+    {
+        var quoted = values.Select(x => $"'{x}'").ToArray();
+
+        return quoted.Length switch
+        {
+            0 => "none",
+            1 => quoted[0],
+            _ => $"{string.Join(", ", quoted.Take(quoted.Length - 1))} and {quoted[^1]}"
+        };
+    }
+}
