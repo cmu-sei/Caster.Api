@@ -26,6 +26,8 @@ using Microsoft.OpenApi;
 using k8s;
 using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Inventory;
+using Microsoft.Extensions.Options;
 using Caster.Api.Domain.Services.Modules;
 
 namespace Caster.Api.Infrastructure.Extensions
@@ -199,6 +201,69 @@ namespace Caster.Api.Infrastructure.Extensions
         }
 
         #endregion
+
+        /// <summary>
+        /// Registers the read-only infrastructure inventory readers. Safe to call
+        /// when the feature is disabled or unconfigured - nothing connects until
+        /// the background service runs and finds Infrastructure:Enabled true.
+        /// <para>
+        /// Every provider is registered as an <see cref="IInventoryProvider"/>
+        /// with its own named http client, and the only
+        /// <see cref="IInventoryProviderClient"/> in the container is the
+        /// dispatcher that picks between them. So nothing but configuration
+        /// decides which provider runs, and an unconfigured provider costs
+        /// nothing but a registration.
+        /// </para>
+        /// </summary>
+        public static void AddInventoryServices(this IServiceCollection services)
+        {
+            services.AddInventoryHttpClient(VsphereInventoryClient.HttpClientName);
+
+            services.AddInventoryHttpClient(ProxmoxInventoryClient.HttpClientName, handler =>
+            {
+                // The ticket auth path sets the PVEAuthCookie header itself, which
+                // the handler's own cookie container would otherwise fight over.
+                handler.UseCookies = false;
+            });
+
+            services.AddSingleton<IInventoryProvider, VsphereInventoryClient>();
+            services.AddSingleton<IInventoryProvider, ProxmoxInventoryClient>();
+
+            services.AddSingleton<IInventoryProviderClient, InventoryProviderDispatcher>();
+        }
+
+        /// <summary>
+        /// Two named http clients per inventory provider, so each provider gets its
+        /// own timeout and handler, and each connection's InsecureSkipVerify picks
+        /// between them on every read. See <see cref="InventoryHttpClients"/>.
+        /// </summary>
+        private static void AddInventoryHttpClient(
+            this IServiceCollection services,
+            string name,
+            Action<HttpClientHandler> configureHandler = null)
+        {
+            foreach (var insecure in new[] { false, true })
+            {
+                services.AddHttpClient(insecure ? name + InventoryHttpClients.InsecureSuffix : name, client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(60);
+                })
+                .ConfigurePrimaryHttpMessageHandler(() =>
+                {
+                    var handler = new HttpClientHandler();
+
+                    if (insecure)
+                    {
+                        handler.ServerCertificateCustomValidationCallback =
+                            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                    }
+
+                    configureHandler?.Invoke(handler);
+
+                    return handler;
+                });
+            }
+        }
 
         public static void AddTerraformServices(this IServiceCollection services, TerraformOptions terraformOptions)
         {

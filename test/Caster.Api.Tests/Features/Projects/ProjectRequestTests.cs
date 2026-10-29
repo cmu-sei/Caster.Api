@@ -457,6 +457,71 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         Assert.Contains($"{SeededDirectoryName}/{SeededFileName}", entries);
     }
 
+    /// <summary>A disk manifest describes the hypervisor, so including one needs ViewHosts as well.</summary>
+    [Fact]
+    public async Task Export_with_a_disk_manifest_is_forbidden_without_ViewHosts()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"{ExportUrl(project.Id)}&includeDiskManifest=true", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
+    public async Task Export_with_a_disk_manifest_writes_it_for_a_caller_holding_ViewHosts()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor()
+            .OnProject(project, [ProjectPermission.ViewProject])
+            .WithSystemPermissions(SystemPermission.ViewHosts)
+            .SeedAsync();
+
+        var response = await Client(actor).GetAsync($"{ExportUrl(project.Id)}&includeDiskManifest=true", Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Contains(ArchiveService.DiskManifestEntryName, await ArchiveHelper.EntryNames(response, Ct));
+    }
+
+    // ---- GET api/projects/{id}/disk-manifest ------------------------------------------------------
+
+    [Fact]
+    public async Task GetDiskManifest_is_forbidden_without_ViewHosts()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/projects/{project.Id}/disk-manifest", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
+    public async Task GetDiskManifest_is_forbidden_with_ViewHosts_but_not_ViewProject()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewHosts).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/projects/{project.Id}/disk-manifest", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
+    public async Task GetDiskManifest_returns_the_manifest_to_a_member_holding_ViewHosts()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor()
+            .OnProject(project, [ProjectPermission.ViewProject])
+            .WithSystemPermissions(SystemPermission.ViewHosts)
+            .SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/projects/{project.Id}/disk-manifest", Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+    }
+
     // ---- POST api/projects/{id}/actions/import ------------------------------------------------------
 
     [Fact]

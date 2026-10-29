@@ -955,6 +955,44 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Equal([ImportedFileName], await ArchiveHelper.EntryNames(response, Ct));
     }
 
+    /// <summary>A disk manifest describes the hypervisor, so including one needs ViewHosts as well.</summary>
+    [Fact]
+    public async Task Export_with_a_disk_manifest_is_forbidden_without_ViewHosts()
+    {
+        var (project, directory) = await SeedDirectory();
+        await Seed(TestData.File(directory));
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/directories/{directory.Id}/actions/export?archiveType=zip&includeDiskManifest=true", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
+    public async Task GetDiskManifest_is_forbidden_without_ViewHosts()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/directories/{directory.Id}/disk-manifest", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
+    public async Task GetDiskManifest_returns_the_manifest_to_a_member_holding_ViewHosts()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor()
+            .OnProject(project, [ProjectPermission.ViewProject])
+            .WithSystemPermissions(SystemPermission.ViewHosts)
+            .SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/directories/{directory.Id}/disk-manifest", Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+    }
+
     [Fact]
     public async Task Export_returns_a_zip_to_a_member_holding_ViewProject()
     {
