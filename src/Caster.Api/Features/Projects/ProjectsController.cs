@@ -47,7 +47,7 @@ namespace Caster.Api.Features.Projects
         /// <param name="id">ID of an project.</param>
         /// <param name="query"></param>
         /// <returns></returns>
-        [HttpGet("projects/{id}/actions/export")]
+        [HttpGet("{id}/actions/export")]
         [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "ExportProject")]
         public async Task<IActionResult> Export([FromRoute] Guid id, [FromQuery] Export.Query query)
@@ -71,11 +71,26 @@ namespace Caster.Api.Features.Projects
         }
 
         /// <summary>
+        /// Export a single project. Obsolete: use GET api/projects/{id}/actions/export.
+        /// </summary>
+        /// <param name="id">ID of an project.</param>
+        /// <param name="query"></param>
+        /// <returns></returns>
+        [Obsolete("Use GET api/projects/{id}/actions/export.")]
+        [HttpGet("projects/{id}/actions/export")]
+        [ProducesResponseType(typeof(FileResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "ExportProjectObsolete")]
+        public Task<IActionResult> ExportObsolete([FromRoute] Guid id, [FromQuery] Export.Query query)
+        {
+            return Export(id, query);
+        }
+
+        /// <summary>
         /// Import an project.
         /// </summary>
         /// <param name="id">ID of an project.</param>
         /// <param name="command"></param>
-        [HttpPost("projects/{id}/actions/import")]
+        [HttpPost("{id}/actions/import")]
         [ProducesResponseType(typeof(Import.ImportProjectResult), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "ImportProject")]
         public async Task<IActionResult> Import([FromRoute] Guid id, [FromQuery] Import.Command command)
@@ -83,6 +98,20 @@ namespace Caster.Api.Features.Projects
             command.Id = id;
             var result = await _mediator.Send(command);
             return Ok(result);
+        }
+
+        /// <summary>
+        /// Import an project. Obsolete: use POST api/projects/{id}/actions/import.
+        /// </summary>
+        /// <param name="id">ID of an project.</param>
+        /// <param name="command"></param>
+        [Obsolete("Use POST api/projects/{id}/actions/import.")]
+        [HttpPost("projects/{id}/actions/import")]
+        [ProducesResponseType(typeof(Import.ImportProjectResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "ImportProjectObsolete")]
+        public Task<IActionResult> ImportObsolete([FromRoute] Guid id, [FromQuery] Import.Command command)
+        {
+            return Import(id, command);
         }
 
         /// <summary>
