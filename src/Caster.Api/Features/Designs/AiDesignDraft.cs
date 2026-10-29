@@ -33,6 +33,16 @@ public class AiDesignDraft
     /// The Terraform the Design will generate once it is enabled.
     /// </summary>
     public string Snippet { get; set; }
+
+    /// <summary>
+    /// The infrastructure inventory the draft was checked against, and the names it found or not.
+    /// </summary>
+    public AiInventoryGrounding Inventory { get; set; }
+
+    /// <summary>
+    /// The range the Design builds, as the model describes it, with the server's totals. Null when the model gave none.
+    /// </summary>
+    public AiTopologyPlan Topology { get; set; }
 }
 
 public class AiDraftModule
@@ -159,7 +169,7 @@ public static class AiDesignDraftBuilder
         return catalog;
     }
 
-    public static string BuildSystemPrompt(IReadOnlyList<AiCatalogModule> catalog, IReadOnlyList<string> hypervisors = null)
+    public static string BuildSystemPrompt(IReadOnlyList<AiCatalogModule> catalog, IReadOnlyList<string> hypervisors = null, string inventory = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You design Terraform topologies for Caster, the infrastructure tool of the Crucible cyber range.");
@@ -169,7 +179,7 @@ public static class AiDesignDraftBuilder
         sb.AppendLine("- Use only modules from the catalog below, by moduleId. Never invent a module, variable or output.");
         sb.AppendLine("- Give each module instance a unique name: letters, digits, underscores and dashes, starting with a letter or underscore.");
         sb.AppendLine("- Set every required variable. Leave optional variables out unless the request needs a non-default value.");
-        sb.AppendLine($"- Never guess a name that has to exist in the range, such as a VM template, node, datastore, network zone or ID, unless the request gives it.");
+        sb.AppendLine($"- Never guess a name that has to exist in the range, such as a VM template, node, datastore, network zone or ID, unless the request or the inventory below gives it.");
         sb.AppendLine($"  Set it to a placeholder instead: {Placeholders.Prefix} and what it is, in capitals, such as {Placeholders.Prefix}DC_TEMPLATE.");
         sb.AppendLine("  The planner replaces placeholders before the design can be enabled.");
         sb.AppendLine("- For a variable of type string, give the plain text with no surrounding quotes. Caster adds the quotes.");
@@ -186,6 +196,13 @@ public static class AiDesignDraftBuilder
             sb.AppendLine($"- The design spans {string.Join(" and ", hypervisors)}. Each module is marked with the hypervisor it builds on.");
             sb.AppendLine("  A machine can only attach to networks and other resources on its own hypervisor, so never pass one hypervisor's module output to a module on another.");
             sb.AppendLine("  Give each hypervisor its own networks. Say in the summary which machines run where, and that the two sides only reach each other over a link the planner provides, such as a shared VLAN or a router.");
+        }
+        sb.AppendLine();
+        sb.AppendLine(AiTopology.Guidance);
+        if (!string.IsNullOrEmpty(inventory))
+        {
+            sb.AppendLine();
+            sb.Append(inventory);
         }
         sb.AppendLine();
         sb.AppendLine("Catalog:");
@@ -283,7 +300,8 @@ public static class AiDesignDraftBuilder
                         },
                         ["anyOf"] = branches
                     }
-                }
+                },
+                [AiTopology.ToolProperty] = AiTopology.BuildToolSchema()
             },
             ["required"] = new JsonArray("designName", "summary", "modules")
         };
@@ -292,9 +310,10 @@ public static class AiDesignDraftBuilder
     /// <summary>
     /// Keeps what fits the catalog and reports the rest. Unknown modules, unknown variables,
     /// bad names and repeated names are dropped; missing required variables and broken
-    /// references are kept and warned about, for the planner to fix.
+    /// references are kept and warned about, for the planner to fix. With an inventory, the
+    /// template, network and datastore values and the topology plan's names are checked against it.
     /// </summary>
-    public static AiDesignDraft Review(JsonElement input, IReadOnlyList<AiCatalogModule> catalog, string designName)
+    public static AiDesignDraft Review(JsonElement input, IReadOnlyList<AiCatalogModule> catalog, string designName, AiInventory inventory = null, IReadOnlyList<string> hypervisors = null)
     {
         var draft = new AiDesignDraft
         {
@@ -372,7 +391,49 @@ public static class AiDesignDraftBuilder
         draft.Warnings.AddRange(HypervisorProblems(kept.Select(k => (k.Draft.Name, k.Draft.Hypervisor, (IEnumerable<Domain.Models.ModuleValue>)k.Values))));
         draft.Modules = kept.Select(k => k.Draft).ToList();
         draft.Snippet = string.Join("\n\n", kept.Select(k => k.Version.ToSnippet(k.Draft.Name, k.Values)));
+
+        var hypervisor = hypervisors?.Count == 1 ? hypervisors[0] : null;
+        draft.Topology = AiTopology.Parse(input);
+        if (draft.Topology == null && kept.Count > 1)
+            draft.Warnings.Add(AiTopology.NoPlan);
+        draft.Warnings.AddRange(AiTopology.Check(draft.Topology, inventory, hypervisor));
+        if (inventory != null)
+        {
+            var uses = NameUses(kept.Select(k => (k.Draft.Name, k.Draft.Hypervisor ?? hypervisor, k.Version, (IEnumerable<Domain.Models.ModuleValue>)k.Values)), out var created)
+                .Concat(AiTopology.NameUses(draft.Topology, hypervisor))
+                .Where(u => u.Kind != AiInventoryKind.Network || !created.Contains(u.Name));
+            inventory.Check(uses, draft.Warnings);
+            draft.Inventory = inventory.Grounding;
+        }
         return draft;
+    }
+
+    /// <summary>
+    /// The template, network and datastore names the modules' values set as literals. A module
+    /// with a network output creates the networks its values name, so those are returned as created.
+    /// </summary>
+    public static List<AiNameUse> NameUses(IEnumerable<(string Name, string Hypervisor, ModuleVersion Version, IEnumerable<Domain.Models.ModuleValue> Values)> modules, out HashSet<string> created)
+    {
+        created = new HashSet<string>(StringComparer.Ordinal);
+        var uses = new List<AiNameUse>();
+        foreach (var (name, hypervisor, version, values) in modules)
+        {
+            var createsNetworks = (version.Outputs ?? []).Any(o => Files.AiTerraformReferences.KindOfVariable(o.Name) == AiInventoryKind.Network);
+            foreach (var value in values ?? [])
+            {
+                var kind = Files.AiTerraformReferences.KindOfVariable(value.Name);
+                if (kind == null || !AiTopology.IsLiteral(value.Value))
+                    continue;
+                if (kind == AiInventoryKind.Network && createsNetworks)
+                {
+                    created.Add(value.Value.Trim());
+                    continue;
+                }
+                uses.Add(new AiNameUse(kind.Value, value.Value.Trim(), $"{name}.{value.Name}", hypervisor,
+                    ByVmId: kind == AiInventoryKind.Template && value.Value.Trim().All(char.IsDigit)));
+            }
+        }
+        return uses;
     }
 
     /// <summary>

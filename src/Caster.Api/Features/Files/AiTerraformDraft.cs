@@ -26,6 +26,16 @@ public class AiTerraformDraft
     /// What was dropped or changed from the model's answer, and what still needs a designer's attention.
     /// </summary>
     public List<string> Warnings { get; set; } = [];
+
+    /// <summary>
+    /// The infrastructure inventory the draft was checked against, and the names it found or not.
+    /// </summary>
+    public AiInventoryGrounding Inventory { get; set; }
+
+    /// <summary>
+    /// The range the files build, as the model describes it, with the server's totals. Null when the model gave none.
+    /// </summary>
+    public AiTopologyPlan Topology { get; set; }
 }
 
 public class AiTerraformFile
@@ -69,6 +79,11 @@ public static class AiTerraformDraftBuilder
 
     private static readonly Regex FileName = new(@"^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}$");
 
+    // a resource that builds a machine, which a draft should describe in its topology plan
+    private static readonly Regex Machine = new(
+        @"^\s*resource\s+""(proxmox_virtual_environment_vm|proxmox_vm_qemu|vsphere_virtual_machine)""",
+        RegexOptions.Multiline);
+
     // a top-level block that declares a name Terraform requires to be unique in the root module
     private static readonly Regex Declaration = new(
         @"^\s*(variable|output|module|provider)\s+""([^""]+)""|^\s*(resource|data)\s+""([^""]+)""\s+""([^""]+)""",
@@ -79,7 +94,7 @@ public static class AiTerraformDraftBuilder
         @"^\s*([A-Za-z0-9_]*(password|secret|token|api_key|access_key|private_key)[A-Za-z0-9_]*)\s*=\s*""(?!\$\{)[^""]{4,}""",
         RegexOptions.Multiline | RegexOptions.IgnoreCase);
 
-    public static string BuildSystemPrompt(IReadOnlyList<AiCatalogModule> catalog)
+    public static string BuildSystemPrompt(IReadOnlyList<AiCatalogModule> catalog, string inventory = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You write Terraform for Caster, the infrastructure tool of the Crucible cyber range.");
@@ -96,10 +111,18 @@ public static class AiTerraformDraftBuilder
         sb.AppendLine("- File names: letters, digits, dots, underscores and dashes, ending in .tf (or .tfvars, .tftpl, .sh, .yaml where needed).");
         sb.AppendLine("- Never write credentials, tokens or keys. Declare a variable (sensitive = true) and say in notes what must be set.");
         sb.AppendLine("- Use a catalog module, with the source given, when one does what is asked. Otherwise write resources directly.");
-        sb.AppendLine("- Use names for templates, networks, datastores and images that the context already uses. If you must guess one, make it a variable and say so in notes.");
+        sb.AppendLine("- Use names for templates, networks, datastores and images that the inventory below or the context already uses.");
+        sb.AppendLine("  If you must guess one, make it a variable and say so in notes.");
         sb.AppendLine("- Use fictional addressing (RFC 1918 and RFC 5737 ranges) unless the context already sets the addresses.");
         sb.AppendLine("- Write HCL a person can maintain: one purpose per file, comments only where intent is not obvious.");
         sb.AppendLine("- In the summary, say what you changed and what the designer still has to decide.");
+        sb.AppendLine();
+        sb.AppendLine(AiTopology.Guidance);
+        if (!string.IsNullOrEmpty(inventory))
+        {
+            sb.AppendLine();
+            sb.Append(inventory);
+        }
         if (catalog.Count > 0)
         {
             sb.AppendLine();
@@ -183,16 +206,23 @@ public static class AiTerraformDraftBuilder
                 ["type"] = "array",
                 ["description"] = "Variables to set, guesses made, and changes needed in read-only files.",
                 ["items"] = new JsonObject { ["type"] = "string" }
-            }
+            },
+            [AiTopology.ToolProperty] = AiTopology.BuildToolSchema()
         },
         ["required"] = new JsonArray("summary", "files")
     };
 
     /// <summary>
     /// Turns the model's answer into a draft: drops files it may not write, matches the rest to the
-    /// Directory's files, and warns about what the plan would reject.
+    /// Directory's files, and warns about what the plan would reject. With an inventory, the names
+    /// the files and the topology plan use are checked against it; the plan is checked either way.
     /// </summary>
-    public static AiTerraformDraft Review(JsonElement input, IReadOnlyList<AiContextFile> files)
+    public static AiTerraformDraft Review(
+        JsonElement input,
+        IReadOnlyList<AiContextFile> files,
+        AiInventory inventory = null,
+        IReadOnlyList<string> hypervisors = null,
+        AiTopologyExpectations expected = null)
     {
         var draft = new AiTerraformDraft { Summary = GetString(input, "summary") };
         var editable = files.Where(f => f.Editable).ToDictionary(f => f.Name, StringComparer.Ordinal);
@@ -245,6 +275,30 @@ public static class AiTerraformDraftBuilder
             draft.Warnings.Add("The draft changes no files.");
 
         draft.Warnings.AddRange(DuplicateDeclarations(files, draft.Files));
+
+        // a name the Directory's workspace creates is not missing from the inventory
+        var hypervisor = hypervisors?.Count == 1 ? hypervisors[0] : null;
+        var replaced = draft.Files.Where(d => d.ExistingFileId.HasValue).Select(d => d.ExistingFileId.Value).ToHashSet();
+        var created = files.Where(f => !replaced.Contains(f.Id) && IsHcl(f.Name)).Select(f => f.Content)
+            .Concat(draft.Files.Where(d => IsHcl(d.Name)).Select(d => d.Content))
+            .SelectMany(AiTerraformReferences.CreatedNetworks)
+            .ToHashSet(StringComparer.Ordinal);
+
+        draft.Topology = AiTopology.Parse(input);
+        if (draft.Topology == null && (expected != null || draft.Files.Any(d => IsHcl(d.Name) && Machine.IsMatch(StripComments(d.Content)))))
+            draft.Warnings.Add(AiTopology.NoPlan);
+        draft.Warnings.AddRange(AiTopology.Check(draft.Topology, inventory, hypervisor, expected));
+        if (inventory != null)
+        {
+            var uses = draft.Files
+                .Where(d => IsHcl(d.Name))
+                .SelectMany(d => AiTerraformReferences.NameUses(d.Name, d.Content))
+                .Select(u => u.Hypervisor == null ? u with { Hypervisor = hypervisor } : u)
+                .Concat(AiTopology.NameUses(draft.Topology, hypervisor))
+                .Where(u => u.Kind != AiInventoryKind.Network || !created.Contains(u.Name));
+            inventory.Check(uses, draft.Warnings);
+            draft.Inventory = inventory.Grounding;
+        }
         return draft;
     }
 
@@ -286,8 +340,8 @@ public static class AiTerraformDraftBuilder
     private static bool IsHcl(string name) =>
         name.EndsWith(".tf", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".tfvars", StringComparison.OrdinalIgnoreCase);
 
-    // drops comments and string contents so a commented-out or quoted block is not counted as declared
-    private static string StripComments(string content) =>
+    // drops comments so a commented-out block is not counted as declared
+    public static string StripComments(string content) =>
         Regex.Replace(content ?? "", @"/\*.*?\*/|(#|//)[^\n]*", "", RegexOptions.Singleline);
 
     /// <summary>

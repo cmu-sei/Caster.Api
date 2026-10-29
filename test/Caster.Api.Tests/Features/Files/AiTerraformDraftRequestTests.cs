@@ -46,6 +46,17 @@ public class AiTerraformDraftRequestTests(DatabaseFixture fixture, CasterAppFact
     }
 
     [Fact]
+    public async Task Draft_refuses_an_unknown_hypervisor()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/directories/{directory.Id}/files/ai-draft", new { prompt = "add a vm", hypervisors = new[] { "Hyper-V" } }, Ct);
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
+    }
+
+    [Fact]
     public async Task Apply_creates_a_new_file_with_a_version()
     {
         var (project, directory) = await SeedDirectory();

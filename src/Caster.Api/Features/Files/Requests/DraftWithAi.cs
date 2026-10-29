@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Features.Designs;
 using Caster.Api.Features.Shared;
@@ -44,6 +45,13 @@ public class DraftWithAi
         /// </summary>
         [DataMember]
         public Guid? FileId { get; init; }
+
+        /// <summary>
+        /// Hypervisors the Terraform builds on: Proxmox, vSphere or both, which picks the inventory the draft is grounded in.
+        /// Empty means the ones the Directory's files already use, or else every hypervisor configured for Terraform runs.
+        /// </summary>
+        [DataMember]
+        public string[] Hypervisors { get; init; } = [];
     }
 
     public class Validator : AbstractValidator<Command>
@@ -52,39 +60,73 @@ public class DraftWithAi
         {
             RuleFor(x => x.DirectoryId).DirectoryExists(validationService);
             RuleFor(x => x.Prompt).NotEmpty().MaximumLength(8000);
+            RuleForEach(x => x.Hypervisors)
+                .Must(h => Domain.Models.Hypervisors.All.Contains(h?.Trim(), StringComparer.OrdinalIgnoreCase))
+                .WithMessage($"Hypervisor must be one of {string.Join(", ", Domain.Models.Hypervisors.All)}.");
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions) : BaseHandler<Command, AiTerraformDraft>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService) : BaseHandler<Command, AiTerraformDraft>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-        public override async Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken)
+        public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken) =>
+            new Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService)
+                .Draft(request.DirectoryId, request.Prompt, request.FileId, request.Hypervisors, expected: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Drafts Terraform for a Directory from a request in words, which the free-text and brief routes both build.
+    /// </summary>
+    public class Drafter(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService)
+    {
+        public async Task<AiTerraformDraft> Draft(Guid directoryId, string prompt, Guid? fileId, IReadOnlyList<string> requestedHypervisors, AiTopologyExpectations expected, CancellationToken cancellationToken)
         {
             if (!aiOptions.Enabled)
                 throw new ConflictException("AI drafting is not enabled on this server.");
 
-            var files = await LoadContextFiles(request.DirectoryId, cancellationToken);
+            var files = await LoadContextFiles(directoryId, cancellationToken);
             AiContextFile focus = null;
-            if (request.FileId.HasValue)
+            if (fileId.HasValue)
             {
-                focus = files.SingleOrDefault(f => f.Id == request.FileId.Value && f.Editable)
+                focus = files.SingleOrDefault(f => f.Id == fileId.Value && f.Editable)
                     ?? throw new ConflictException("The file to change must belong to this Directory, not a parent or a workspace.");
             }
             if (files.Sum(f => f.Content?.Length ?? 0) > AiTerraformDraftBuilder.MaxContextCharacters)
                 throw new ConflictException("This Directory and its parents hold too much Terraform to send in one draft. Draft from a smaller Directory.");
 
+            var warnings = new List<string>();
+            var hypervisors = ResolveHypervisors(files, requestedHypervisors, warnings);
+            var inventory = await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken);
             var catalog = await LoadCatalog(cancellationToken);
             var input = await aiModelClient.InvokeToolAsync(
-                AiTerraformDraftBuilder.BuildSystemPrompt(catalog),
-                AiTerraformDraftBuilder.BuildUserPrompt(request.Prompt, files, await LoadDesigns(request.DirectoryId, cancellationToken), focus),
+                AiTerraformDraftBuilder.BuildSystemPrompt(catalog, inventory.BuildPromptSection()),
+                AiTerraformDraftBuilder.BuildUserPrompt(prompt, files, await LoadDesigns(directoryId, cancellationToken), focus),
                 AiTerraformDraftBuilder.ToolName,
                 AiTerraformDraftBuilder.ToolDescription,
                 AiTerraformDraftBuilder.BuildToolSchema(),
                 cancellationToken);
 
-            return AiTerraformDraftBuilder.Review(input, files);
+            var draft = AiTerraformDraftBuilder.Review(input, files, inventory, hypervisors, expected);
+            draft.Warnings.InsertRange(0, warnings);
+            if (inventory.Grounding.Connections.Any(c => c.Truncated))
+                draft.Warnings.Add("The inventory was too large to show the model in full, so it may not have seen every template or network.");
+            return draft;
+        }
+
+        // the request's hypervisors, else the ones the Directory's Terraform uses, else the configured ones
+        private string[] ResolveHypervisors(IReadOnlyList<AiContextFile> files, IReadOnlyList<string> requested, List<string> warnings)
+        {
+            if (requested?.Count > 0)
+                return AiDesignDraftBuilder.ResolveHypervisors(Domain.Models.Hypervisors.Configured(terraformOptions), requested, warnings);
+
+            var used = AiTerraformReferences.DetectHypervisors(files.Select(f => f.Content));
+            if (used.Length > 0)
+                return used;
+
+            var configured = Domain.Models.Hypervisors.Configured(terraformOptions);
+            return configured.Length > 0 ? configured : null;
         }
 
         // what a workspace of the Directory is built from: its own files and every parent's, but no workspace's

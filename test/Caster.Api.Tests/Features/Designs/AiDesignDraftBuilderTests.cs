@@ -182,6 +182,54 @@ namespace Caster.Api.Tests.Features.Designs
         }
 
         [Fact]
+        public void Review_Checks_Template_And_Network_Values_Against_The_Inventory()
+        {
+            var vm = Module("crucible-modules/proxmox-vm", "bpg/proxmox");
+            vm.Versions.Single().Variables.AddRange(
+            [
+                new ModuleVariable { Name = "template_id", VariableType = "number" },
+                new ModuleVariable { Name = "bridge", VariableType = "string" },
+                new ModuleVariable { Name = "datastore_id", VariableType = "string", DefaultValue = "local-lvm" },
+            ]);
+            var network = Module("crucible-modules/proxmox-network", "bpg/proxmox");
+            network.Versions.Single().Variables.Add(new ModuleVariable { Name = "vnet_name", VariableType = "string" });
+            network.Versions.Single().Outputs.Add(new ModuleOutput { Name = "vnet_id" });
+            var catalog = AiDesignDraftBuilder.SelectCatalog([vm, network], Sources, null, [Hypervisors.Proxmox]);
+            var inventory = AiInventory.Load(AiInventoryTests.Service(("default", InfrastructureProviders.Proxmox, AiInventoryTests.Proxmox())), [Hypervisors.Proxmox]);
+
+            using var input = JsonDocument.Parse($$"""
+                {
+                  "designName": "lab",
+                  "modules": [
+                    { "moduleId": "{{network.Id}}", "name": "dmz", "values": { "vnet_name": "dmz" } },
+                    { "moduleId": "{{vm.Id}}", "name": "web", "values": { "template_id": "9000", "bridge": "dmz", "datastore_id": "REPLACE_WITH_DATASTORE" } },
+                    { "moduleId": "{{vm.Id}}", "name": "db", "values": { "template_id": "9100", "bridge": "${module.dmz.vnet_id}" } }
+                  ]
+                }
+                """);
+
+            var draft = AiDesignDraftBuilder.Review(input.RootElement, catalog, null, inventory, [Hypervisors.Proxmox]);
+
+            Assert.Equal(["9000"], draft.Inventory.Found.Select(f => f.Name));
+            var unknown = Assert.Single(draft.Inventory.Unknown);
+            Assert.Equal(("9100", "db.template_id"), (unknown.Name, unknown.Where));
+            Assert.Contains(draft.Warnings, w => w.StartsWith("db.template_id: template vmid 9100 is not in the Proxmox inventory"));
+            Assert.Contains(AiTopology.NoPlan, draft.Warnings);
+        }
+
+        [Fact]
+        public void BuildSystemPrompt_Carries_The_Topology_Guidance_And_The_Inventory()
+        {
+            var catalog = AiDesignDraftBuilder.SelectCatalog([Module("crucible-modules/vm", "bpg/proxmox")], Sources, null, null);
+
+            var prompt = AiDesignDraftBuilder.BuildSystemPrompt(catalog, null, "Infrastructure inventory: listed here.\n");
+
+            Assert.Contains("Range topology:", prompt);
+            Assert.Contains("Infrastructure inventory: listed here.", prompt);
+            Assert.Contains(AiTopology.ToolProperty, AiDesignDraftBuilder.BuildToolSchema(catalog).ToJsonString());
+        }
+
+        [Fact]
         public void BuildSystemPrompt_Explains_Each_Hypervisor_Keeps_Its_Own_Networks()
         {
             var catalog = AiDesignDraftBuilder.SelectCatalog([Module("crucible-modules/vm", "bpg/proxmox")], Sources, null, Hypervisors.All);
