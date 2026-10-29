@@ -5,7 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using Caster.Api.Domain.Models;
+using Caster.Api.Features.Designs;
 using Caster.Api.Features.Files;
+using Caster.Api.Infrastructure.Options;
+using Caster.Api.Tests.Features.Designs;
 
 namespace Caster.Api.Tests.Features.Files;
 
@@ -161,6 +165,77 @@ public class AiTerraformDraftBuilderTests
         Assert.Contains("base: module \"net\" (network)", prompt);
     }
 
+    [Fact]
+    public void Review_checks_the_drafted_names_against_the_inventory()
+    {
+        var draft = ReviewWithInventory("""
+            {"summary":"s","files":[{"name":"vm.tf","content":"resource \"proxmox_virtual_environment_vm\" \"web\" {\n  clone {\n    vm_id = 9000\n  }\n  network_device {\n    bridge = \"vmbr0\"\n  }\n  network_device {\n    bridge = \"dmz\"\n  }\n}\n"}],
+             "topology":{"segments":[],"machines":[]}}
+            """);
+
+        Assert.True(draft.Inventory.Checked);
+        Assert.Equal(["9000", "vmbr0"], draft.Inventory.Found.Select(f => f.Name).Order());
+        Assert.Equal("dmz", Assert.Single(draft.Inventory.Unknown).Name);
+        Assert.Contains(draft.Warnings, w => w.StartsWith("vm.tf proxmox_virtual_environment_vm.web: network 'dmz' is not in the Proxmox inventory"));
+    }
+
+    [Fact]
+    public void Review_accepts_a_network_the_draft_creates()
+    {
+        var draft = ReviewWithInventory("""
+            {"summary":"s","files":[{"name":"net.tf","content":"resource \"proxmox_virtual_environment_sdn_vnet\" \"dmz\" {\n  id = \"dmz\"\n}\nresource \"proxmox_virtual_environment_vm\" \"web\" {\n  network_device {\n    bridge = \"dmz\"\n  }\n}\n"}],
+             "topology":{"segments":[{"name":"dmz","role":"Dmz","network":"dmz"}],"machines":[]}}
+            """);
+
+        Assert.Empty(draft.Inventory.Unknown);
+    }
+
+    [Fact]
+    public void Review_returns_the_topology_plan_and_its_problems()
+    {
+        var draft = Review("""
+            {"summary":"s","files":[{"name":"n.tf","content":"# n"}],
+             "topology":{"segments":[{"name":"a","role":"Server","cidr":"10.0.0.0/16"},{"name":"b","role":"Server","cidr":"10.0.1.0/24"}],"machines":[]}}
+            """);
+
+        Assert.Equal(2, draft.Topology.Segments.Count);
+        Assert.NotNull(draft.Topology.Totals);
+        Assert.Contains(draft.Warnings, w => w.Contains("overlap"));
+        Assert.Null(draft.Inventory);
+    }
+
+    [Fact]
+    public void Review_says_when_a_draft_of_machines_gives_no_plan()
+    {
+        var withMachine = Review("""{"summary":"s","files":[{"name":"vm.tf","content":"resource \"vsphere_virtual_machine\" \"a\" {}\n"}]}""");
+        var withoutMachine = Review("""{"summary":"s","files":[{"name":"vars.tf","content":"variable \"x\" {}\n"}]}""");
+
+        Assert.Contains(AiTopology.NoPlan, withMachine.Warnings);
+        Assert.DoesNotContain(AiTopology.NoPlan, withoutMachine.Warnings);
+    }
+
+    [Fact]
+    public void BuildSystemPrompt_carries_the_topology_guidance_and_the_inventory()
+    {
+        var prompt = AiTerraformDraftBuilder.BuildSystemPrompt([], "Infrastructure inventory: what exists on the hypervisor now.\n");
+
+        Assert.Contains("Range topology:", prompt);
+        Assert.Contains("RFC 1918", prompt);
+        Assert.Contains("Infrastructure inventory: what exists on the hypervisor now.", prompt);
+    }
+
+    [Fact]
+    public void BuildToolSchema_offers_the_topology_plan()
+    {
+        Assert.True(AiTerraformDraftBuilder.BuildToolSchema()["properties"]!.AsObject().ContainsKey(AiTopology.ToolProperty));
+    }
+
     private static AiTerraformDraft Review(string json) =>
         AiTerraformDraftBuilder.Review(JsonDocument.Parse(json).RootElement, new List<AiContextFile> { Main, Provider });
+
+    private static AiTerraformDraft ReviewWithInventory(string json)
+    {
+        var inventory = AiInventory.Load(AiInventoryTests.Service(("default", InfrastructureProviders.Proxmox, AiInventoryTests.Proxmox())), [Hypervisors.Proxmox]);
+        return AiTerraformDraftBuilder.Review(JsonDocument.Parse(json).RootElement, new List<AiContextFile> { Main, Provider }, inventory, [Hypervisors.Proxmox]);
+    }
 }
