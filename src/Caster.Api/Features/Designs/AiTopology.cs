@@ -10,10 +10,11 @@ using System.Text.Json.Nodes;
 namespace Caster.Api.Features.Designs;
 
 /// <summary>
-/// What a network segment is for in the range.
+/// What a network segment is for in the range. Other comes first, so a client that leaves it unset leaves it open.
 /// </summary>
 public enum AiSegmentRole
 {
+    Other,
     Internet,
     Perimeter,
     Dmz,
@@ -21,8 +22,7 @@ public enum AiSegmentRole
     Server,
     Management,
     Ot,
-    Attacker,
-    Other
+    Attacker
 }
 
 /// <summary>

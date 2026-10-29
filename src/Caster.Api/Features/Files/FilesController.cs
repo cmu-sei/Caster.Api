@@ -103,6 +103,28 @@ namespace Caster.Api.Features.Files
         }
 
         /// <summary>
+        /// Draft Terraform for a directory with AI from a structured scenario brief
+        /// </summary>
+        /// <remarks>
+        /// For an application such as Blueprint that describes the exercise rather than the Terraform: its organizations,
+        /// network segments and key terrain, critical systems, the attacker's entry point and path, and the participant teams.
+        /// Returns the same draft as DraftTerraformWithAi. Nothing is saved: the planner reviews the files, then saves them
+        /// with ApplyAiTerraformDraft.
+        /// </remarks>
+        /// <param name="directoryId">ID of the directory the files belong to.</param>
+        /// <param name="command"></param>
+        /// <returns></returns>
+        [HttpPost("directories/{directoryId}/files/ai-draft/brief")]
+        [ProducesResponseType(typeof(AiTerraformDraft), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "DraftTerraformWithAiFromBrief")]
+        public async Task<IActionResult> DraftWithAiFromBrief([FromRoute] Guid directoryId, [FromBody] DraftWithAiFromBrief.Command command)
+        {
+            command.DirectoryId = directoryId;
+            var result = await _mediator.Send(command);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Save the files of a reviewed AI Terraform draft
         /// </summary>
         /// <remarks>
