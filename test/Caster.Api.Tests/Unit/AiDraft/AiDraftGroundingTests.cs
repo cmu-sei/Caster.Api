@@ -157,6 +157,35 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
     }
 
     [Fact]
+    public async Task A_brief_is_drafted_from_its_rendering_and_checked_for_what_it_asks()
+    {
+        var directory = await SeedDirectory();
+        MayViewHosts(true);
+        Answers(Answer);
+        var brief = new AiScenarioBrief
+        {
+            Title = "Water utility",
+            Segments = [new AiBriefSegment { Name = "dmz", Role = AiSegmentRole.Dmz }, new AiBriefSegment { Name = "scada", Role = AiSegmentRole.Ot, KeyTerrain = true }],
+            Systems = [new AiBriefSystem { Name = "hmi", Segment = "scada", Critical = true }],
+            Teams = [new AiBriefTeam { Name = "Blue", Role = AiTeamRole.Defender, Workstations = 2 }],
+            Attacker = new AiBriefAttacker { EntryPoint = "kali" }
+        };
+
+        var draft = await new DraftWithAiFromBrief.Handler(_authorization, Db, _model, new AiOptions { Enabled = true }, new TerraformOptions(), _inventory)
+            .HandleRequest(new DraftWithAiFromBrief.Command { DirectoryId = directory.Id, Brief = brief, Instructions = "Reuse the range's provider." }, Ct);
+
+        Assert.Contains("Scenario: Water utility", _prompt);
+        Assert.Contains("- scada (role Ot, key terrain)", _prompt);
+        Assert.Contains("The planner adds:\nReuse the range's provider.", _prompt.Replace("\r\n", "\n"));
+        Assert.Contains("=== provider.tf (read-only, from range) ===", _prompt);
+        Assert.Contains("The brief's segment scada is not in the plan.", draft.Warnings);
+        Assert.Contains("The brief's critical system hmi is not in the plan.", draft.Warnings);
+        Assert.Contains("Team Blue has 0 of the 2 workstations the brief asks for.", draft.Warnings);
+        Assert.DoesNotContain(draft.Warnings, w => w.Contains("entry point"));
+        Assert.True(draft.Inventory.Checked);
+    }
+
+    [Fact]
     public async Task A_design_draft_is_grounded_in_the_inventory_of_its_hypervisor()
     {
         var directory = await SeedDirectory();

@@ -46,6 +46,50 @@ public class AiTerraformDraftRequestTests(DatabaseFixture fixture, CasterAppFact
     }
 
     [Fact]
+    public async Task Draft_from_a_brief_is_a_conflict_while_AI_is_not_enabled()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await DraftFromBrief(actor, directory, new { title = "Water utility", segments = new[] { new { name = "scada", role = "Ot" } } });
+
+        await AssertProblem(HttpStatusCode.Conflict, response);
+    }
+
+    [Fact]
+    public async Task Draft_from_a_brief_is_forbidden_for_a_caller_holding_only_ViewProject()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await DraftFromBrief(actor, directory, new { title = "Water utility" });
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    [Fact]
+    public async Task Draft_from_a_brief_refuses_a_brief_without_a_title()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await DraftFromBrief(actor, directory, new { summary = "no title" });
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
+    }
+
+    [Fact]
+    public async Task Draft_from_a_brief_refuses_a_segment_whose_cidr_is_not_a_network()
+    {
+        var (project, directory) = await SeedDirectory();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await DraftFromBrief(actor, directory, new { title = "t", segments = new[] { new { name = "lan", cidr = "10.0.0.300/24" } } });
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
+    }
+
+    [Fact]
     public async Task Draft_refuses_an_unknown_hypervisor()
     {
         var (project, directory) = await SeedDirectory();
@@ -178,6 +222,9 @@ public class AiTerraformDraftRequestTests(DatabaseFixture fixture, CasterAppFact
         await AssertProblem(HttpStatusCode.BadRequest, response);
         Assert.False(await FileNamed("a.tf"));
     }
+
+    private Task<HttpResponseMessage> DraftFromBrief(TestActor actor, Directory directory, object brief) =>
+        Client(actor).PostAsJsonAsync($"api/directories/{directory.Id}/files/ai-draft/brief", new { brief }, Ct);
 
     private Task<HttpResponseMessage> Apply(TestActor actor, Directory directory, params object[] files) =>
         Client(actor).PostAsJsonAsync($"api/directories/{directory.Id}/files/ai-draft/apply", new { files }, Ct);
