@@ -1,0 +1,39 @@
+name: Build Client Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      clientVersion:
+        description: "Version of the Client package"
+        required: true
+
+permissions: {}
+
+jobs:
+  # Builds and packs only (auth-mode: trusted). nuget.org rejects a trusted-
+  # publishing token issued to a reusable workflow in another repository, so
+  # the push happens in the publish job below, which this file defines.
+  pack:
+    uses: cmu-sei/Crucible-Github-Actions/.github/workflows/nuget-release.yaml@nuget-v1
+    permissions:
+      contents: read
+    with:
+      version: ${{ inputs.clientVersion }}
+      project: src/Caster.Api.Client/Caster.Api.Client.csproj
+      openapi-project: src/Caster.Api
+      description: NSwag generated client for Crucible's Caster.Api
+      auth-mode: trusted
+
+  publish:
+    needs: pack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write          # tag + GitHub release with the .nupkg
+      id-token: write          # NuGet trusted publishing (OIDC -> short-lived push key)
+    steps:
+      - uses: cmu-sei/Crucible-Github-Actions/actions/nuget-publish@nuget-v1
+        with:
+          package-id: ${{ needs.pack.outputs.package-id }}
+          version: ${{ needs.pack.outputs.version }}
+          nuget-user: ${{ vars.NUGET_USER }}
