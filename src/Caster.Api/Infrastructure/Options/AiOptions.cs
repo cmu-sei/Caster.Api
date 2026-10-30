@@ -27,6 +27,10 @@ namespace Caster.Api.Infrastructure.Options
         // how hard a model thinks before it answers: low, medium, high, xhigh or max; empty for the model's own default.
         // Lower is faster and spends fewer tokens; a task's own Effort wins.
         public string Effort { get; set; }
+        // what each model costs, keyed by model or inference profile id, so the AI usage of a project can be priced;
+        // a model without a price is counted in tokens only. A key matches ignoring punctuation, so an environment
+        // variable can price us.anthropic.claude-sonnet-5-5 as us_anthropic_claude_sonnet_5_5.
+        public Dictionary<string, AiPrice> Prices { get; set; } = new Dictionary<string, AiPrice>();
 
         public const string Bedrock = "Bedrock";
         public const string OpenAi = "OpenAI";
@@ -80,5 +84,14 @@ namespace Caster.Api.Infrastructure.Options
         public int MaxTokens { get; set; }
         // low, medium, high, xhigh or max; empty for the default
         public string Effort { get; set; }
+    }
+
+    /// <summary>A model's price in US dollars per million tokens of each kind</summary>
+    public class AiPrice
+    {
+        public decimal InputPerMillion { get; set; }
+        public decimal OutputPerMillion { get; set; }
+        public decimal CacheReadPerMillion { get; set; }
+        public decimal CacheWritePerMillion { get; set; }
     }
 }

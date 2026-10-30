@@ -125,7 +125,7 @@ public class DraftWithAiFromBrief
 
         public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            aiTask.Use(AiTasks.Brief);
+            aiTask.Use(AiTasks.Brief, request.DirectoryId);
             return new DraftWithAi.Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService)
                 .Draft(
                     request.DirectoryId,

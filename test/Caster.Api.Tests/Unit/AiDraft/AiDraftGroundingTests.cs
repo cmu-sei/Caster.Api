@@ -38,6 +38,8 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
     private string _prompt;
     // the task the model call was made for, which picks its provider and model
     private string _calledFor;
+    // the Directory it was made in, whose Project its usage is recorded against
+    private Guid? _calledIn;
 
     private const string ProxmoxProvider = "terraform {\n  required_providers {\n    proxmox = { source = \"bpg/proxmox\" }\n  }\n}\n";
 
@@ -58,6 +60,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
                 _system = call.ArgAt<string>(0);
                 _prompt = call.ArgAt<string>(1);
                 _calledFor = _task.Task;
+                _calledIn = _task.DirectoryId;
                 return JsonDocument.Parse(json).RootElement.Clone();
             });
     }
@@ -88,6 +91,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
             .HandleRequest(new FilesDraftWithAi.Command { DirectoryId = directory.Id, Prompt = "a web server in a DMZ" }, Ct);
 
         Assert.Equal(AiTasks.Terraform, _calledFor);
+        Assert.Equal(directory.Id, _calledIn);
 
         Assert.Contains("## Proxmox connection \"default\"", _system);
         Assert.Contains("- ubuntu-22 (vmid 9000", _system);
@@ -181,6 +185,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
             .HandleRequest(new DraftWithAiFromBrief.Command { DirectoryId = directory.Id, Brief = brief, Instructions = "Reuse the range's provider." }, Ct);
 
         Assert.Equal(AiTasks.Brief, _calledFor);
+        Assert.Equal(directory.Id, _calledIn);
 
         Assert.Contains("Scenario: Water utility", _prompt);
         Assert.Contains("- scada (role Ot, key terrain)", _prompt);
@@ -211,6 +216,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
             .HandleRequest(new DesignsDraftWithAi.Command { DirectoryId = directory.Id, Prompt = "a web server" }, Ct);
 
         Assert.Equal(AiTasks.Design, _calledFor);
+        Assert.Equal(directory.Id, _calledIn);
 
         Assert.Contains("- ubuntu-22 (vmid 9000", _system);
         Assert.Equal("9100", Assert.Single(draft.Inventory.Unknown).Name);
