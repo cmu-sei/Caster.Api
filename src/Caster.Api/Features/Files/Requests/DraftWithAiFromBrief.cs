@@ -118,13 +118,15 @@ public class DraftWithAiFromBrief
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService) : BaseHandler<Command, AiTerraformDraft>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask) : BaseHandler<Command, AiTerraformDraft>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-        public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken) =>
-            new DraftWithAi.Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService)
+        public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken)
+        {
+            aiTask.Use(AiTasks.Brief);
+            return new DraftWithAi.Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService)
                 .Draft(
                     request.DirectoryId,
                     AiScenarioBriefPrompt.Build(request.Brief, request.Instructions),
@@ -132,5 +134,6 @@ public class DraftWithAiFromBrief
                     request.Hypervisors,
                     AiScenarioBriefPrompt.Expectations(request.Brief),
                     cancellationToken);
+        }
     }
 }

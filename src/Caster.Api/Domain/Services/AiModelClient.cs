@@ -22,12 +22,67 @@ namespace Caster.Api.Domain.Services
     {
         /// <summary>
         /// Sends one prompt and expects the model to answer by calling a single tool, so the answer
-        /// is JSON that matches inputSchema. Returns the tool input.
+        /// is JSON that matches inputSchema. Returns the tool input. The call goes to the model of the
+        /// task the request's <see cref="IAiTaskContext"/> names.
         /// </summary>
         Task<JsonElement> InvokeToolAsync(string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct);
     }
 
-    public class BedrockAiModelClient : IAiModelClient
+    /// <summary>One provider's way of asking a model to answer by calling a tool</summary>
+    public interface IAiProviderClient
+    {
+        Task<JsonElement> InvokeToolAsync(AiTaskModel model, string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct);
+    }
+
+    /// <summary>The AI task a request's model calls are made for, one of <see cref="AiTasks"/>; scoped to the request</summary>
+    public interface IAiTaskContext
+    {
+        string Task { get; }
+        void Use(string task);
+    }
+
+    public class AiTaskContext : IAiTaskContext
+    {
+        public string Task { get; private set; }
+
+        public void Use(string task) => Task = task;
+    }
+
+    /// <summary>
+    /// Sends each call to the provider and model its task is configured with: Designs to one model, Terraform to another,
+    /// or a task to a local model behind an OpenAI-compatible endpoint. With no task settings every call goes to the Bedrock default.
+    /// </summary>
+    public class AiModelRouter : IAiModelClient
+    {
+        private readonly AiOptions _options;
+        private readonly IAiTaskContext _task;
+        private readonly BedrockAiModelClient _bedrock;
+        private readonly OpenAiModelClient _openAi;
+
+        public AiModelRouter(AiOptions options, IAiTaskContext task, BedrockAiModelClient bedrock, OpenAiModelClient openAi)
+        {
+            _options = options;
+            _task = task;
+            _bedrock = bedrock;
+            _openAi = openAi;
+        }
+
+        public Task<JsonElement> InvokeToolAsync(string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct)
+        {
+            var model = _options.ModelFor(_task.Task);
+            if (!_options.Enabled || string.IsNullOrWhiteSpace(model.ModelId))
+                throw new InvalidOperationException("AI drafting is not configured on this server.");
+            IAiProviderClient provider = model.Provider switch
+            {
+                AiOptions.Bedrock => _bedrock,
+                _ when string.Equals(model.Provider, AiOptions.OpenAi, StringComparison.OrdinalIgnoreCase) => _openAi,
+                _ => throw new InvalidOperationException($"The AI provider {model.Provider} for {_task.Task} is not one this server knows: use Bedrock or OpenAI.")
+            };
+            return provider.InvokeToolAsync(model, system, prompt, toolName, toolDescription, inputSchema, ct);
+        }
+    }
+
+    public class BedrockAiModelClient : IAiProviderClient
     {
         // Every prompt starts with this, so the model knows the security content it is asked for is training material.
         public const string Purpose =
@@ -47,16 +102,43 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             _logger = logger;
         }
 
-        public async Task<JsonElement> InvokeToolAsync(string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct)
+        public async Task<JsonElement> InvokeToolAsync(AiTaskModel model, string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct)
         {
-            if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.ModelId))
-                throw new InvalidOperationException("AI drafting is not configured on this server.");
+            var body = BuildBody(model, system, prompt, toolName, toolDescription, inputSchema);
 
-            // the Anthropic Messages body; only max_tokens is sent so newer models that reject sampling settings work
+            var config = new AmazonBedrockRuntimeConfig
+            {
+                RegionEndpoint = RegionEndpoint.GetBySystemName(model.Region),
+                Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds)
+            };
+            using var client = new AmazonBedrockRuntimeClient(config);
+
+            JsonElement response;
+            try
+            {
+                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
+            }
+            catch (AmazonBedrockRuntimeException ex) when (RefusesEffort(ex, body))
+            {
+                // an older model or Bedrock deployment refuses the effort setting: the model then thinks at its own default
+                _logger.LogInformation("{Model} refused output_config; asking without it: {Message}", model.ModelId, ex.Message);
+                body.Remove("output_config");
+                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
+            }
+            // a safety classifier can decline training content; one retry on another model, as the Claude API's own fallback does
+            if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(model.FallbackModelId))
+                response = await InvokeAsync(client, model.FallbackModelId, body, toolName, ct);
+
+            return RepairStringifiedJson(ReadToolInput(response), inputSchema);
+        }
+
+        /// <summary>The Anthropic Messages body; only max_tokens is sent so newer models that reject sampling settings work</summary>
+        public static JsonObject BuildBody(AiTaskModel model, string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema)
+        {
             var body = new JsonObject
             {
                 ["anthropic_version"] = "bedrock-2023-05-31",
-                ["max_tokens"] = _options.MaxTokens,
+                ["max_tokens"] = model.MaxTokens,
                 ["system"] = Purpose + "\n\n" + system,
                 ["messages"] = new JsonArray(new JsonObject
                 {
@@ -72,21 +154,15 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 // newer models reject a forced tool choice, so the system prompt asks for the tool instead
                 ["tool_choice"] = new JsonObject { ["type"] = "auto" }
             };
-
-            var config = new AmazonBedrockRuntimeConfig
-            {
-                RegionEndpoint = RegionEndpoint.GetBySystemName(_options.Region),
-                Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds)
-            };
-            using var client = new AmazonBedrockRuntimeClient(config);
-
-            var response = await InvokeAsync(client, _options.ModelId, body, toolName, ct);
-            // a safety classifier can decline training content; one retry on another model, as the Claude API's own fallback does
-            if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(_options.FallbackModelId))
-                response = await InvokeAsync(client, _options.FallbackModelId, body, toolName, ct);
-
-            return RepairStringifiedJson(ReadToolInput(response), inputSchema);
+            if (!string.IsNullOrWhiteSpace(model.Effort))
+                body["output_config"] = new JsonObject { ["effort"] = model.Effort.Trim().ToLowerInvariant() };
+            return body;
         }
+
+        /// <summary>Whether Bedrock refused the request for the effort setting, which is then dropped</summary>
+        public static bool RefusesEffort(AmazonBedrockRuntimeException ex, JsonObject body) =>
+            body.ContainsKey("output_config")
+            && (ex.Message.Contains("output_config", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("effort", StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// Models sometimes send a large array or object of a tool input as a string holding its JSON.

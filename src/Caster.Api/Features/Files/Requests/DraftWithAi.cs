@@ -66,14 +66,17 @@ public class DraftWithAi
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService) : BaseHandler<Command, AiTerraformDraft>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask) : BaseHandler<Command, AiTerraformDraft>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
-        public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken) =>
-            new Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService)
+        public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken)
+        {
+            aiTask.Use(AiTasks.Terraform);
+            return new Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService)
                 .Draft(request.DirectoryId, request.Prompt, request.FileId, request.Hypervisors, expected: null, cancellationToken);
+        }
     }
 
     /// <summary>

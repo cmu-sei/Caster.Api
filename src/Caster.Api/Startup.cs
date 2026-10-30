@@ -225,7 +225,12 @@ namespace Caster.Api
             services.AddScoped<IGitlabRepositoryService, GitlabRepositoryService>();
             services.AddScoped<IArchiveService, ArchiveService>();
             services.AddScoped<IImportService, ImportService>();
-            services.AddScoped<IAiModelClient, BedrockAiModelClient>();
+            // each AI task's calls go to its own provider and model, Bedrock unless Ai:Models names another
+            services.AddScoped<BedrockAiModelClient>();
+            services.AddScoped<OpenAiModelClient>();
+            services.AddScoped<IAiModelClient, AiModelRouter>();
+            services.AddScoped<IAiTaskContext, AiTaskContext>();
+            services.AddHttpClient(nameof(OpenAiModelClient));
             services.AddScoped<IValidationService, ValidationService>();
             services.AddScoped<ICasterAuthorizationService, AuthorizationService>();
 
