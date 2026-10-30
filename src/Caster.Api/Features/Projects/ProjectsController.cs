@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -82,6 +83,24 @@ namespace Caster.Api.Features.Projects
         public async Task<IActionResult> GetDiskManifest([FromRoute] Guid id)
         {
             var result = await _mediator.Send(new GetDiskManifest.Query { Id = id });
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// What drafting with AI used in a project, and an estimate of what it cost.
+        /// </summary>
+        /// <remarks>
+        /// Every call to an AI model made for a Directory of the project, in all and by task (design, terraform, brief).
+        /// The estimate uses the prices in the Ai:Prices setting and leaves out the models it has no price for.
+        /// </remarks>
+        /// <param name="id">ID of a project.</param>
+        /// <param name="cancellationToken"></param>
+        [HttpGet("{id}/ai-usage")]
+        [ProducesResponseType(typeof(ProjectAiUsage), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetProjectAiUsage")]
+        public async Task<IActionResult> GetAiUsage([FromRoute] Guid id, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new GetAiUsage.Query { Id = id }, cancellationToken);
             return Ok(result);
         }
 

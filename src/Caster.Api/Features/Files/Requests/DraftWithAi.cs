@@ -73,7 +73,7 @@ public class DraftWithAi
 
         public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            aiTask.Use(AiTasks.Terraform);
+            aiTask.Use(AiTasks.Terraform, request.DirectoryId);
             return new Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService)
                 .Draft(request.DirectoryId, request.Prompt, request.FileId, request.Hypervisors, expected: null, cancellationToken);
         }

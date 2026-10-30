@@ -28,6 +28,65 @@ namespace Caster.Api.Data.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "uuid-ossp");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Caster.Api.Domain.Models.AiUsage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<int>("CacheReadTokens")
+                        .HasColumnType("integer")
+                        .HasColumnName("cache_read_tokens");
+
+                    b.Property<int>("CacheWriteTokens")
+                        .HasColumnType("integer")
+                        .HasColumnName("cache_write_tokens");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_id");
+
+                    b.Property<DateTime>("DateCreated")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_created");
+
+                    b.Property<Guid?>("DirectoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("directory_id");
+
+                    b.Property<int>("InputTokens")
+                        .HasColumnType("integer")
+                        .HasColumnName("input_tokens");
+
+                    b.Property<string>("Model")
+                        .HasColumnType("text")
+                        .HasColumnName("model");
+
+                    b.Property<int>("OutputTokens")
+                        .HasColumnType("integer")
+                        .HasColumnName("output_tokens");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<string>("StopReason")
+                        .HasColumnType("text")
+                        .HasColumnName("stop_reason");
+
+                    b.Property<string>("Task")
+                        .HasColumnType("text")
+                        .HasColumnName("task");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("ai_usages");
+                });
+
             modelBuilder.Entity("Caster.Api.Domain.Models.Apply", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1007,6 +1066,16 @@ namespace Caster.Api.Data.Migrations
                     b.HasIndex("HostId");
 
                     b.ToTable("workspaces");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.AiUsage", b =>
+                {
+                    b.HasOne("Caster.Api.Domain.Models.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Apply", b =>

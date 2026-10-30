@@ -51,6 +51,7 @@ public partial class CasterContext : EventPublishingDbContext
     public DbSet<Group> Groups { get; set; }
     public DbSet<GroupMembership> GroupMemberships { get; set; }
     public DbSet<ContainerImage> ContainerImages { get; set; }
+    public DbSet<AiUsage> AiUsages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

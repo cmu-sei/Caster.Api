@@ -230,6 +230,7 @@ namespace Caster.Api
             services.AddScoped<OpenAiModelClient>();
             services.AddScoped<IAiModelClient, AiModelRouter>();
             services.AddScoped<IAiTaskContext, AiTaskContext>();
+            services.AddScoped<IAiUsageRecorder, AiUsageRecorder>();
             services.AddHttpClient(nameof(OpenAiModelClient));
             services.AddScoped<IValidationService, ValidationService>();
             services.AddScoped<ICasterAuthorizationService, AuthorizationService>();

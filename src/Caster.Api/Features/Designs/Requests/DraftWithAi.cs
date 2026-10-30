@@ -86,7 +86,7 @@ public class DraftWithAi
                     : $"There are no module versions for {string.Join(" or ", hypervisors)} that Terraform runs can download.");
 
             var inventory = await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken);
-            aiTask.Use(AiTasks.Design);
+            aiTask.Use(AiTasks.Design, request.DirectoryId);
             var input = await aiModelClient.InvokeToolAsync(
                 AiDesignDraftBuilder.BuildSystemPrompt(catalog, hypervisors, inventory.BuildPromptSection()),
                 AiDesignDraftBuilder.BuildUserPrompt(request.Prompt, request.DesignName),
