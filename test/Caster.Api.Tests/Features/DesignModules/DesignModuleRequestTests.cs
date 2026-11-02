@@ -668,7 +668,7 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         var (project, _, designModule) = await SeedDesignModule();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
 
-        var response = await Client(actor).DeleteAsync($"api/designsModules/{designModule.Id}", Ct);
+        var response = await Client(actor).DeleteAsync($"api/designModules/{designModule.Id}", Ct);
 
         await AssertStatus(HttpStatusCode.NoContent, response);
         Assert.Null(await StoredDesignModule(designModule.Id));
@@ -680,7 +680,7 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         var (_, _, designModule) = await SeedDesignModule();
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
-        await AssertStatus(HttpStatusCode.NoContent, await Client(actor).DeleteAsync($"api/designsModules/{designModule.Id}", Ct));
+        await AssertStatus(HttpStatusCode.NoContent, await Client(actor).DeleteAsync($"api/designModules/{designModule.Id}", Ct));
     }
 
     [Fact]
@@ -689,7 +689,7 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         var (project, _, designModule) = await SeedDesignModule();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
-        var response = await Client(actor).DeleteAsync($"api/designsModules/{designModule.Id}", Ct);
+        var response = await Client(actor).DeleteAsync($"api/designModules/{designModule.Id}", Ct);
 
         await AssertProblem(HttpStatusCode.Forbidden, response);
         Assert.NotNull(await StoredDesignModule(designModule.Id));
@@ -701,7 +701,7 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         var (_, _, designModule) = await SeedDesignModule();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
-        var response = await Client(actor).DeleteAsync($"api/designsModules/{designModule.Id}", Ct);
+        var response = await Client(actor).DeleteAsync($"api/designModules/{designModule.Id}", Ct);
 
         await AssertProblem(HttpStatusCode.Forbidden, response);
         Assert.NotNull(await StoredDesignModule(designModule.Id));
@@ -712,6 +712,31 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
     {
         var (_, _, designModule) = await SeedDesignModule();
         var actor = await Actor().OnNewProject(ProjectPermission.EditProject).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/designModules/{designModule.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.NotNull(await StoredDesignModule(designModule.Id));
+    }
+
+    /// <summary>The misspelled api/designsModules route stays as an alias of api/designModules/{id}.</summary>
+    [Fact]
+    public async Task Delete_through_the_obsolete_route_by_a_member_holding_EditProject_removes_the_design_module()
+    {
+        var (project, _, designModule) = await SeedDesignModule();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/designsModules/{designModule.Id}", Ct);
+
+        await AssertStatus(HttpStatusCode.NoContent, response);
+        Assert.Null(await StoredDesignModule(designModule.Id));
+    }
+
+    [Fact]
+    public async Task Delete_through_the_obsolete_route_is_forbidden_for_a_caller_holding_only_ViewProject()
+    {
+        var (project, _, designModule) = await SeedDesignModule();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/designsModules/{designModule.Id}", Ct);
 
