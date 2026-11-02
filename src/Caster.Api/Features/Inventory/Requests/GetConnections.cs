@@ -25,7 +25,7 @@ namespace Caster.Api.Features.Inventory
             IInventoryService inventoryService) : BaseHandler<Query, InventoryConnection[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermission.ViewHosts], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ViewInfrastructure], cancellationToken);
 
             public override Task<InventoryConnection[]> HandleRequest(Query request, CancellationToken cancellationToken) =>
                 Task.FromResult(inventoryService.GetConnections().Select(InventoryConnection.From).ToArray());

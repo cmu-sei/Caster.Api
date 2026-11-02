@@ -42,7 +42,7 @@ namespace Caster.Api.Features.Projects
             /// <summary>
             /// If true, the archive lists the VM templates and ISOs its Terraform refers to, as found
             /// in the infrastructure inventory, so they can be copied to the target hypervisor. Requires
-            /// the ViewHosts permission.
+            /// the ViewInfrastructure permission.
             /// </summary>
             public bool IncludeDiskManifest { get; set; }
         }
@@ -59,7 +59,7 @@ namespace Caster.Api.Features.Projects
             /// </summary>
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken) &&
-                (!request.IncludeDiskManifest || await authorizationService.Authorize([SystemPermission.ViewHosts], cancellationToken));
+                (!request.IncludeDiskManifest || await authorizationService.Authorize([SystemPermission.ViewInfrastructure], cancellationToken));
 
             public override async Task<ArchiveResult> HandleRequest(Query request, CancellationToken cancellationToken)
             {
