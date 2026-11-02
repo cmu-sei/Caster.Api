@@ -235,7 +235,7 @@ public static class AiTerraformDraftBuilder
             {
                 var name = GetString(item, "name")?.Trim();
                 var content = GetString(item, "content") ?? "";
-                if (string.IsNullOrEmpty(name) || !FileName.IsMatch(name) || name.Contains(".."))
+                if (!IsValidFileName(name))
                 {
                     draft.Warnings.Add($"Dropped a file named '{name}': names may only use letters, digits, dots, underscores and dashes.");
                     continue;
@@ -305,7 +305,12 @@ public static class AiTerraformDraftBuilder
     public static string ContentHash(string content) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content ?? "")));
 
-    private static IEnumerable<string> Problems(AiTerraformFile file)
+    /// <summary>Whether a drafted file's name is one Caster saves: letters, digits, dots, underscores and dashes</summary>
+    public static bool IsValidFileName(string name) =>
+        !string.IsNullOrEmpty(name) && FileName.IsMatch(name) && !name.Contains("..");
+
+    /// <summary>What the plan would reject in a drafted file, or what should not be in it</summary>
+    public static IEnumerable<string> Problems(AiTerraformFile file)
     {
         if (!IsHcl(file.Name))
             yield break;

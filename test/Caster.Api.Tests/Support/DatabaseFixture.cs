@@ -52,6 +52,12 @@ public sealed class DatabaseFixture : IAsyncLifetime, ITestDatabaseSessionSource
 
     public static ITestDatabaseSession<CasterContext> GitlabSourceHostDatabase() => _gitlabSourceHost.Value.GetAwaiter().GetResult();
 
+    /// <summary>The host database of <see cref="AiAppFactory"/>, a third host, cloned in the same way.</summary>
+    private static readonly Lazy<Task<ITestDatabaseSession<CasterContext>>> _aiHost =
+        new(() => _database.BeginSessionAsync());
+
+    public static ITestDatabaseSession<CasterContext> AiHostDatabase() => _aiHost.Value.GetAwaiter().GetResult();
+
     /// <summary>Nothing to do here: the container starts on the first request for a session.</summary>
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;
 
