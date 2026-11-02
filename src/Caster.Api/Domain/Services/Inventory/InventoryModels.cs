@@ -17,7 +17,8 @@ public enum InventoryCategory
     Iso,
     Network,
     Datastore,
-    ContentLibrary
+    ContentLibrary,
+    Host
 }
 
 /// <summary>
@@ -122,6 +123,12 @@ public class InventorySnapshot
     public InventoryCategoryResult Datastores { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
     public InventoryCategoryResult ContentLibrary { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
 
+    /// <summary>
+    /// The machines VMs run on: Proxmox nodes or vSphere hosts, with how loaded
+    /// each one is, for capacity. Not referenced from Terraform.
+    /// </summary>
+    public InventoryCategoryResult Hosts { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
+
     public InventoryCategoryResult Get(InventoryCategory category) => category switch
     {
         InventoryCategory.VmTemplate => VmTemplates,
@@ -129,6 +136,7 @@ public class InventorySnapshot
         InventoryCategory.Network => Networks,
         InventoryCategory.Datastore => Datastores,
         InventoryCategory.ContentLibrary => ContentLibrary,
+        InventoryCategory.Host => Hosts,
         _ => InventoryCategoryResult.Unavailable($"Unknown inventory category '{category}'.")
     };
 
@@ -143,7 +151,8 @@ public class InventorySnapshot
         Isos = InventoryCategoryResult.Unavailable(error),
         Networks = InventoryCategoryResult.Unavailable(error),
         Datastores = InventoryCategoryResult.Unavailable(error),
-        ContentLibrary = InventoryCategoryResult.Unavailable(error)
+        ContentLibrary = InventoryCategoryResult.Unavailable(error),
+        Hosts = InventoryCategoryResult.Unavailable(error)
     };
 
     /// <summary>
@@ -159,10 +168,11 @@ public class InventorySnapshot
         Networks = Keep(Networks, previous?.Networks);
         Datastores = Keep(Datastores, previous?.Datastores);
         ContentLibrary = Keep(ContentLibrary, previous?.ContentLibrary);
+        Hosts = Keep(Hosts, previous?.Hosts);
 
         // A provider can connect and then fail every category. That is not a newer
         // read, so the snapshot keeps the time of the last one that got anything.
-        var categories = new[] { VmTemplates, Isos, Networks, Datastores, ContentLibrary };
+        var categories = new[] { VmTemplates, Isos, Networks, Datastores, ContentLibrary, Hosts };
 
         if (!categories.Any(x => x.Available && !x.Stale))
             LastUpdated = previous?.LastUpdated;
@@ -210,7 +220,10 @@ public static class InventoryMessages
 {
     public const string NotLoaded = "Infrastructure inventory has not been loaded yet.";
 
-    public const string NotEnabled = "Infrastructure inventory is not enabled. Set Infrastructure:Enabled to true and supply a provider connection.";
+    public const string NotEnabled = "Infrastructure inventory is not enabled. Add a connection under Infrastructure:Connections, with a Name, Provider and Url, and set its Enabled to true.";
+
+    /// <summary>For one connection that is configured but switched off. Names its own key once scoped.</summary>
+    public const string ConnectionNotEnabled = "This infrastructure connection is not enabled. Set Infrastructure:Enabled to true.";
 
     public const string NotConfigured = "Infrastructure inventory is enabled but the provider connection is incomplete. Infrastructure:Url, Infrastructure:Username and Infrastructure:Password are all required.";
 
@@ -224,17 +237,6 @@ public static class InventoryMessages
     /// Deliberately describes the shape without ever echoing the configured value.
     /// </summary>
     public const string ProxmoxApiTokenMalformed = "Infrastructure:ApiToken is not a valid Proxmox api token. It must be a single string of the form 'user@realm!tokenid=secret'.";
-
-    /// <summary>
-    /// ISO discovery requires datastore file browsing. The vSphere Automation
-    /// REST api does not expose it, so the category is reported as unsupported
-    /// rather than silently empty. Tracked as CRU-2828.
-    /// <para>
-    /// vSphere only. Proxmox lists storage content over rest, so the proxmox
-    /// provider returns real ISOs and never uses this message.
-    /// </para>
-    /// </summary>
-    public const string IsoNotSupported = "ISO discovery is not supported by the vSphere Automation REST API. Listing ISO files requires datastore file browsing, which is only available through the vim25 (SOAP) API. Enter ISO paths manually for now.";
 
     public const string ContentLibraryNotOnProxmox = "Proxmox has no content libraries. Its VM templates are listed under VM templates.";
 

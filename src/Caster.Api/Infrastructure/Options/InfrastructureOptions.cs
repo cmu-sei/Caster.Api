@@ -7,22 +7,17 @@ namespace Caster.Api.Infrastructure.Options;
 
 /// <summary>
 /// Configuration for read-only discovery of the infrastructure Caster deploys to.
-/// Disabled by default; absent configuration must not affect startup.
-/// <para>
-/// The top-level settings are the default connection. <see cref="Connections"/>
-/// adds named ones, each read and cached on its own.
-/// </para>
+/// Empty by default; absent configuration must not affect startup.
 /// </summary>
-public class InfrastructureOptions : InfrastructureConnectionOptions
+public class InfrastructureOptions
 {
     /// <summary>
-    /// Additional connections by name, e.g. <c>Infrastructure:Connections:lab2:Url</c>.
-    /// Each takes the same settings as the default connection and inherits none
-    /// of them, so one connection's credentials never reach another provider.
-    /// <see cref="InfrastructureConnections.Default"/> is reserved for the
-    /// top-level settings.
+    /// The connections, each read and cached on its own, e.g.
+    /// <c>Infrastructure:Connections:0:Name</c>. A connection inherits nothing from
+    /// another, so one connection's credentials never reach another provider. The
+    /// first enabled one is used when a request names none.
     /// </summary>
-    public Dictionary<string, InfrastructureConnectionOptions> Connections { get; set; } = [];
+    public List<InfrastructureConnectionOptions> Connections { get; set; } = [];
 }
 
 /// <summary>
@@ -31,8 +26,14 @@ public class InfrastructureOptions : InfrastructureConnectionOptions
 public class InfrastructureConnectionOptions
 {
     /// <summary>
-    /// Master switch. When false, no connection is attempted and the inventory
-    /// endpoints report themselves as unavailable.
+    /// What clients call this connection, e.g. in <c>?connection=lab-proxmox</c>.
+    /// Required, and unique across the connections, ignoring case.
+    /// </summary>
+    public string Name { get; set; }
+
+    /// <summary>
+    /// When false, no connection is attempted and the inventory endpoints report
+    /// this connection as unavailable.
     /// </summary>
     public bool Enabled { get; set; } = false;
 
@@ -88,7 +89,12 @@ public class InfrastructureConnectionOptions
     /// <c>iso-stock</c>, or the start of a volid, e.g.
     /// <c>local:iso/00000000-0000-0000-0000-000000000000__</c> for the ISOs
     /// TopoMojo shares with every workspace. Proxmox ISO names have no folders.
-    /// Ignored by vsphere, which cannot list ISOs yet.
+    /// </para>
+    /// <para>
+    /// For vsphere each entry is a datastore name, e.g. <c>iso-datastore</c>, or a
+    /// folder on one in datastore path form, e.g. <c>[iso-datastore] stock</c>.
+    /// Each entry is searched with its subfolders. Empty searches every
+    /// accessible datastore, and each search is a vCenter task.
     /// </para>
     /// </summary>
     public string[] IsoLocations { get; set; } = [];
@@ -97,15 +103,6 @@ public class InfrastructureConnectionOptions
     /// How often the background cache is refreshed, in minutes.
     /// </summary>
     public int RefreshMinutes { get; set; } = 30;
-}
-
-public static class InfrastructureConnections
-{
-    /// <summary>
-    /// The name of the connection configured by the top-level
-    /// <c>Infrastructure</c> settings, used when a request names none.
-    /// </summary>
-    public const string Default = "default";
 }
 
 public static class InfrastructureProviders

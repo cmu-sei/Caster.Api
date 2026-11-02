@@ -13,14 +13,16 @@ using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Infrastructure.Options;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Xunit;
 
 namespace Caster.Api.Tests.Domain.Services.Inventory
 {
     /// <summary>
-    /// Exercises the vCenter reader against canned vSphere Automation REST
-    /// responses. There is no vCenter available to the test suite, so these
-    /// cover the contract and the parsing, not the live api.
+    /// Exercises the vCenter reader against a fake vim25 (SOAP) source and canned
+    /// Automation REST responses for content libraries. There is no vCenter
+    /// available to the test suite, so these cover the mapping and the contract,
+    /// not the live api.
     /// </summary>
     [Trait("Category", "Unit")]
     public class VsphereInventoryClientTests
@@ -29,29 +31,9 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         private const string SessionBody = "\"tok-abc123\"";
 
-        private const string VmBody = """
-        [
-          { "vm": "vm-1", "name": "running-vm", "power_state": "POWERED_ON", "cpu_count": 2, "memory_size_MiB": 4096, "template": false },
-          { "vm": "vm-2", "name": "win2019-template", "power_state": "POWERED_OFF", "cpu_count": 4, "memory_size_MiB": 8192, "template": true },
-          { "vm": "vm-3", "name": "alpine-template", "power_state": "POWERED_OFF", "cpu_count": 1, "memory_size_MiB": 1024, "template": true }
-        ]
-        """;
-
-        private const string NetworkBody = """
-        [
-          { "network": "network-11", "name": "vlan-200", "type": "DISTRIBUTED_PORTGROUP" },
-          { "network": "network-12", "name": "VM Network", "type": "STANDARD_PORTGROUP" }
-        ]
-        """;
-
-        private const string DatastoreBody = """
-        [
-          { "datastore": "datastore-21", "name": "nfs-fast", "type": "NFS", "free_space": 1024, "capacity": 4096 }
-        ]
-        """;
-
-        private static InfrastructureOptions Options() => new()
+        private static InfrastructureConnectionOptions Options() => new()
         {
+            Name = "lab",
             Enabled = true,
             Provider = "vsphere",
             Url = "https://vcenter.test",
@@ -61,54 +43,287 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             RefreshMinutes = 30
         };
 
+        /// <summary>
+        /// DC1's VM folder group-v1 holds Templates (group-v2), which holds Linux
+        /// (group-v3). win2019-template is in Templates, alpine-template in
+        /// Templates/Linux, running-vm at the top, and orphan-template under a folder
+        /// that was not read. Two hosts: host-1 runs running-vm and has an idle VM.
+        /// </summary>
+        private static VimInventory Vim() => new()
+        {
+            Datacenters = [new VimDatacenter("datacenter-1", "DC1", "group-v1")],
+            Folders =
+            [
+                new VimFolder("group-v1", "vm", "datacenter-1"),
+                new VimFolder("group-v2", "Templates", "group-v1"),
+                new VimFolder("group-v3", "Linux", "group-v2")
+            ],
+            Vms =
+            [
+                new VimVm("vm-1", "running-vm", false, "poweredOn", 2, 4096, "group-v1", "host-1"),
+                new VimVm("vm-4", "idle-vm", false, "poweredOff", 8, 16384, "group-v1", "host-1"),
+                new VimVm("vm-2", "win2019-template", true, "poweredOff", 4, 8192, "group-v2", "host-2"),
+                new VimVm("vm-3", "alpine-template", true, "poweredOff", 1, 1024, "group-v3", "host-2"),
+                new VimVm("vm-5", "orphan-template", true, "poweredOff", 1, 512, "group-missing", null)
+            ],
+            Hosts =
+            [
+                new VimHost("host-1", "esx1.test", "connected", "poweredOn", 1000, 2000, 4, 2048, 8L * 1024 * 1024 * 1024),
+                new VimHost("host-2", "esx2.test", "disconnected", "poweredOff", null, null, null, null, null)
+            ],
+            Networks =
+            [
+                new VimNetwork("dvportgroup-1", "vlan-200", "DistributedVirtualPortgroup", false),
+                new VimNetwork("dvportgroup-2", "DSwitch-Uplinks", "DistributedVirtualPortgroup", true),
+                new VimNetwork("network-1", "VM Network", "Network", false)
+            ],
+            Datastores =
+            [
+                new VimDatastore("datastore-1", "nfs-fast", "NFS", 4096, 1024, true, "browser-1")
+            ],
+            Isos =
+            [
+                new VimIso("nfs-fast", "[nfs-fast] iso/alpine.iso", "alpine.iso", 18),
+                new VimIso("nfs-fast", "[nfs-fast] kali.iso", "kali.iso", null)
+            ]
+        };
+
         [Fact]
-        public async Task GetInventoryAsync_ReturnsOnlyTemplatesForVmTemplates()
+        public async Task GetInventoryAsync_ListsOnlyTemplatesWithTheirFolderPaths()
         {
             var snapshot = await Read(DefaultResponder());
 
             Assert.True(snapshot.VmTemplates.Available);
-            Assert.Null(snapshot.VmTemplates.Error);
-            Assert.Equal(2, snapshot.VmTemplates.Entries.Length);
-            Assert.DoesNotContain(snapshot.VmTemplates.Entries, x => x.Name == "running-vm");
+            Assert.Equal(
+                ["Templates/Linux/alpine-template", "orphan-template", "Templates/win2019-template"],
+                snapshot.VmTemplates.Entries.Select(x => x.Path));
 
-            // ordered by name
-            var template = snapshot.VmTemplates.Entries.Last();
-            Assert.Equal("vm-2", template.Id);
+            var template = snapshot.VmTemplates.Entries.Single(x => x.Id == "vm-2");
             Assert.Equal("win2019-template", template.Name);
-            Assert.Equal("win2019-template", template.Path);
-            Assert.Equal("POWERED_OFF", template.Properties["powerState"]);
+            Assert.Equal("DC1", template.Properties["datacenter"]);
+            Assert.Equal("Templates", template.Properties["folder"]);
+            Assert.Equal("poweredOff", template.Properties["powerState"]);
             Assert.Equal("4", template.Properties["cpuCount"]);
             Assert.Equal("8192", template.Properties["memorySizeMiB"]);
+            Assert.Contains("name          = \"Templates/win2019-template\"", template.Terraform[TerraformSnippets.Vsphere]);
+            Assert.Contains("name = \"DC1\"", template.Terraform[TerraformSnippets.Vsphere]);
         }
 
         [Fact]
-        public async Task GetInventoryAsync_ParsesNetworksAndDatastores()
+        public async Task GetInventoryAsync_KeepsTheBareNameWhenTheFoldersDoNotReachADatacenter()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            var orphan = snapshot.VmTemplates.Entries.Single(x => x.Id == "vm-5");
+            Assert.Equal("orphan-template", orphan.Path);
+            Assert.False(orphan.Properties.ContainsKey("folder"));
+            Assert.False(orphan.Properties.ContainsKey("datacenter"));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_StopsAtAFolderCycle()
+        {
+            var vim = Vim();
+            vim.Folders = [new VimFolder("group-a", "a", "group-b"), new VimFolder("group-b", "b", "group-a")];
+            vim.Vms = [new VimVm("vm-9", "looped", true, "poweredOff", 1, 512, "group-a", null)];
+
+            var snapshot = await Read(DefaultResponder(), vim: vim);
+
+            Assert.Equal("looped", snapshot.VmTemplates.Entries.Single().Path);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ListsNetworksWithoutUplinks()
         {
             var snapshot = await Read(DefaultResponder());
 
             Assert.True(snapshot.Networks.Available);
-            Assert.Equal(2, snapshot.Networks.Entries.Length);
-            var network = snapshot.Networks.Entries.First(x => x.Id == "network-11");
-            Assert.Equal("vlan-200", network.Name);
-            Assert.Equal("DISTRIBUTED_PORTGROUP", network.Properties["type"]);
-
-            Assert.True(snapshot.Datastores.Available);
-            var datastore = Assert.Single(snapshot.Datastores.Entries);
-            Assert.Equal("datastore-21", datastore.Id);
-            Assert.Equal("nfs-fast", datastore.Name);
-            Assert.Equal("NFS", datastore.Properties["type"]);
-            Assert.Equal("1024", datastore.Properties["freeSpace"]);
-            Assert.Equal("4096", datastore.Properties["capacity"]);
+            Assert.Equal(["vlan-200", "VM Network"], snapshot.Networks.Entries.Select(x => x.Name));
+            Assert.Equal("DISTRIBUTED_PORTGROUP", snapshot.Networks.Entries[0].Properties["type"]);
+            Assert.Equal("STANDARD_PORTGROUP", snapshot.Networks.Entries[1].Properties["type"]);
         }
 
         [Fact]
-        public async Task GetInventoryAsync_IsosAreReportedUnsupported()
+        public async Task GetInventoryAsync_ListsDatastores()
         {
             var snapshot = await Read(DefaultResponder());
 
+            var datastore = Assert.Single(snapshot.Datastores.Entries);
+            Assert.Equal("datastore-1", datastore.Id);
+            Assert.Equal("nfs-fast", datastore.Name);
+            Assert.Equal("NFS", datastore.Properties["type"]);
+            Assert.Equal("4096", datastore.Properties["capacity"]);
+            Assert.Equal("1024", datastore.Properties["freeSpace"]);
+            Assert.Equal("true", datastore.Properties["accessible"]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ListsEachHostWithItsUsageAndAllocation()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            Assert.True(snapshot.Hosts.Available);
+            Assert.Equal(["esx1.test", "esx2.test"], snapshot.Hosts.Entries.Select(x => x.Name));
+
+            var host = snapshot.Hosts.Entries[0];
+            Assert.Equal("host-1", host.Id);
+            Assert.Equal("connected", host.Properties["connectionState"]);
+            Assert.Equal("1000", host.Properties["cpuUsageMhz"]);
+            Assert.Equal("8000", host.Properties["cpuCapacityMhz"]);
+            Assert.Equal("0.125", host.Properties["cpu"]);
+            Assert.Equal("4", host.Properties["maxcpu"]);
+            Assert.Equal("2048", host.Properties["memoryUsageMiB"]);
+            Assert.Equal((2048L * 1024 * 1024).ToString(), host.Properties["mem"]);
+            Assert.Equal((8L * 1024 * 1024 * 1024).ToString(), host.Properties["maxmem"]);
+
+            // templates are not guests, and only powered-on VMs count as allocated
+            Assert.Equal("2", host.Properties["vmsTotal"]);
+            Assert.Equal("1", host.Properties["vmsRunning"]);
+            Assert.Equal("2", host.Properties["allocatedCpus"]);
+            Assert.Equal("4096", host.Properties["allocatedMemoryMiB"]);
+
+            // a host that reports no usage is still listed, without it
+            var down = snapshot.Hosts.Entries[1];
+            Assert.Equal("disconnected", down.Properties["connectionState"]);
+            Assert.False(down.Properties.ContainsKey("cpu"));
+            Assert.False(down.Properties.ContainsKey("mem"));
+            Assert.Equal("0", down.Properties["vmsTotal"]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_NamesEachIsoByItsPathOnTheDatastore()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.Equal(["[nfs-fast] iso/alpine.iso", "[nfs-fast] kali.iso"], snapshot.Isos.Entries.Select(x => x.Path));
+            Assert.Equal(["iso/alpine.iso", "kali.iso"], snapshot.Isos.Entries.Select(x => x.Name));
+            Assert.Equal("nfs-fast", snapshot.Isos.Entries[0].Properties["datastore"]);
+            Assert.Equal("18", snapshot.Isos.Entries[0].Properties["size"]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_AnIncompleteIsoSearchMakesIsosUnavailable()
+        {
+            // A partial list would let a disk manifest call an ISO missing.
+            var vim = Vim();
+            vim.IsoError = "Some ISO locations could not be searched: [slow-ds]: timed out.";
+
+            var snapshot = await Read(DefaultResponder(), vim: vim);
+
             Assert.False(snapshot.Isos.Available);
             Assert.Empty(snapshot.Isos.Entries);
-            Assert.Equal(InventoryMessages.IsoNotSupported, snapshot.Isos.Error);
+            Assert.Equal(vim.IsoError, snapshot.Isos.Error);
+            Assert.True(snapshot.VmTemplates.Available);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ASoapFailureStillReadsContentLibraries()
+        {
+            var source = Substitute.For<IVimInventorySource>();
+            source.ReadAsync(Arg.Any<InfrastructureConnectionOptions>(), Arg.Any<CancellationToken>())
+                .ThrowsAsync(new TimeoutException("the vim25 endpoint did not answer"));
+
+            var snapshot = await Read(LibraryResponder(), source: source);
+
+            Assert.NotNull(snapshot.LastUpdated);
+            Assert.True(snapshot.ContentLibrary.Available);
+            Assert.Equal(2, snapshot.ContentLibrary.Entries.Length);
+
+            foreach (var result in new[] { snapshot.VmTemplates, snapshot.Networks, snapshot.Datastores, snapshot.Hosts, snapshot.Isos })
+            {
+                Assert.False(result.Available);
+                Assert.Equal("Could not read vCenter at https://vcenter.test: the vim25 endpoint did not answer", result.Error);
+            }
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_NothingReachable_EverythingUnavailableAndNotUpdated()
+        {
+            var source = Substitute.For<IVimInventorySource>();
+            source.ReadAsync(Arg.Any<InfrastructureConnectionOptions>(), Arg.Any<CancellationToken>())
+                .ThrowsAsync(new InvalidOperationException("Cannot complete login due to an incorrect user name or password."));
+
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api/session"
+                ? new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                : DefaultResponder()(request), source: source);
+
+            Assert.Null(snapshot.LastUpdated);
+            AssertAllUnavailable(snapshot);
+            Assert.Contains("incorrect user name or password", snapshot.VmTemplates.Error);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_RejectedRestSession_OnlyContentLibraryUnavailable()
+        {
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api/session"
+                ? new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                : DefaultResponder()(request));
+
+            Assert.NotNull(snapshot.LastUpdated);
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.False(snapshot.ContentLibrary.Available);
+            Assert.True(snapshot.ContentLibrary.Applies);
+            Assert.Contains("401", snapshot.ContentLibrary.Error);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_NeverLeaksThePassword()
+        {
+            // error paths where the provider echoes the credentials back at us
+            var source = Substitute.For<IVimInventorySource>();
+            source.ReadAsync(Arg.Any<InfrastructureConnectionOptions>(), Arg.Any<CancellationToken>())
+                .ThrowsAsync(new InvalidOperationException($"login failed for {Password}"));
+
+            var snapshot = await Read(_ => throw new HttpRequestException($"auth failed for {Password}"), source: source);
+
+            AssertAllUnavailable(snapshot);
+
+            foreach (var error in AllErrors(snapshot))
+            {
+                Assert.DoesNotContain(Password, error);
+                Assert.Contains("***", error);
+            }
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_IncompleteConfiguration_ReportsNotConfigured()
+        {
+            var options = Options();
+            options.Password = null;
+            var source = Source(Vim());
+
+            var snapshot = await Read(DefaultResponder(), options, source);
+
+            AssertAllUnavailable(snapshot);
+            Assert.All(AllErrors(snapshot), x => Assert.Equal(InventoryMessages.NotConfigured, x));
+            await source.DidNotReceiveWithAnyArgs().ReadAsync(default, TestContext.Current.CancellationToken);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_DoesNotDispatchOnTheProviderName()
+        {
+            // Provider selection lives in InventoryProviderDispatcher, so this
+            // client must read vCenter whenever it is called and never inspect
+            // Infrastructure:Provider itself.
+            var options = Options();
+            options.Provider = "something-else";
+
+            var snapshot = await Read(DefaultResponder(), options);
+
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.Equal(3, snapshot.VmTemplates.Entries.Length);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_PassesTheConnectionToTheSoapSource()
+        {
+            var options = Options();
+            var source = Source(Vim());
+
+            await Read(DefaultResponder(), options, source);
+
+            await source.Received(1).ReadAsync(options, Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -127,204 +342,35 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                     sessionHeader = values.FirstOrDefault();
                 }
 
-                return DefaultResponder()(request);
+                return LibraryResponder()(request);
             });
 
-            Assert.True(snapshot.VmTemplates.Available);
+            Assert.True(snapshot.ContentLibrary.Available);
             Assert.Equal("tok-abc123", sessionHeader);
             Assert.Contains("POST /api/session", seen);
             Assert.Contains("DELETE /api/session", seen);
+
+            // REST is only used for content libraries
+            Assert.All(seen, x => Assert.Matches("^(POST|DELETE) /api/session$|^GET /api/content/library", x));
         }
 
         [Fact]
         public async Task GetInventoryAsync_HandlesLegacyValueWrapper()
         {
+            var libraries = LibraryResponder();
             var snapshot = await Read(request => request.RequestUri.AbsolutePath switch
             {
                 "/api/session" => Json("{ \"value\": \"tok-abc123\" }"),
-                "/api/vcenter/vm" => Json("{ \"value\": " + VmBody + " }"),
-                "/api/vcenter/network" => Json("{ \"value\": " + NetworkBody + " }"),
-                "/api/vcenter/datastore" => Json("{ \"value\": " + DatastoreBody + " }"),
-                _ => Json("{}")
+                "/api/content/library" => Json("""{ "value": ["lib-1"] }"""),
+                "/api/content/library/lib-1" => Json("""{ "value": { "id": "lib-1", "name": "Golden", "type": "LOCAL" } }"""),
+                _ => libraries(request)
             });
 
-            Assert.True(snapshot.VmTemplates.Available);
-            Assert.Equal(2, snapshot.VmTemplates.Entries.Length);
-            Assert.Equal(2, snapshot.Networks.Entries.Length);
-            Assert.Single(snapshot.Datastores.Entries);
+            Assert.True(snapshot.ContentLibrary.Available);
+            Assert.Equal(["Golden/ubuntu-2404", "Golden/win2022"], snapshot.ContentLibrary.Entries.Select(x => x.Path));
         }
 
-        [Fact]
-        public async Task GetInventoryAsync_NoTemplateFlagAnywhere_ReportsVmTemplatesUnavailable()
-        {
-            // Some vCenter builds omit the template flag from the VM list. Returning
-            // an empty list would read as "there are no templates", which is a lie.
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath switch
-            {
-                "/api/vcenter/vm" => Json("""[ { "vm": "vm-1", "name": "running-vm", "power_state": "POWERED_ON" } ]"""),
-                _ => DefaultResponder()(request)
-            });
-
-            Assert.False(snapshot.VmTemplates.Available);
-            Assert.Empty(snapshot.VmTemplates.Entries);
-            Assert.Contains("template flag", snapshot.VmTemplates.Error);
-
-            // other categories are read independently and must be unaffected
-            Assert.True(snapshot.Networks.Available);
-        }
-
-        [Fact]
-        public async Task GetInventoryAsync_EmptyVmList_IsAvailableAndEmpty()
-        {
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath switch
-            {
-                "/api/vcenter/vm" => Json("[]"),
-                _ => DefaultResponder()(request)
-            });
-
-            Assert.True(snapshot.VmTemplates.Available);
-            Assert.Empty(snapshot.VmTemplates.Entries);
-            Assert.Null(snapshot.VmTemplates.Error);
-        }
-
-        [Fact]
-        public async Task GetInventoryAsync_CategoryFailsIndependently()
-        {
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath switch
-            {
-                "/api/vcenter/datastore" => new HttpResponseMessage(HttpStatusCode.Forbidden),
-                _ => DefaultResponder()(request)
-            });
-
-            Assert.True(snapshot.Networks.Available);
-            Assert.True(snapshot.VmTemplates.Available);
-            Assert.False(snapshot.Datastores.Available);
-            Assert.Contains("403", snapshot.Datastores.Error);
-        }
-
-        [Fact]
-        public async Task GetInventoryAsync_RejectedCredentials_EverythingUnavailable()
-        {
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api/session"
-                ? new HttpResponseMessage(HttpStatusCode.Unauthorized)
-                : DefaultResponder()(request));
-
-            Assert.Null(snapshot.LastUpdated);
-            AssertAllUnavailable(snapshot);
-            Assert.Contains("401", snapshot.VmTemplates.Error);
-        }
-
-        [Fact]
-        public async Task GetInventoryAsync_NeverLeaksThePassword()
-        {
-            // an error path where the provider echoes the credentials back at us
-            var snapshot = await Read(_ => throw new HttpRequestException($"auth failed for {Password}"));
-
-            AssertAllUnavailable(snapshot);
-
-            foreach (var error in AllErrors(snapshot))
-            {
-                Assert.DoesNotContain(Password, error);
-                Assert.Contains("***", error);
-            }
-        }
-
-        [Fact]
-        public async Task GetInventoryAsync_IncompleteConfiguration_ReportsNotConfigured()
-        {
-            var options = Options();
-            options.Password = null;
-
-            var snapshot = await Read(DefaultResponder(), options);
-
-            AssertAllUnavailable(snapshot);
-            Assert.All(AllErrors(snapshot), x => Assert.Equal(InventoryMessages.NotConfigured, x));
-        }
-
-        [Fact]
-        public async Task GetInventoryAsync_DoesNotDispatchOnTheProviderName()
-        {
-            // Provider selection moved to InventoryProviderDispatcher, so this
-            // client must read vCenter whenever it is called and never inspect
-            // Infrastructure:Provider itself.
-            var options = Options();
-            options.Provider = "something-else";
-
-            var snapshot = await Read(DefaultResponder(), options);
-
-            Assert.True(snapshot.VmTemplates.Available);
-            Assert.Equal(2, snapshot.VmTemplates.Entries.Length);
-        }
-
-        #region Helpers
-
-        #region Folders and content libraries
-
-        /// <summary>
-        /// DC1's VM folder holds Templates, which holds Linux. win2019-template sits in
-        /// Templates, alpine-template in Templates/Linux and running-vm at the top. With
-        /// <paramref name="subtree"/> the folders filter matches everything below a folder,
-        /// otherwise only its direct children. The api docs leave it open, so both are covered.
-        /// </summary>
-        private static Func<HttpRequestMessage, HttpResponseMessage> FolderResponder(bool subtree) => request =>
-        {
-            var query = request.RequestUri.Query;
-
-            return request.RequestUri.AbsolutePath switch
-            {
-                "/api/vcenter/datacenter" => Json("""[{ "datacenter": "datacenter-1", "name": "DC1" }]"""),
-                "/api/vcenter/datacenter/datacenter-1" => Json("""{ "name": "DC1", "vm_folder": "group-v1" }"""),
-                "/api/vcenter/folder" when query.EndsWith("parent_folders=group-v1") =>
-                    Json("""[{ "folder": "group-v10", "name": "Templates", "type": "VIRTUAL_MACHINE" }]"""),
-                "/api/vcenter/folder" when query.EndsWith("parent_folders=group-v10") =>
-                    Json("""[{ "folder": "group-v11", "name": "Linux", "type": "VIRTUAL_MACHINE" }]"""),
-                "/api/vcenter/folder" => Json("[]"),
-                "/api/vcenter/vm" when query == "?folders=group-v11" => Json(Vms("vm-3")),
-                "/api/vcenter/vm" when query == "?folders=group-v10" => Json(subtree ? Vms("vm-2", "vm-3") : Vms("vm-2")),
-                "/api/vcenter/vm" when query == "?folders=group-v1" => Json(subtree ? Vms("vm-1", "vm-2", "vm-3") : Vms("vm-1")),
-                _ => DefaultResponder()(request)
-            };
-        };
-
-        private static string Vms(params string[] ids) =>
-            "[" + string.Join(",", ids.Select(x => $$"""{ "vm": "{{x}}", "name": "{{x}}" }""")) + "]";
-
-        [Theory]
-        [InlineData(false)]
-        [InlineData(true)]
-        public async Task GetInventoryAsync_GivesEachTemplateItsFolderPath(bool subtree)
-        {
-            var snapshot = await Read(FolderResponder(subtree));
-
-            Assert.True(snapshot.VmTemplates.Available);
-            var alpine = snapshot.VmTemplates.Entries.Single(x => x.Id == "vm-3");
-            Assert.Equal("alpine-template", alpine.Name);
-            Assert.Equal("Templates/Linux/alpine-template", alpine.Path);
-            Assert.Equal("Templates/Linux", alpine.Properties["folder"]);
-            Assert.Equal("DC1", alpine.Properties["datacenter"]);
-
-            var windows = snapshot.VmTemplates.Entries.Single(x => x.Id == "vm-2");
-            Assert.Equal("Templates/win2019-template", windows.Path);
-
-            // the Terraform to copy finds the template by that path in that datacenter
-            var terraform = Assert.Single(alpine.Terraform);
-            Assert.Equal(TerraformSnippets.Vsphere, terraform.Key);
-            Assert.Contains("name          = \"Templates/Linux/alpine-template\"", terraform.Value);
-            Assert.Contains("name = \"DC1\"", terraform.Value);
-        }
-
-        [Fact]
-        public async Task GetInventoryAsync_KeepsBareTemplateNamesWhenTheFoldersCannotBeRead()
-        {
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api/vcenter/datacenter"
-                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
-                : DefaultResponder()(request));
-
-            Assert.True(snapshot.VmTemplates.Available);
-            Assert.All(snapshot.VmTemplates.Entries, x => Assert.Equal(x.Name, x.Path));
-            Assert.All(snapshot.VmTemplates.Entries, x => Assert.False(x.Properties.ContainsKey("folder")));
-            Assert.All(snapshot.VmTemplates.Entries, x => Assert.Contains($"name = \"{x.Name}\"", x.Terraform[TerraformSnippets.Vsphere]));
-        }
+        #region Content libraries
 
         private static Func<HttpRequestMessage, HttpResponseMessage> LibraryResponder() => request =>
             request.RequestUri.AbsolutePath switch
@@ -401,36 +447,35 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Empty(snapshot.ContentLibrary.Entries);
         }
 
-        [Fact]
-        public async Task GetInventoryAsync_FolderWalkReadsLegacyWrappedObjects()
-        {
-            var folders = FolderResponder(subtree: false);
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api/vcenter/datacenter/datacenter-1"
-                ? Json("""{ "value": { "name": "DC1", "vm_folder": "group-v1" } }""")
-                : folders(request));
-
-            Assert.Equal("Templates/Linux/alpine-template", snapshot.VmTemplates.Entries.Single(x => x.Id == "vm-3").Path);
-        }
-
         #endregion
+
+        #region Helpers
 
         private static Func<HttpRequestMessage, HttpResponseMessage> DefaultResponder() =>
             request => request.RequestUri.AbsolutePath switch
             {
                 "/api/session" => Json(SessionBody),
-                "/api/vcenter/vm" => Json(VmBody),
-                "/api/vcenter/network" => Json(NetworkBody),
-                "/api/vcenter/datastore" => Json(DatastoreBody),
+                "/api/content/library" => Json("[]"),
                 _ => new HttpResponseMessage(HttpStatusCode.NotFound)
             };
 
+        private static IVimInventorySource Source(VimInventory vim)
+        {
+            var source = Substitute.For<IVimInventorySource>();
+            source.ReadAsync(Arg.Any<InfrastructureConnectionOptions>(), Arg.Any<CancellationToken>()).Returns(vim);
+            return source;
+        }
+
         private static async Task<InventorySnapshot> Read(
             Func<HttpRequestMessage, HttpResponseMessage> responder,
-            InfrastructureOptions options = null)
+            InfrastructureConnectionOptions options = null,
+            IVimInventorySource source = null,
+            VimInventory vim = null)
         {
             using var handler = new StubHandler(responder);
             var client = new VsphereInventoryClient(
                 new StubHttpClientFactory(handler),
+                source ?? Source(vim ?? Vim()),
                 Substitute.For<ILogger<VsphereInventoryClient>>());
 
             return await client.GetInventoryAsync(options ?? Options(), CancellationToken.None);
@@ -445,7 +490,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             snapshot.Isos.Error,
             snapshot.Networks.Error,
             snapshot.Datastores.Error,
-            snapshot.ContentLibrary.Error
+            snapshot.ContentLibrary.Error,
+            snapshot.Hosts.Error
         ];
 
         private static void AssertAllUnavailable(InventorySnapshot snapshot)
@@ -455,6 +501,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.False(snapshot.Networks.Available);
             Assert.False(snapshot.Datastores.Available);
             Assert.False(snapshot.ContentLibrary.Available);
+            Assert.False(snapshot.Hosts.Available);
         }
 
         private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler

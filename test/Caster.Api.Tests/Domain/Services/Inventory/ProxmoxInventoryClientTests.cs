@@ -264,19 +264,6 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal("2026-06-05T15:20:24.0000000Z", iso.Properties["created"]);
         }
 
-        /// <summary>
-        /// This is the gap the vSphere reader cannot close - see
-        /// <see cref="InventoryMessages.IsoNotSupported"/> and CRU-2828.
-        /// </summary>
-        [Fact]
-        public async Task GetInventoryAsync_IsosAreSupportedUnlikeVsphere()
-        {
-            var snapshot = await Read(DefaultResponder());
-
-            Assert.True(snapshot.Isos.Available);
-            Assert.NotEqual(InventoryMessages.IsoNotSupported, snapshot.Isos.Error);
-        }
-
         [Fact]
         public async Task GetInventoryAsync_OnlyQueriesIsoCapableStorages()
         {
@@ -373,7 +360,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 ? Json(StockIsoBody)
                 : Responder(storage: TwoIsoStoragesBody)(request);
 
-        private static InfrastructureOptions IsoLocations(params string[] locations)
+        private static InfrastructureConnectionOptions IsoLocations(params string[] locations)
         {
             var options = Options();
             options.IsoLocations = locations;
@@ -917,7 +904,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         [Fact]
         public void Redaction_IsSharedWithTheVsphereReader()
         {
-            var options = new InfrastructureOptions { Password = Password, ApiToken = ApiToken };
+            var options = new InfrastructureConnectionOptions { Password = Password, ApiToken = ApiToken };
 
             var redacted = InventoryRedaction.Redact($"{Password} and {ApiToken} and {TokenSecret}", options, Ticket);
 
@@ -950,7 +937,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         #region Helpers
 
-        private static InfrastructureOptions Options() => new()
+        private static InfrastructureConnectionOptions Options() => new()
         {
             Enabled = true,
             Provider = "proxmox",
@@ -960,7 +947,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             RefreshMinutes = 30
         };
 
-        private static InfrastructureOptions TicketOptions()
+        private static InfrastructureConnectionOptions TicketOptions()
         {
             var options = Options();
             options.ApiToken = null;
@@ -968,6 +955,77 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             options.Password = Password;
             return options;
         }
+
+        #region Hosts
+
+        private const string LoadedNodesBody = """
+        { "data": [
+          { "node": "pve", "status": "online", "type": "node", "cpu": 0.2534, "maxcpu": 8, "mem": 4294967296, "maxmem": 17179869184, "disk": 10737418240, "maxdisk": 107374182400, "uptime": 86400 },
+          { "node": "pve2", "status": "offline", "type": "node" }
+        ] }
+        """;
+
+        private const string GuestsBody = """
+        { "data": [
+          { "id": "qemu/103", "vmid": 103, "name": "web", "node": "pve", "type": "qemu", "template": 0, "status": "running" },
+          { "id": "qemu/104", "vmid": 104, "name": "db", "node": "pve", "type": "qemu", "template": 0, "status": "stopped" },
+          { "id": "lxc/130", "vmid": 130, "name": "dns", "node": "pve", "type": "lxc", "template": 0, "status": "running" },
+          { "id": "qemu/105", "vmid": 105, "name": "alpine-linux-template", "node": "pve", "type": "qemu", "template": 1, "status": "stopped" }
+        ] }
+        """;
+
+        [Fact]
+        public async Task GetInventoryAsync_ListsEachNodeWithItsLoadAndGuests()
+        {
+            var snapshot = await Read(Responder(nodes: LoadedNodesBody, vm: GuestsBody));
+
+            Assert.True(snapshot.Hosts.Available);
+            Assert.Equal(["pve", "pve2"], snapshot.Hosts.Entries.Select(x => x.Name));
+
+            var pve = snapshot.Hosts.Entries[0].Properties;
+            Assert.Equal("online", pve["status"]);
+            Assert.Equal("0.2534", pve["cpu"]);
+            Assert.Equal("8", pve["maxcpu"]);
+            Assert.Equal("4294967296", pve["mem"]);
+            Assert.Equal("17179869184", pve["maxmem"]);
+            Assert.Equal("107374182400", pve["maxdisk"]);
+            // the template is not a guest
+            Assert.Equal("3", pve["vmsTotal"]);
+            Assert.Equal("2", pve["vmsRunning"]);
+
+            var pve2 = snapshot.Hosts.Entries[1].Properties;
+            Assert.Equal("offline", pve2["status"]);
+            Assert.Equal("0", pve2["vmsTotal"]);
+            Assert.False(pve2.ContainsKey("cpu"));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ListsNodesWithoutCountsWhenTheVmListFails()
+        {
+            var inner = Responder(nodes: LoadedNodesBody);
+            var calls = 0;
+            // The templates read the VM list first; fail only the hosts' read of it.
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api2/json/cluster/resources" && ++calls == 2
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : inner(request));
+
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.True(snapshot.Hosts.Available);
+            Assert.All(snapshot.Hosts.Entries, x => Assert.False(x.Properties.ContainsKey("vmsTotal")));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_HostsNeedTheNodeList()
+        {
+            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api2/json/nodes"
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : DefaultResponder()(request));
+
+            Assert.False(snapshot.Hosts.Available);
+            Assert.StartsWith("Host discovery needs the Proxmox node list.", snapshot.Hosts.Error);
+        }
+
+        #endregion
 
         private static Func<HttpRequestMessage, HttpResponseMessage> DefaultResponder() => Responder();
 
@@ -1041,7 +1099,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         private static async Task<InventorySnapshot> Read(
             Func<HttpRequestMessage, HttpResponseMessage> responder,
-            InfrastructureOptions options = null)
+            InfrastructureConnectionOptions options = null)
         {
             using var handler = new StubHandler(responder);
             var client = new ProxmoxInventoryClient(

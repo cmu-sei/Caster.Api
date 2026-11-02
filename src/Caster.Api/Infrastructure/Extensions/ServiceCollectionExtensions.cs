@@ -226,6 +226,7 @@ namespace Caster.Api.Infrastructure.Extensions
                 handler.UseCookies = false;
             });
 
+            services.AddSingleton<IVimInventorySource, VimInventorySource>();
             services.AddSingleton<IInventoryProvider, VsphereInventoryClient>();
             services.AddSingleton<IInventoryProvider, ProxmoxInventoryClient>();
 

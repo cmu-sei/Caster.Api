@@ -41,9 +41,10 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         [Fact]
         public void Disabled_IsTheDefault()
         {
-            Assert.False(new InfrastructureOptions().Enabled);
-            Assert.Equal(30, new InfrastructureOptions().RefreshMinutes);
-            Assert.Equal("vsphere", new InfrastructureOptions().Provider);
+            Assert.Empty(new InfrastructureOptions().Connections);
+            Assert.False(new InfrastructureConnectionOptions().Enabled);
+            Assert.Equal(30, new InfrastructureConnectionOptions().RefreshMinutes);
+            Assert.Equal("vsphere", new InfrastructureConnectionOptions().Provider);
 
             // and nothing is served until a read succeeds
             var sut = Build(new InfrastructureOptions(), new FakeProviderClient(_ => Loaded()));
@@ -84,8 +85,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             await Run(sut);
 
-            Assert.Equal(options.Url, client.LastOptions.Url);
-            Assert.Equal(options.Username, client.LastOptions.Username);
+            Assert.Equal(options.Connections[0].Url, client.LastOptions.Url);
+            Assert.Equal(options.Connections[0].Username, client.LastOptions.Username);
         }
 
         [Fact]
@@ -124,7 +125,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             // a long interval, so the only thing that can trigger a second read is ForceRefresh
             var options = EnabledOptions();
-            options.RefreshMinutes = 600;
+            options.Connections[0].RefreshMinutes = 600;
 
             var sut = Build(options, client);
 
@@ -158,7 +159,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             });
 
             var options = EnabledOptions();
-            options.RefreshMinutes = 600;
+            options.Connections[0].RefreshMinutes = 600;
 
             var sut = Build(options, client);
 
@@ -200,7 +201,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var client = new FakeProviderClient(_ => Loaded());
 
             var options = EnabledOptions();
-            options.RefreshMinutes = 600;
+            options.Connections[0].RefreshMinutes = 600;
 
             var sut = Build(options, client);
             client.OnCall = token => providerToken = token;
@@ -411,14 +412,14 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         public async Task UrlChange_DoesNotKeepTheOtherSystemsRead()
         {
             var monitor = new TestOptionsMonitor<InfrastructureOptions>(EnabledOptions());
-            var sut = Build(monitor, new FakeProviderClient(options => options.Url == EnabledOptions().Url
+            var sut = Build(monitor, new FakeProviderClient(options => options.Url == EnabledOptions().Connections[0].Url
                 ? LoadedAt(FirstRead)
                 : InventorySnapshot.AllUnavailable(Refused)));
 
             await RunReads(sut, refreshes: 1, beforeRefresh: () =>
             {
                 var moved = EnabledOptions();
-                moved.Url = "https://vcenter2.test";
+                moved.Connections[0].Url = "https://vcenter2.test";
                 monitor.Set(moved);
             });
 
@@ -438,7 +439,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             await RunReads(sut, refreshes: 1, beforeRefresh: () =>
             {
                 var disabled = EnabledOptions();
-                disabled.Enabled = false;
+                disabled.Connections[0].Enabled = false;
                 monitor.Set(disabled);
             });
 
@@ -446,7 +447,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             Assert.False(templates.Available);
             Assert.False(templates.Stale);
-            Assert.Equal(InventoryMessages.NotEnabled, templates.Error);
+            Assert.Contains("Set Infrastructure:Connections:0:Enabled to true", templates.Error);
         }
 
         /// <summary>
@@ -550,10 +551,10 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
-        public async Task NamedConnection_MessagesNameItsOwnSettings()
+        public async Task EachConnection_MessagesNameItsOwnSettings()
         {
             var options = TwoConnections();
-            options.Connections["lab2"].Enabled = false;
+            options.Connections[1].Enabled = false;
 
             var sut = Build(options, new FakeProviderClient(ReadFrom));
 
@@ -561,14 +562,14 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             var error = sut.GetSnapshot("lab2").VmTemplates.Error;
 
-            Assert.Contains("Set Infrastructure:Connections:lab2:Enabled to true", error);
+            Assert.Contains("Set Infrastructure:Connections:1:Enabled to true", error);
             Assert.DoesNotContain("Set Infrastructure:Enabled", error);
 
-            // and the default connection's messages are untouched
-            options.Enabled = false;
-            var defaultOnly = Build(options, new FakeProviderClient(ReadFrom));
-            await Run(defaultOnly);
-            Assert.Equal(InventoryMessages.NotEnabled, defaultOnly.GetSnapshot().VmTemplates.Error);
+            // the first connection names its own index too
+            options.Connections[0].Enabled = false;
+            var first = Build(options, new FakeProviderClient(ReadFrom));
+            await Run(first);
+            Assert.Contains("Set Infrastructure:Connections:0:Enabled to true", first.GetSnapshot("default").VmTemplates.Error);
         }
 
         [Fact]
@@ -591,7 +592,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 await sut.StopAsync(CancellationToken.None);
             }
 
-            Assert.StartsWith("Infrastructure:Connections:lab2:ApiToken is not", sut.GetSnapshot("lab2").Isos.Error);
+            Assert.StartsWith("Infrastructure:Connections:1:ApiToken is not", sut.GetSnapshot("lab2").Isos.Error);
         }
 
         [Fact]
@@ -637,19 +638,20 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
-        public void GetConnections_ListsTheDefaultFirstWithoutUrlsOrCredentials()
+        public void GetConnections_ListsThemInOrderWithoutUrlsOrCredentials()
         {
             var options = TwoConnections();
-            options.Connections["alpha"] = new InfrastructureConnectionOptions { Provider = "vsphere" };
+            options.Connections.Add(new InfrastructureConnectionOptions { Name = "alpha", Provider = "vsphere" });
 
             var sut = Build(options, new FakeProviderClient(ReadFrom));
 
             var connections = sut.GetConnections();
 
-            Assert.Equal(["default", "alpha", "lab2"], connections.Select(x => x.Name));
+            // configuration order, not alphabetical
+            Assert.Equal(["default", "lab2", "alpha"], connections.Select(x => x.Name));
             Assert.True(connections[0].IsDefault);
-            Assert.False(connections[1].Enabled);
-            Assert.Equal("proxmox", connections[2].Provider);
+            Assert.Equal("proxmox", connections[1].Provider);
+            Assert.False(connections[2].Enabled);
 
             // the listing type has nowhere to put a url or a secret
             var properties = typeof(InventoryConnectionInfo).GetProperties().Select(x => x.Name).ToArray();
@@ -657,20 +659,58 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
-        public void ConnectionNamedDefault_IsIgnored()
+        public void ConnectionWithAUsedName_IsIgnored()
         {
             var options = EnabledOptions();
-            options.Connections["Default"] = new InfrastructureConnectionOptions
+            options.Connections.Add(new InfrastructureConnectionOptions
             {
+                // names are compared ignoring case
+                Name = "Default",
                 Enabled = true,
                 Provider = "proxmox",
                 Url = "https://impostor.test"
-            };
+            });
 
             var sut = Build(options, new FakeProviderClient(ReadFrom));
 
             var connection = Assert.Single(sut.GetConnections());
             Assert.Equal("vsphere", connection.Provider);
+        }
+
+        [Fact]
+        public void ConnectionWithoutAName_IsIgnored()
+        {
+            var options = EnabledOptions();
+            options.Connections.Add(new InfrastructureConnectionOptions { Enabled = true, Provider = "proxmox", Url = "https://pve.test:8006" });
+
+            var sut = Build(options, new FakeProviderClient(ReadFrom));
+
+            Assert.Equal(["default"], sut.GetConnections().Select(x => x.Name));
+        }
+
+        [Fact]
+        public void TheDefault_IsTheFirstEnabledConnection()
+        {
+            var options = TwoConnections();
+            options.Connections[0].Enabled = false;
+
+            var sut = Build(options, new FakeProviderClient(ReadFrom));
+
+            var connections = sut.GetConnections();
+            Assert.False(connections[0].IsDefault);
+            Assert.True(connections.Single(x => x.Name == "lab2").IsDefault);
+        }
+
+        [Fact]
+        public void WithNoConnections_TheDefaultSaysInventoryIsNotSetUp()
+        {
+            var sut = Build(new InfrastructureOptions(), new FakeProviderClient(ReadFrom));
+
+            Assert.Empty(sut.GetConnections());
+            Assert.True(sut.HasConnection(null));
+            Assert.False(sut.HasConnection("default"));
+            Assert.Equal(InventoryMessages.NotEnabled, sut.GetSnapshot().VmTemplates.Error);
+            Assert.Null(sut.GetSnapshot("default"));
         }
 
         [Fact]
@@ -717,14 +757,22 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         #region Helpers
 
+        /// <summary>One enabled vSphere connection, named default.</summary>
         private static InfrastructureOptions EnabledOptions() => new()
         {
-            Enabled = true,
-            Provider = "vsphere",
-            Url = "https://vcenter.test",
-            Username = "caster-ro@vsphere.local",
-            Password = Password,
-            RefreshMinutes = 600
+            Connections =
+            [
+                new InfrastructureConnectionOptions
+                {
+                    Name = "default",
+                    Enabled = true,
+                    Provider = "vsphere",
+                    Url = "https://vcenter.test",
+                    Username = "caster-ro@vsphere.local",
+                    Password = Password,
+                    RefreshMinutes = 600
+                }
+            ]
         };
 
         private static InventorySnapshot Loaded() => new()
@@ -737,7 +785,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 new InventoryEntry { Id = "network-11", Name = "vlan-200", Path = "vlan-200" }
             ]),
             Datastores = InventoryCategoryResult.Ok([]),
-            Isos = InventoryCategoryResult.Unavailable(InventoryMessages.IsoNotSupported)
+            Isos = InventoryCategoryResult.Unavailable("ISOs could not be read.")
         };
 
         private static InventoryService Build(InfrastructureOptions options, IInventoryProviderClient client) =>
@@ -756,14 +804,15 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         {
             var options = EnabledOptions();
 
-            options.Connections["lab2"] = new InfrastructureConnectionOptions
+            options.Connections.Add(new InfrastructureConnectionOptions
             {
+                Name = "lab2",
                 Enabled = true,
                 Provider = "proxmox",
                 Url = "https://pve2.test:8006",
                 ApiToken = Lab2Token,
                 RefreshMinutes = 600
-            };
+            });
 
             return options;
         }
