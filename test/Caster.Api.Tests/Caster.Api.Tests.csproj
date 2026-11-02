@@ -28,6 +28,7 @@
     <!-- Terraform state, plan and GitLab fixtures read by the pure unit tests. -->
     <None Update="Data/terraform.tfstate" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Data/plan.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Data/topology/*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Data/gitlab-modules.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- Real Terraform module declarations copied from the Crucible module
          catalog, used as the module source fixture. Hand-written JSON would not
