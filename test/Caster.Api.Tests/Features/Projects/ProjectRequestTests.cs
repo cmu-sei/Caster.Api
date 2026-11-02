@@ -54,7 +54,7 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
     /// <summary>A version stored on a directory and workspace that already exist, unlike any version an archive carries.</summary>
     private const string OtherVersion = "0.14.0";
 
-    // ---- GET api/projects/{id} ------------------------------------------------------------------
+    // ---- GET api/projects/{id} ----------------------------------------------------------------------
 
     [Fact]
     public async Task Get_returns_the_project_to_a_member_holding_ViewProject()
@@ -133,7 +133,7 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         await AssertProblem(HttpStatusCode.NotFound, response);
     }
 
-    // ---- GET api/projects -----------------------------------------------------------------------
+    // ---- GET api/projects ---------------------------------------------------------------------------
 
     [Fact]
     public async Task GetAll_returns_every_project_to_a_caller_holding_ViewProjects()
@@ -182,7 +182,7 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         Assert.DoesNotContain(other.Id, ids);
     }
 
-    // ---- POST api/projects ----------------------------------------------------------------------
+    // ---- POST api/projects --------------------------------------------------------------------------
 
     [Fact]
     public async Task Create_by_a_caller_holding_CreateProjects_stores_the_project_and_makes_the_creator_its_manager()
@@ -236,7 +236,7 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
     }
 
-    // ---- PUT api/projects/{id} ------------------------------------------------------------------
+    // ---- PUT api/projects/{id} ----------------------------------------------------------------------
 
     [Fact]
     public async Task Edit_by_a_member_holding_EditProject_stores_the_new_name()
@@ -297,7 +297,7 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
-    // ---- DELETE api/projects/{id} ---------------------------------------------------------------
+    // ---- DELETE api/projects/{id} -------------------------------------------------------------------
 
     /// <summary>A member holding EditProject, and not ManageProject, deletes the whole project.</summary>
     [Fact]
@@ -374,7 +374,7 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         Assert.True(await ProjectExists(project.Id));
     }
 
-    // ---- GET api/projects/projects/{id}/actions/export ------------------------------------------
+    // ---- GET api/projects/{id}/actions/export -------------------------------------------------------
 
     [Fact]
     public async Task Export_returns_a_zip_to_a_member_holding_ViewProject()
@@ -457,7 +457,7 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         Assert.Contains($"{SeededDirectoryName}/{SeededFileName}", entries);
     }
 
-    // ---- POST api/projects/projects/{id}/actions/import -------------------------------------------
+    // ---- POST api/projects/{id}/actions/import ------------------------------------------------------
 
     [Fact]
     public async Task Import_by_a_member_holding_EditProject_replaces_the_content_of_a_file_of_the_same_name()
@@ -517,7 +517,7 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         await AssertProblem(HttpStatusCode.Forbidden, response);
     }
 
-    // ---- POST api/projects/projects/{id}/actions/import: the settings an archive carries ---------
+    // ---- POST api/projects/{id}/actions/import: the settings an archive carries ---------------------
 
     [Fact]
     public async Task Import_creates_a_missing_directory_and_workspace_with_the_settings_the_archive_carries()
@@ -628,7 +628,58 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         Assert.Empty(result.Warnings);
     }
 
-    // ---- helpers --------------------------------------------------------------------------------
+    // ---- api/projects/projects/{id}/actions/export|import: the obsolete aliases ---------------------
+
+    /// <summary>The double-prefixed export route stays as an alias of the corrected one.</summary>
+    [Fact]
+    public async Task Export_through_the_obsolete_route_returns_a_zip_to_a_member_holding_ViewProject()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ObsoleteExportUrl(project.Id), Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal("application/zip", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task Export_through_the_obsolete_route_is_forbidden_for_a_caller_holding_only_EditProject()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync(ObsoleteExportUrl(project.Id), Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+    }
+
+    /// <summary>The double-prefixed import route stays as an alias of the corrected one.</summary>
+    [Fact]
+    public async Task Import_through_the_obsolete_route_by_a_member_holding_EditProject_replaces_the_content_of_a_file()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsync(ObsoleteImportUrl(project.Id), Archive(), Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal(ImportedContent, await StoredContent(project.Id));
+    }
+
+    [Fact]
+    public async Task Import_through_the_obsolete_route_is_forbidden_for_a_caller_holding_only_ImportProject()
+    {
+        var project = await SeedProjectWithAFile();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ImportProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsync(ObsoleteImportUrl(project.Id), Archive(), Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.NotEqual(ImportedContent, await StoredContent(project.Id));
+    }
+
+    // ---- helpers ------------------------------------------------------------------------------------
 
     /// <summary>
     /// A project as an export reads it, never saved here: one top-level directory holding <see cref="SeededFileName"/>
@@ -678,7 +729,9 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
             .SingleAsync(x => x.ProjectId == projectId && x.ParentId == null, Ct));
 
 
-    private static string ImportUrl(Guid projectId) => $"api/projects/projects/{projectId}/actions/import";
+    private static string ImportUrl(Guid projectId) => $"api/projects/{projectId}/actions/import";
+
+    private static string ObsoleteImportUrl(Guid projectId) => $"api/projects/projects/{projectId}/actions/import";
 
     /// <summary>A project archive holding <see cref="ImportedContent"/> for the file <see cref="SeedProjectWithAFile"/> seeds.</summary>
     private static MultipartFormDataContent Archive() =>
@@ -692,6 +745,9 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
     }
 
     private static string ExportUrl(Guid projectId) =>
+        $"api/projects/{projectId}/actions/export?archiveType=zip";
+
+    private static string ObsoleteExportUrl(Guid projectId) =>
         $"api/projects/projects/{projectId}/actions/export?archiveType=zip";
 
     private async Task<Project> SeedProject(string name = "Test Project")

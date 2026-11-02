@@ -545,6 +545,10 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("status");
 
+                    b.Property<string>("Topology")
+                        .HasColumnType("text")
+                        .HasColumnName("topology");
+
                     b.HasKey("Id");
 
                     b.HasIndex("RunId")
@@ -987,6 +991,10 @@ namespace Caster.Api.Data.Migrations
                     b.Property<string>("TerraformVersion")
                         .HasColumnType("text")
                         .HasColumnName("terraform_version");
+
+                    b.Property<string>("TopologyLayout")
+                        .HasColumnType("text")
+                        .HasColumnName("topology_layout");
 
                     b.HasKey("Id");
 

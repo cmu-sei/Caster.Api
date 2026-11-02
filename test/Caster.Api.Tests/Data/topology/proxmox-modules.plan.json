@@ -1,0 +1,5442 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.15.9",
+  "variables": {
+    "name": {
+      "value": "demo"
+    },
+    "node_name": {
+      "value": "pve"
+    },
+    "proxmox_api_token": {
+      "value": "user@pve!token=00000000-0000-0000-0000-000000000000"
+    },
+    "proxmox_endpoint": {
+      "value": "https://proxmox.example.com:8006/"
+    },
+    "sdn_zone": {
+      "value": "crucible"
+    }
+  },
+  "planned_values": {
+    "outputs": {
+      "networks": {
+        "sensitive": false,
+        "type": [
+          "object",
+          {
+            "corp": "string",
+            "dmz": "string",
+            "mgmt": "string",
+            "outside": "string"
+          }
+        ],
+        "value": {
+          "corp": "vda05d8d",
+          "dmz": "vbef54fe",
+          "mgmt": "vcbf3513",
+          "outside": "vbf42720"
+        }
+      },
+      "vms": {
+        "sensitive": false
+      }
+    },
+    "root_module": {
+      "child_modules": [
+        {
+          "resources": [
+            {
+              "address": "module.fw_edge.proxmox_virtual_environment_vm.vm",
+              "mode": "managed",
+              "type": "proxmox_virtual_environment_vm",
+              "name": "vm",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "acpi": true,
+                "agent": [
+                  {
+                    "enabled": false,
+                    "timeout": "1m",
+                    "trim": false,
+                    "type": "virtio",
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "bios": "seabios",
+                "cdrom": [],
+                "clone": [
+                  {
+                    "datastore_id": null,
+                    "full": true,
+                    "node_name": "pve",
+                    "retries": 1,
+                    "vm_id": 106
+                  }
+                ],
+                "cpu": [
+                  {
+                    "affinity": null,
+                    "architecture": null,
+                    "cores": 1,
+                    "flags": null,
+                    "hotplugged": 0,
+                    "limit": 0,
+                    "numa": false,
+                    "sockets": 1,
+                    "type": "qemu64"
+                  }
+                ],
+                "delete_unreferenced_disks_on_destroy": true,
+                "description": "",
+                "disk": [],
+                "efi_disk": [],
+                "hook_script_file_id": null,
+                "hostpci": [],
+                "initialization": [],
+                "keyboard_layout": "en-us",
+                "kvm_arguments": null,
+                "machine": null,
+                "memory": [
+                  {
+                    "dedicated": 512,
+                    "floating": 0,
+                    "hugepages": null,
+                    "keep_hugepages": false,
+                    "shared": 0
+                  }
+                ],
+                "migrate": false,
+                "name": "fw-edge-demo",
+                "network_device": [
+                  {
+                    "bridge": "vbf42720",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  },
+                  {
+                    "bridge": "vbef54fe",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  },
+                  {
+                    "bridge": "vda05d8d",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  },
+                  {
+                    "bridge": "vcbf3513",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  }
+                ],
+                "node_name": "pve",
+                "numa": [],
+                "on_boot": true,
+                "operating_system": [],
+                "pool_id": null,
+                "protection": false,
+                "purge_on_destroy": true,
+                "reboot": false,
+                "reboot_after_update": true,
+                "rng": [],
+                "scsi_hardware": "virtio-scsi-pci",
+                "serial_device": [],
+                "smbios": [],
+                "started": true,
+                "startup": [],
+                "stop_on_destroy": false,
+                "tablet_device": true,
+                "tags": null,
+                "template": false,
+                "timeout_clone": 1800,
+                "timeout_create": 1800,
+                "timeout_migrate": 1800,
+                "timeout_move_disk": 1800,
+                "timeout_reboot": 1800,
+                "timeout_shutdown_vm": 1800,
+                "timeout_start_vm": 1800,
+                "timeout_stop_vm": 300,
+                "tpm_state": [],
+                "usb": [],
+                "virtiofs": [],
+                "watchdog": []
+              },
+              "sensitive_values": {
+                "agent": [
+                  {
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "boot_order": [],
+                "cdrom": [],
+                "clone": [
+                  {}
+                ],
+                "cpu": [
+                  {}
+                ],
+                "disk": [],
+                "efi_disk": [],
+                "hostpci": [],
+                "initialization": [],
+                "ipv4_addresses": [],
+                "ipv6_addresses": [],
+                "mac_addresses": [],
+                "memory": [
+                  {}
+                ],
+                "network_device": [
+                  {},
+                  {},
+                  {},
+                  {}
+                ],
+                "network_interface_names": [],
+                "numa": [],
+                "operating_system": [],
+                "rng": [],
+                "serial_device": [],
+                "smbios": [],
+                "startup": [],
+                "tpm_state": [],
+                "usb": [],
+                "vga": [],
+                "virtiofs": [],
+                "watchdog": []
+              }
+            }
+          ],
+          "address": "module.fw_edge"
+        },
+        {
+          "resources": [
+            {
+              "address": "module.host[\"dc\"].proxmox_virtual_environment_vm.vm",
+              "mode": "managed",
+              "type": "proxmox_virtual_environment_vm",
+              "name": "vm",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "acpi": true,
+                "agent": [
+                  {
+                    "enabled": false,
+                    "timeout": "1m",
+                    "trim": false,
+                    "type": "virtio",
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "bios": "seabios",
+                "cdrom": [],
+                "clone": [
+                  {
+                    "datastore_id": null,
+                    "full": true,
+                    "node_name": "pve",
+                    "retries": 1,
+                    "vm_id": 105
+                  }
+                ],
+                "cpu": [
+                  {
+                    "affinity": null,
+                    "architecture": null,
+                    "cores": 1,
+                    "flags": null,
+                    "hotplugged": 0,
+                    "limit": 0,
+                    "numa": false,
+                    "sockets": 1,
+                    "type": "qemu64"
+                  }
+                ],
+                "delete_unreferenced_disks_on_destroy": true,
+                "description": "",
+                "disk": [],
+                "efi_disk": [],
+                "hook_script_file_id": null,
+                "hostpci": [],
+                "initialization": [],
+                "keyboard_layout": "en-us",
+                "kvm_arguments": null,
+                "machine": null,
+                "memory": [
+                  {
+                    "dedicated": 512,
+                    "floating": 0,
+                    "hugepages": null,
+                    "keep_hugepages": false,
+                    "shared": 0
+                  }
+                ],
+                "migrate": false,
+                "name": "dc-demo",
+                "network_device": [
+                  {
+                    "bridge": "vda05d8d",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  }
+                ],
+                "node_name": "pve",
+                "numa": [],
+                "on_boot": true,
+                "operating_system": [],
+                "pool_id": null,
+                "protection": false,
+                "purge_on_destroy": true,
+                "reboot": false,
+                "reboot_after_update": true,
+                "rng": [],
+                "scsi_hardware": "virtio-scsi-pci",
+                "serial_device": [],
+                "smbios": [],
+                "started": true,
+                "startup": [],
+                "stop_on_destroy": false,
+                "tablet_device": true,
+                "tags": null,
+                "template": false,
+                "timeout_clone": 1800,
+                "timeout_create": 1800,
+                "timeout_migrate": 1800,
+                "timeout_move_disk": 1800,
+                "timeout_reboot": 1800,
+                "timeout_shutdown_vm": 1800,
+                "timeout_start_vm": 1800,
+                "timeout_stop_vm": 300,
+                "tpm_state": [],
+                "usb": [],
+                "virtiofs": [],
+                "watchdog": []
+              },
+              "sensitive_values": {
+                "agent": [
+                  {
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "boot_order": [],
+                "cdrom": [],
+                "clone": [
+                  {}
+                ],
+                "cpu": [
+                  {}
+                ],
+                "disk": [],
+                "efi_disk": [],
+                "hostpci": [],
+                "initialization": [],
+                "ipv4_addresses": [],
+                "ipv6_addresses": [],
+                "mac_addresses": [],
+                "memory": [
+                  {}
+                ],
+                "network_device": [
+                  {}
+                ],
+                "network_interface_names": [],
+                "numa": [],
+                "operating_system": [],
+                "rng": [],
+                "serial_device": [],
+                "smbios": [],
+                "startup": [],
+                "tpm_state": [],
+                "usb": [],
+                "vga": [],
+                "virtiofs": [],
+                "watchdog": []
+              }
+            }
+          ],
+          "address": "module.host[\"dc\"]"
+        },
+        {
+          "resources": [
+            {
+              "address": "module.host[\"files\"].proxmox_virtual_environment_vm.vm",
+              "mode": "managed",
+              "type": "proxmox_virtual_environment_vm",
+              "name": "vm",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "acpi": true,
+                "agent": [
+                  {
+                    "enabled": false,
+                    "timeout": "1m",
+                    "trim": false,
+                    "type": "virtio",
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "bios": "seabios",
+                "cdrom": [],
+                "clone": [
+                  {
+                    "datastore_id": null,
+                    "full": true,
+                    "node_name": "pve",
+                    "retries": 1,
+                    "vm_id": 105
+                  }
+                ],
+                "cpu": [
+                  {
+                    "affinity": null,
+                    "architecture": null,
+                    "cores": 1,
+                    "flags": null,
+                    "hotplugged": 0,
+                    "limit": 0,
+                    "numa": false,
+                    "sockets": 1,
+                    "type": "qemu64"
+                  }
+                ],
+                "delete_unreferenced_disks_on_destroy": true,
+                "description": "",
+                "disk": [],
+                "efi_disk": [],
+                "hook_script_file_id": null,
+                "hostpci": [],
+                "initialization": [],
+                "keyboard_layout": "en-us",
+                "kvm_arguments": null,
+                "machine": null,
+                "memory": [
+                  {
+                    "dedicated": 512,
+                    "floating": 0,
+                    "hugepages": null,
+                    "keep_hugepages": false,
+                    "shared": 0
+                  }
+                ],
+                "migrate": false,
+                "name": "files-demo",
+                "network_device": [
+                  {
+                    "bridge": "vda05d8d",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  }
+                ],
+                "node_name": "pve",
+                "numa": [],
+                "on_boot": true,
+                "operating_system": [],
+                "pool_id": null,
+                "protection": false,
+                "purge_on_destroy": true,
+                "reboot": false,
+                "reboot_after_update": true,
+                "rng": [],
+                "scsi_hardware": "virtio-scsi-pci",
+                "serial_device": [],
+                "smbios": [],
+                "started": true,
+                "startup": [],
+                "stop_on_destroy": false,
+                "tablet_device": true,
+                "tags": null,
+                "template": false,
+                "timeout_clone": 1800,
+                "timeout_create": 1800,
+                "timeout_migrate": 1800,
+                "timeout_move_disk": 1800,
+                "timeout_reboot": 1800,
+                "timeout_shutdown_vm": 1800,
+                "timeout_start_vm": 1800,
+                "timeout_stop_vm": 300,
+                "tpm_state": [],
+                "usb": [],
+                "virtiofs": [],
+                "watchdog": []
+              },
+              "sensitive_values": {
+                "agent": [
+                  {
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "boot_order": [],
+                "cdrom": [],
+                "clone": [
+                  {}
+                ],
+                "cpu": [
+                  {}
+                ],
+                "disk": [],
+                "efi_disk": [],
+                "hostpci": [],
+                "initialization": [],
+                "ipv4_addresses": [],
+                "ipv6_addresses": [],
+                "mac_addresses": [],
+                "memory": [
+                  {}
+                ],
+                "network_device": [
+                  {}
+                ],
+                "network_interface_names": [],
+                "numa": [],
+                "operating_system": [],
+                "rng": [],
+                "serial_device": [],
+                "smbios": [],
+                "startup": [],
+                "tpm_state": [],
+                "usb": [],
+                "vga": [],
+                "virtiofs": [],
+                "watchdog": []
+              }
+            }
+          ],
+          "address": "module.host[\"files\"]"
+        },
+        {
+          "resources": [
+            {
+              "address": "module.host[\"kali-red\"].proxmox_virtual_environment_vm.vm",
+              "mode": "managed",
+              "type": "proxmox_virtual_environment_vm",
+              "name": "vm",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "acpi": true,
+                "agent": [
+                  {
+                    "enabled": false,
+                    "timeout": "1m",
+                    "trim": false,
+                    "type": "virtio",
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "bios": "seabios",
+                "cdrom": [],
+                "clone": [
+                  {
+                    "datastore_id": null,
+                    "full": true,
+                    "node_name": "pve",
+                    "retries": 1,
+                    "vm_id": 105
+                  }
+                ],
+                "cpu": [
+                  {
+                    "affinity": null,
+                    "architecture": null,
+                    "cores": 1,
+                    "flags": null,
+                    "hotplugged": 0,
+                    "limit": 0,
+                    "numa": false,
+                    "sockets": 1,
+                    "type": "qemu64"
+                  }
+                ],
+                "delete_unreferenced_disks_on_destroy": true,
+                "description": "",
+                "disk": [],
+                "efi_disk": [],
+                "hook_script_file_id": null,
+                "hostpci": [],
+                "initialization": [],
+                "keyboard_layout": "en-us",
+                "kvm_arguments": null,
+                "machine": null,
+                "memory": [
+                  {
+                    "dedicated": 512,
+                    "floating": 0,
+                    "hugepages": null,
+                    "keep_hugepages": false,
+                    "shared": 0
+                  }
+                ],
+                "migrate": false,
+                "name": "kali-red-demo",
+                "network_device": [
+                  {
+                    "bridge": "vbf42720",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  }
+                ],
+                "node_name": "pve",
+                "numa": [],
+                "on_boot": true,
+                "operating_system": [],
+                "pool_id": null,
+                "protection": false,
+                "purge_on_destroy": true,
+                "reboot": false,
+                "reboot_after_update": true,
+                "rng": [],
+                "scsi_hardware": "virtio-scsi-pci",
+                "serial_device": [],
+                "smbios": [],
+                "started": true,
+                "startup": [],
+                "stop_on_destroy": false,
+                "tablet_device": true,
+                "tags": null,
+                "template": false,
+                "timeout_clone": 1800,
+                "timeout_create": 1800,
+                "timeout_migrate": 1800,
+                "timeout_move_disk": 1800,
+                "timeout_reboot": 1800,
+                "timeout_shutdown_vm": 1800,
+                "timeout_start_vm": 1800,
+                "timeout_stop_vm": 300,
+                "tpm_state": [],
+                "usb": [],
+                "virtiofs": [],
+                "watchdog": []
+              },
+              "sensitive_values": {
+                "agent": [
+                  {
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "boot_order": [],
+                "cdrom": [],
+                "clone": [
+                  {}
+                ],
+                "cpu": [
+                  {}
+                ],
+                "disk": [],
+                "efi_disk": [],
+                "hostpci": [],
+                "initialization": [],
+                "ipv4_addresses": [],
+                "ipv6_addresses": [],
+                "mac_addresses": [],
+                "memory": [
+                  {}
+                ],
+                "network_device": [
+                  {}
+                ],
+                "network_interface_names": [],
+                "numa": [],
+                "operating_system": [],
+                "rng": [],
+                "serial_device": [],
+                "smbios": [],
+                "startup": [],
+                "tpm_state": [],
+                "usb": [],
+                "vga": [],
+                "virtiofs": [],
+                "watchdog": []
+              }
+            }
+          ],
+          "address": "module.host[\"kali-red\"]"
+        },
+        {
+          "resources": [
+            {
+              "address": "module.host[\"mail\"].proxmox_virtual_environment_vm.vm",
+              "mode": "managed",
+              "type": "proxmox_virtual_environment_vm",
+              "name": "vm",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "acpi": true,
+                "agent": [
+                  {
+                    "enabled": false,
+                    "timeout": "1m",
+                    "trim": false,
+                    "type": "virtio",
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "bios": "seabios",
+                "cdrom": [],
+                "clone": [
+                  {
+                    "datastore_id": null,
+                    "full": true,
+                    "node_name": "pve",
+                    "retries": 1,
+                    "vm_id": 105
+                  }
+                ],
+                "cpu": [
+                  {
+                    "affinity": null,
+                    "architecture": null,
+                    "cores": 1,
+                    "flags": null,
+                    "hotplugged": 0,
+                    "limit": 0,
+                    "numa": false,
+                    "sockets": 1,
+                    "type": "qemu64"
+                  }
+                ],
+                "delete_unreferenced_disks_on_destroy": true,
+                "description": "",
+                "disk": [],
+                "efi_disk": [],
+                "hook_script_file_id": null,
+                "hostpci": [],
+                "initialization": [],
+                "keyboard_layout": "en-us",
+                "kvm_arguments": null,
+                "machine": null,
+                "memory": [
+                  {
+                    "dedicated": 512,
+                    "floating": 0,
+                    "hugepages": null,
+                    "keep_hugepages": false,
+                    "shared": 0
+                  }
+                ],
+                "migrate": false,
+                "name": "mail-demo",
+                "network_device": [
+                  {
+                    "bridge": "vbef54fe",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  }
+                ],
+                "node_name": "pve",
+                "numa": [],
+                "on_boot": true,
+                "operating_system": [],
+                "pool_id": null,
+                "protection": false,
+                "purge_on_destroy": true,
+                "reboot": false,
+                "reboot_after_update": true,
+                "rng": [],
+                "scsi_hardware": "virtio-scsi-pci",
+                "serial_device": [],
+                "smbios": [],
+                "started": true,
+                "startup": [],
+                "stop_on_destroy": false,
+                "tablet_device": true,
+                "tags": null,
+                "template": false,
+                "timeout_clone": 1800,
+                "timeout_create": 1800,
+                "timeout_migrate": 1800,
+                "timeout_move_disk": 1800,
+                "timeout_reboot": 1800,
+                "timeout_shutdown_vm": 1800,
+                "timeout_start_vm": 1800,
+                "timeout_stop_vm": 300,
+                "tpm_state": [],
+                "usb": [],
+                "virtiofs": [],
+                "watchdog": []
+              },
+              "sensitive_values": {
+                "agent": [
+                  {
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "boot_order": [],
+                "cdrom": [],
+                "clone": [
+                  {}
+                ],
+                "cpu": [
+                  {}
+                ],
+                "disk": [],
+                "efi_disk": [],
+                "hostpci": [],
+                "initialization": [],
+                "ipv4_addresses": [],
+                "ipv6_addresses": [],
+                "mac_addresses": [],
+                "memory": [
+                  {}
+                ],
+                "network_device": [
+                  {}
+                ],
+                "network_interface_names": [],
+                "numa": [],
+                "operating_system": [],
+                "rng": [],
+                "serial_device": [],
+                "smbios": [],
+                "startup": [],
+                "tpm_state": [],
+                "usb": [],
+                "vga": [],
+                "virtiofs": [],
+                "watchdog": []
+              }
+            }
+          ],
+          "address": "module.host[\"mail\"]"
+        },
+        {
+          "resources": [
+            {
+              "address": "module.host[\"siem\"].proxmox_virtual_environment_vm.vm",
+              "mode": "managed",
+              "type": "proxmox_virtual_environment_vm",
+              "name": "vm",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "acpi": true,
+                "agent": [
+                  {
+                    "enabled": false,
+                    "timeout": "1m",
+                    "trim": false,
+                    "type": "virtio",
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "bios": "seabios",
+                "cdrom": [],
+                "clone": [
+                  {
+                    "datastore_id": null,
+                    "full": true,
+                    "node_name": "pve",
+                    "retries": 1,
+                    "vm_id": 105
+                  }
+                ],
+                "cpu": [
+                  {
+                    "affinity": null,
+                    "architecture": null,
+                    "cores": 1,
+                    "flags": null,
+                    "hotplugged": 0,
+                    "limit": 0,
+                    "numa": false,
+                    "sockets": 1,
+                    "type": "qemu64"
+                  }
+                ],
+                "delete_unreferenced_disks_on_destroy": true,
+                "description": "",
+                "disk": [],
+                "efi_disk": [],
+                "hook_script_file_id": null,
+                "hostpci": [],
+                "initialization": [],
+                "keyboard_layout": "en-us",
+                "kvm_arguments": null,
+                "machine": null,
+                "memory": [
+                  {
+                    "dedicated": 512,
+                    "floating": 0,
+                    "hugepages": null,
+                    "keep_hugepages": false,
+                    "shared": 0
+                  }
+                ],
+                "migrate": false,
+                "name": "siem-demo",
+                "network_device": [
+                  {
+                    "bridge": "vcbf3513",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  }
+                ],
+                "node_name": "pve",
+                "numa": [],
+                "on_boot": true,
+                "operating_system": [],
+                "pool_id": null,
+                "protection": false,
+                "purge_on_destroy": true,
+                "reboot": false,
+                "reboot_after_update": true,
+                "rng": [],
+                "scsi_hardware": "virtio-scsi-pci",
+                "serial_device": [],
+                "smbios": [],
+                "started": true,
+                "startup": [],
+                "stop_on_destroy": false,
+                "tablet_device": true,
+                "tags": null,
+                "template": false,
+                "timeout_clone": 1800,
+                "timeout_create": 1800,
+                "timeout_migrate": 1800,
+                "timeout_move_disk": 1800,
+                "timeout_reboot": 1800,
+                "timeout_shutdown_vm": 1800,
+                "timeout_start_vm": 1800,
+                "timeout_stop_vm": 300,
+                "tpm_state": [],
+                "usb": [],
+                "virtiofs": [],
+                "watchdog": []
+              },
+              "sensitive_values": {
+                "agent": [
+                  {
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "boot_order": [],
+                "cdrom": [],
+                "clone": [
+                  {}
+                ],
+                "cpu": [
+                  {}
+                ],
+                "disk": [],
+                "efi_disk": [],
+                "hostpci": [],
+                "initialization": [],
+                "ipv4_addresses": [],
+                "ipv6_addresses": [],
+                "mac_addresses": [],
+                "memory": [
+                  {}
+                ],
+                "network_device": [
+                  {}
+                ],
+                "network_interface_names": [],
+                "numa": [],
+                "operating_system": [],
+                "rng": [],
+                "serial_device": [],
+                "smbios": [],
+                "startup": [],
+                "tpm_state": [],
+                "usb": [],
+                "vga": [],
+                "virtiofs": [],
+                "watchdog": []
+              }
+            }
+          ],
+          "address": "module.host[\"siem\"]"
+        },
+        {
+          "resources": [
+            {
+              "address": "module.host[\"web\"].proxmox_virtual_environment_vm.vm",
+              "mode": "managed",
+              "type": "proxmox_virtual_environment_vm",
+              "name": "vm",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "acpi": true,
+                "agent": [
+                  {
+                    "enabled": false,
+                    "timeout": "1m",
+                    "trim": false,
+                    "type": "virtio",
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "bios": "seabios",
+                "cdrom": [],
+                "clone": [
+                  {
+                    "datastore_id": null,
+                    "full": true,
+                    "node_name": "pve",
+                    "retries": 1,
+                    "vm_id": 105
+                  }
+                ],
+                "cpu": [
+                  {
+                    "affinity": null,
+                    "architecture": null,
+                    "cores": 1,
+                    "flags": null,
+                    "hotplugged": 0,
+                    "limit": 0,
+                    "numa": false,
+                    "sockets": 1,
+                    "type": "qemu64"
+                  }
+                ],
+                "delete_unreferenced_disks_on_destroy": true,
+                "description": "",
+                "disk": [],
+                "efi_disk": [],
+                "hook_script_file_id": null,
+                "hostpci": [],
+                "initialization": [],
+                "keyboard_layout": "en-us",
+                "kvm_arguments": null,
+                "machine": null,
+                "memory": [
+                  {
+                    "dedicated": 512,
+                    "floating": 0,
+                    "hugepages": null,
+                    "keep_hugepages": false,
+                    "shared": 0
+                  }
+                ],
+                "migrate": false,
+                "name": "web-demo",
+                "network_device": [
+                  {
+                    "bridge": "vbef54fe",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  }
+                ],
+                "node_name": "pve",
+                "numa": [],
+                "on_boot": true,
+                "operating_system": [],
+                "pool_id": null,
+                "protection": false,
+                "purge_on_destroy": true,
+                "reboot": false,
+                "reboot_after_update": true,
+                "rng": [],
+                "scsi_hardware": "virtio-scsi-pci",
+                "serial_device": [],
+                "smbios": [],
+                "started": true,
+                "startup": [],
+                "stop_on_destroy": false,
+                "tablet_device": true,
+                "tags": null,
+                "template": false,
+                "timeout_clone": 1800,
+                "timeout_create": 1800,
+                "timeout_migrate": 1800,
+                "timeout_move_disk": 1800,
+                "timeout_reboot": 1800,
+                "timeout_shutdown_vm": 1800,
+                "timeout_start_vm": 1800,
+                "timeout_stop_vm": 300,
+                "tpm_state": [],
+                "usb": [],
+                "virtiofs": [],
+                "watchdog": []
+              },
+              "sensitive_values": {
+                "agent": [
+                  {
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "boot_order": [],
+                "cdrom": [],
+                "clone": [
+                  {}
+                ],
+                "cpu": [
+                  {}
+                ],
+                "disk": [],
+                "efi_disk": [],
+                "hostpci": [],
+                "initialization": [],
+                "ipv4_addresses": [],
+                "ipv6_addresses": [],
+                "mac_addresses": [],
+                "memory": [
+                  {}
+                ],
+                "network_device": [
+                  {}
+                ],
+                "network_interface_names": [],
+                "numa": [],
+                "operating_system": [],
+                "rng": [],
+                "serial_device": [],
+                "smbios": [],
+                "startup": [],
+                "tpm_state": [],
+                "usb": [],
+                "vga": [],
+                "virtiofs": [],
+                "watchdog": []
+              }
+            }
+          ],
+          "address": "module.host[\"web\"]"
+        },
+        {
+          "resources": [
+            {
+              "address": "module.host[\"ws-1\"].proxmox_virtual_environment_vm.vm",
+              "mode": "managed",
+              "type": "proxmox_virtual_environment_vm",
+              "name": "vm",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "acpi": true,
+                "agent": [
+                  {
+                    "enabled": false,
+                    "timeout": "1m",
+                    "trim": false,
+                    "type": "virtio",
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "bios": "seabios",
+                "cdrom": [],
+                "clone": [
+                  {
+                    "datastore_id": null,
+                    "full": true,
+                    "node_name": "pve",
+                    "retries": 1,
+                    "vm_id": 106
+                  }
+                ],
+                "cpu": [
+                  {
+                    "affinity": null,
+                    "architecture": null,
+                    "cores": 1,
+                    "flags": null,
+                    "hotplugged": 0,
+                    "limit": 0,
+                    "numa": false,
+                    "sockets": 1,
+                    "type": "qemu64"
+                  }
+                ],
+                "delete_unreferenced_disks_on_destroy": true,
+                "description": "",
+                "disk": [],
+                "efi_disk": [],
+                "hook_script_file_id": null,
+                "hostpci": [],
+                "initialization": [],
+                "keyboard_layout": "en-us",
+                "kvm_arguments": null,
+                "machine": null,
+                "memory": [
+                  {
+                    "dedicated": 512,
+                    "floating": 0,
+                    "hugepages": null,
+                    "keep_hugepages": false,
+                    "shared": 0
+                  }
+                ],
+                "migrate": false,
+                "name": "ws-1-demo",
+                "network_device": [
+                  {
+                    "bridge": "vda05d8d",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  }
+                ],
+                "node_name": "pve",
+                "numa": [],
+                "on_boot": true,
+                "operating_system": [],
+                "pool_id": null,
+                "protection": false,
+                "purge_on_destroy": true,
+                "reboot": false,
+                "reboot_after_update": true,
+                "rng": [],
+                "scsi_hardware": "virtio-scsi-pci",
+                "serial_device": [],
+                "smbios": [],
+                "started": true,
+                "startup": [],
+                "stop_on_destroy": false,
+                "tablet_device": true,
+                "tags": null,
+                "template": false,
+                "timeout_clone": 1800,
+                "timeout_create": 1800,
+                "timeout_migrate": 1800,
+                "timeout_move_disk": 1800,
+                "timeout_reboot": 1800,
+                "timeout_shutdown_vm": 1800,
+                "timeout_start_vm": 1800,
+                "timeout_stop_vm": 300,
+                "tpm_state": [],
+                "usb": [],
+                "virtiofs": [],
+                "watchdog": []
+              },
+              "sensitive_values": {
+                "agent": [
+                  {
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "boot_order": [],
+                "cdrom": [],
+                "clone": [
+                  {}
+                ],
+                "cpu": [
+                  {}
+                ],
+                "disk": [],
+                "efi_disk": [],
+                "hostpci": [],
+                "initialization": [],
+                "ipv4_addresses": [],
+                "ipv6_addresses": [],
+                "mac_addresses": [],
+                "memory": [
+                  {}
+                ],
+                "network_device": [
+                  {}
+                ],
+                "network_interface_names": [],
+                "numa": [],
+                "operating_system": [],
+                "rng": [],
+                "serial_device": [],
+                "smbios": [],
+                "startup": [],
+                "tpm_state": [],
+                "usb": [],
+                "vga": [],
+                "virtiofs": [],
+                "watchdog": []
+              }
+            }
+          ],
+          "address": "module.host[\"ws-1\"]"
+        },
+        {
+          "resources": [
+            {
+              "address": "module.host[\"ws-2\"].proxmox_virtual_environment_vm.vm",
+              "mode": "managed",
+              "type": "proxmox_virtual_environment_vm",
+              "name": "vm",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "acpi": true,
+                "agent": [
+                  {
+                    "enabled": false,
+                    "timeout": "1m",
+                    "trim": false,
+                    "type": "virtio",
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "bios": "seabios",
+                "cdrom": [],
+                "clone": [
+                  {
+                    "datastore_id": null,
+                    "full": true,
+                    "node_name": "pve",
+                    "retries": 1,
+                    "vm_id": 106
+                  }
+                ],
+                "cpu": [
+                  {
+                    "affinity": null,
+                    "architecture": null,
+                    "cores": 1,
+                    "flags": null,
+                    "hotplugged": 0,
+                    "limit": 0,
+                    "numa": false,
+                    "sockets": 1,
+                    "type": "qemu64"
+                  }
+                ],
+                "delete_unreferenced_disks_on_destroy": true,
+                "description": "",
+                "disk": [],
+                "efi_disk": [],
+                "hook_script_file_id": null,
+                "hostpci": [],
+                "initialization": [],
+                "keyboard_layout": "en-us",
+                "kvm_arguments": null,
+                "machine": null,
+                "memory": [
+                  {
+                    "dedicated": 512,
+                    "floating": 0,
+                    "hugepages": null,
+                    "keep_hugepages": false,
+                    "shared": 0
+                  }
+                ],
+                "migrate": false,
+                "name": "ws-2-demo",
+                "network_device": [
+                  {
+                    "bridge": "vda05d8d",
+                    "disconnected": null,
+                    "enabled": true,
+                    "firewall": false,
+                    "model": "virtio",
+                    "mtu": 0,
+                    "queues": 0,
+                    "rate_limit": 0,
+                    "trunks": null,
+                    "vlan_id": 0
+                  }
+                ],
+                "node_name": "pve",
+                "numa": [],
+                "on_boot": true,
+                "operating_system": [],
+                "pool_id": null,
+                "protection": false,
+                "purge_on_destroy": true,
+                "reboot": false,
+                "reboot_after_update": true,
+                "rng": [],
+                "scsi_hardware": "virtio-scsi-pci",
+                "serial_device": [],
+                "smbios": [],
+                "started": true,
+                "startup": [],
+                "stop_on_destroy": false,
+                "tablet_device": true,
+                "tags": null,
+                "template": false,
+                "timeout_clone": 1800,
+                "timeout_create": 1800,
+                "timeout_migrate": 1800,
+                "timeout_move_disk": 1800,
+                "timeout_reboot": 1800,
+                "timeout_shutdown_vm": 1800,
+                "timeout_start_vm": 1800,
+                "timeout_stop_vm": 300,
+                "tpm_state": [],
+                "usb": [],
+                "virtiofs": [],
+                "watchdog": []
+              },
+              "sensitive_values": {
+                "agent": [
+                  {
+                    "wait_for_ip": []
+                  }
+                ],
+                "amd_sev": [],
+                "audio_device": [],
+                "boot_order": [],
+                "cdrom": [],
+                "clone": [
+                  {}
+                ],
+                "cpu": [
+                  {}
+                ],
+                "disk": [],
+                "efi_disk": [],
+                "hostpci": [],
+                "initialization": [],
+                "ipv4_addresses": [],
+                "ipv6_addresses": [],
+                "mac_addresses": [],
+                "memory": [
+                  {}
+                ],
+                "network_device": [
+                  {}
+                ],
+                "network_interface_names": [],
+                "numa": [],
+                "operating_system": [],
+                "rng": [],
+                "serial_device": [],
+                "smbios": [],
+                "startup": [],
+                "tpm_state": [],
+                "usb": [],
+                "vga": [],
+                "virtiofs": [],
+                "watchdog": []
+              }
+            }
+          ],
+          "address": "module.host[\"ws-2\"]"
+        },
+        {
+          "resources": [
+            {
+              "address": "module.network.proxmox_sdn_applier.apply",
+              "mode": "managed",
+              "type": "proxmox_sdn_applier",
+              "name": "apply",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "on_create": true,
+                "on_destroy": false
+              },
+              "sensitive_values": {}
+            },
+            {
+              "address": "module.network.proxmox_sdn_applier.finalizer",
+              "mode": "managed",
+              "type": "proxmox_sdn_applier",
+              "name": "finalizer",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "on_create": false,
+                "on_destroy": true
+              },
+              "sensitive_values": {}
+            },
+            {
+              "address": "module.network.proxmox_sdn_vnet.segment[\"corp\"]",
+              "mode": "managed",
+              "type": "proxmox_sdn_vnet",
+              "name": "segment",
+              "index": "corp",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "alias": "demo-corp",
+                "id": "vda05d8d",
+                "isolate_ports": null,
+                "tag": null,
+                "vlan_aware": null,
+                "zone": "crucible"
+              },
+              "sensitive_values": {}
+            },
+            {
+              "address": "module.network.proxmox_sdn_vnet.segment[\"dmz\"]",
+              "mode": "managed",
+              "type": "proxmox_sdn_vnet",
+              "name": "segment",
+              "index": "dmz",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "alias": "demo-dmz",
+                "id": "vbef54fe",
+                "isolate_ports": null,
+                "tag": null,
+                "vlan_aware": null,
+                "zone": "crucible"
+              },
+              "sensitive_values": {}
+            },
+            {
+              "address": "module.network.proxmox_sdn_vnet.segment[\"mgmt\"]",
+              "mode": "managed",
+              "type": "proxmox_sdn_vnet",
+              "name": "segment",
+              "index": "mgmt",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "alias": "demo-mgmt",
+                "id": "vcbf3513",
+                "isolate_ports": null,
+                "tag": null,
+                "vlan_aware": null,
+                "zone": "crucible"
+              },
+              "sensitive_values": {}
+            },
+            {
+              "address": "module.network.proxmox_sdn_vnet.segment[\"outside\"]",
+              "mode": "managed",
+              "type": "proxmox_sdn_vnet",
+              "name": "segment",
+              "index": "outside",
+              "provider_name": "registry.terraform.io/bpg/proxmox",
+              "schema_version": 0,
+              "values": {
+                "alias": "demo-outside",
+                "id": "vbf42720",
+                "isolate_ports": null,
+                "tag": null,
+                "vlan_aware": null,
+                "zone": "crucible"
+              },
+              "sensitive_values": {}
+            }
+          ],
+          "address": "module.network"
+        }
+      ]
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "module.fw_edge.proxmox_virtual_environment_vm.vm",
+      "module_address": "module.fw_edge",
+      "mode": "managed",
+      "type": "proxmox_virtual_environment_vm",
+      "name": "vm",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "acpi": true,
+          "agent": [
+            {
+              "enabled": false,
+              "timeout": "1m",
+              "trim": false,
+              "type": "virtio",
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "bios": "seabios",
+          "cdrom": [],
+          "clone": [
+            {
+              "datastore_id": null,
+              "full": true,
+              "node_name": "pve",
+              "retries": 1,
+              "vm_id": 106
+            }
+          ],
+          "cpu": [
+            {
+              "affinity": null,
+              "architecture": null,
+              "cores": 1,
+              "flags": null,
+              "hotplugged": 0,
+              "limit": 0,
+              "numa": false,
+              "sockets": 1,
+              "type": "qemu64"
+            }
+          ],
+          "delete_unreferenced_disks_on_destroy": true,
+          "description": "",
+          "disk": [],
+          "efi_disk": [],
+          "hook_script_file_id": null,
+          "hostpci": [],
+          "initialization": [],
+          "keyboard_layout": "en-us",
+          "kvm_arguments": null,
+          "machine": null,
+          "memory": [
+            {
+              "dedicated": 512,
+              "floating": 0,
+              "hugepages": null,
+              "keep_hugepages": false,
+              "shared": 0
+            }
+          ],
+          "migrate": false,
+          "name": "fw-edge-demo",
+          "network_device": [
+            {
+              "bridge": "vbf42720",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            },
+            {
+              "bridge": "vbef54fe",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            },
+            {
+              "bridge": "vda05d8d",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            },
+            {
+              "bridge": "vcbf3513",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            }
+          ],
+          "node_name": "pve",
+          "numa": [],
+          "on_boot": true,
+          "operating_system": [],
+          "pool_id": null,
+          "protection": false,
+          "purge_on_destroy": true,
+          "reboot": false,
+          "reboot_after_update": true,
+          "rng": [],
+          "scsi_hardware": "virtio-scsi-pci",
+          "serial_device": [],
+          "smbios": [],
+          "started": true,
+          "startup": [],
+          "stop_on_destroy": false,
+          "tablet_device": true,
+          "tags": null,
+          "template": false,
+          "timeout_clone": 1800,
+          "timeout_create": 1800,
+          "timeout_migrate": 1800,
+          "timeout_move_disk": 1800,
+          "timeout_reboot": 1800,
+          "timeout_shutdown_vm": 1800,
+          "timeout_start_vm": 1800,
+          "timeout_stop_vm": 300,
+          "tpm_state": [],
+          "usb": [],
+          "virtiofs": [],
+          "watchdog": []
+        },
+        "after_unknown": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": true,
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {
+              "units": true
+            }
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "hotplug": true,
+          "id": true,
+          "initialization": [],
+          "ipv4_addresses": true,
+          "ipv6_addresses": true,
+          "mac_addresses": true,
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {
+              "mac_address": true
+            },
+            {
+              "mac_address": true
+            },
+            {
+              "mac_address": true
+            },
+            {
+              "mac_address": true
+            }
+          ],
+          "network_interface_names": true,
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": true,
+          "virtiofs": [],
+          "vm_id": true,
+          "watchdog": []
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": [],
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {}
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "initialization": [],
+          "ipv4_addresses": [],
+          "ipv6_addresses": [],
+          "mac_addresses": [],
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {},
+            {},
+            {},
+            {}
+          ],
+          "network_interface_names": [],
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": [],
+          "virtiofs": [],
+          "watchdog": []
+        }
+      }
+    },
+    {
+      "address": "module.host[\"dc\"].proxmox_virtual_environment_vm.vm",
+      "module_address": "module.host[\"dc\"]",
+      "mode": "managed",
+      "type": "proxmox_virtual_environment_vm",
+      "name": "vm",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "acpi": true,
+          "agent": [
+            {
+              "enabled": false,
+              "timeout": "1m",
+              "trim": false,
+              "type": "virtio",
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "bios": "seabios",
+          "cdrom": [],
+          "clone": [
+            {
+              "datastore_id": null,
+              "full": true,
+              "node_name": "pve",
+              "retries": 1,
+              "vm_id": 105
+            }
+          ],
+          "cpu": [
+            {
+              "affinity": null,
+              "architecture": null,
+              "cores": 1,
+              "flags": null,
+              "hotplugged": 0,
+              "limit": 0,
+              "numa": false,
+              "sockets": 1,
+              "type": "qemu64"
+            }
+          ],
+          "delete_unreferenced_disks_on_destroy": true,
+          "description": "",
+          "disk": [],
+          "efi_disk": [],
+          "hook_script_file_id": null,
+          "hostpci": [],
+          "initialization": [],
+          "keyboard_layout": "en-us",
+          "kvm_arguments": null,
+          "machine": null,
+          "memory": [
+            {
+              "dedicated": 512,
+              "floating": 0,
+              "hugepages": null,
+              "keep_hugepages": false,
+              "shared": 0
+            }
+          ],
+          "migrate": false,
+          "name": "dc-demo",
+          "network_device": [
+            {
+              "bridge": "vda05d8d",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            }
+          ],
+          "node_name": "pve",
+          "numa": [],
+          "on_boot": true,
+          "operating_system": [],
+          "pool_id": null,
+          "protection": false,
+          "purge_on_destroy": true,
+          "reboot": false,
+          "reboot_after_update": true,
+          "rng": [],
+          "scsi_hardware": "virtio-scsi-pci",
+          "serial_device": [],
+          "smbios": [],
+          "started": true,
+          "startup": [],
+          "stop_on_destroy": false,
+          "tablet_device": true,
+          "tags": null,
+          "template": false,
+          "timeout_clone": 1800,
+          "timeout_create": 1800,
+          "timeout_migrate": 1800,
+          "timeout_move_disk": 1800,
+          "timeout_reboot": 1800,
+          "timeout_shutdown_vm": 1800,
+          "timeout_start_vm": 1800,
+          "timeout_stop_vm": 300,
+          "tpm_state": [],
+          "usb": [],
+          "virtiofs": [],
+          "watchdog": []
+        },
+        "after_unknown": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": true,
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {
+              "units": true
+            }
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "hotplug": true,
+          "id": true,
+          "initialization": [],
+          "ipv4_addresses": true,
+          "ipv6_addresses": true,
+          "mac_addresses": true,
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {
+              "mac_address": true
+            }
+          ],
+          "network_interface_names": true,
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": true,
+          "virtiofs": [],
+          "vm_id": true,
+          "watchdog": []
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": [],
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {}
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "initialization": [],
+          "ipv4_addresses": [],
+          "ipv6_addresses": [],
+          "mac_addresses": [],
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {}
+          ],
+          "network_interface_names": [],
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": [],
+          "virtiofs": [],
+          "watchdog": []
+        }
+      }
+    },
+    {
+      "address": "module.host[\"files\"].proxmox_virtual_environment_vm.vm",
+      "module_address": "module.host[\"files\"]",
+      "mode": "managed",
+      "type": "proxmox_virtual_environment_vm",
+      "name": "vm",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "acpi": true,
+          "agent": [
+            {
+              "enabled": false,
+              "timeout": "1m",
+              "trim": false,
+              "type": "virtio",
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "bios": "seabios",
+          "cdrom": [],
+          "clone": [
+            {
+              "datastore_id": null,
+              "full": true,
+              "node_name": "pve",
+              "retries": 1,
+              "vm_id": 105
+            }
+          ],
+          "cpu": [
+            {
+              "affinity": null,
+              "architecture": null,
+              "cores": 1,
+              "flags": null,
+              "hotplugged": 0,
+              "limit": 0,
+              "numa": false,
+              "sockets": 1,
+              "type": "qemu64"
+            }
+          ],
+          "delete_unreferenced_disks_on_destroy": true,
+          "description": "",
+          "disk": [],
+          "efi_disk": [],
+          "hook_script_file_id": null,
+          "hostpci": [],
+          "initialization": [],
+          "keyboard_layout": "en-us",
+          "kvm_arguments": null,
+          "machine": null,
+          "memory": [
+            {
+              "dedicated": 512,
+              "floating": 0,
+              "hugepages": null,
+              "keep_hugepages": false,
+              "shared": 0
+            }
+          ],
+          "migrate": false,
+          "name": "files-demo",
+          "network_device": [
+            {
+              "bridge": "vda05d8d",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            }
+          ],
+          "node_name": "pve",
+          "numa": [],
+          "on_boot": true,
+          "operating_system": [],
+          "pool_id": null,
+          "protection": false,
+          "purge_on_destroy": true,
+          "reboot": false,
+          "reboot_after_update": true,
+          "rng": [],
+          "scsi_hardware": "virtio-scsi-pci",
+          "serial_device": [],
+          "smbios": [],
+          "started": true,
+          "startup": [],
+          "stop_on_destroy": false,
+          "tablet_device": true,
+          "tags": null,
+          "template": false,
+          "timeout_clone": 1800,
+          "timeout_create": 1800,
+          "timeout_migrate": 1800,
+          "timeout_move_disk": 1800,
+          "timeout_reboot": 1800,
+          "timeout_shutdown_vm": 1800,
+          "timeout_start_vm": 1800,
+          "timeout_stop_vm": 300,
+          "tpm_state": [],
+          "usb": [],
+          "virtiofs": [],
+          "watchdog": []
+        },
+        "after_unknown": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": true,
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {
+              "units": true
+            }
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "hotplug": true,
+          "id": true,
+          "initialization": [],
+          "ipv4_addresses": true,
+          "ipv6_addresses": true,
+          "mac_addresses": true,
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {
+              "mac_address": true
+            }
+          ],
+          "network_interface_names": true,
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": true,
+          "virtiofs": [],
+          "vm_id": true,
+          "watchdog": []
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": [],
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {}
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "initialization": [],
+          "ipv4_addresses": [],
+          "ipv6_addresses": [],
+          "mac_addresses": [],
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {}
+          ],
+          "network_interface_names": [],
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": [],
+          "virtiofs": [],
+          "watchdog": []
+        }
+      }
+    },
+    {
+      "address": "module.host[\"kali-red\"].proxmox_virtual_environment_vm.vm",
+      "module_address": "module.host[\"kali-red\"]",
+      "mode": "managed",
+      "type": "proxmox_virtual_environment_vm",
+      "name": "vm",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "acpi": true,
+          "agent": [
+            {
+              "enabled": false,
+              "timeout": "1m",
+              "trim": false,
+              "type": "virtio",
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "bios": "seabios",
+          "cdrom": [],
+          "clone": [
+            {
+              "datastore_id": null,
+              "full": true,
+              "node_name": "pve",
+              "retries": 1,
+              "vm_id": 105
+            }
+          ],
+          "cpu": [
+            {
+              "affinity": null,
+              "architecture": null,
+              "cores": 1,
+              "flags": null,
+              "hotplugged": 0,
+              "limit": 0,
+              "numa": false,
+              "sockets": 1,
+              "type": "qemu64"
+            }
+          ],
+          "delete_unreferenced_disks_on_destroy": true,
+          "description": "",
+          "disk": [],
+          "efi_disk": [],
+          "hook_script_file_id": null,
+          "hostpci": [],
+          "initialization": [],
+          "keyboard_layout": "en-us",
+          "kvm_arguments": null,
+          "machine": null,
+          "memory": [
+            {
+              "dedicated": 512,
+              "floating": 0,
+              "hugepages": null,
+              "keep_hugepages": false,
+              "shared": 0
+            }
+          ],
+          "migrate": false,
+          "name": "kali-red-demo",
+          "network_device": [
+            {
+              "bridge": "vbf42720",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            }
+          ],
+          "node_name": "pve",
+          "numa": [],
+          "on_boot": true,
+          "operating_system": [],
+          "pool_id": null,
+          "protection": false,
+          "purge_on_destroy": true,
+          "reboot": false,
+          "reboot_after_update": true,
+          "rng": [],
+          "scsi_hardware": "virtio-scsi-pci",
+          "serial_device": [],
+          "smbios": [],
+          "started": true,
+          "startup": [],
+          "stop_on_destroy": false,
+          "tablet_device": true,
+          "tags": null,
+          "template": false,
+          "timeout_clone": 1800,
+          "timeout_create": 1800,
+          "timeout_migrate": 1800,
+          "timeout_move_disk": 1800,
+          "timeout_reboot": 1800,
+          "timeout_shutdown_vm": 1800,
+          "timeout_start_vm": 1800,
+          "timeout_stop_vm": 300,
+          "tpm_state": [],
+          "usb": [],
+          "virtiofs": [],
+          "watchdog": []
+        },
+        "after_unknown": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": true,
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {
+              "units": true
+            }
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "hotplug": true,
+          "id": true,
+          "initialization": [],
+          "ipv4_addresses": true,
+          "ipv6_addresses": true,
+          "mac_addresses": true,
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {
+              "mac_address": true
+            }
+          ],
+          "network_interface_names": true,
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": true,
+          "virtiofs": [],
+          "vm_id": true,
+          "watchdog": []
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": [],
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {}
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "initialization": [],
+          "ipv4_addresses": [],
+          "ipv6_addresses": [],
+          "mac_addresses": [],
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {}
+          ],
+          "network_interface_names": [],
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": [],
+          "virtiofs": [],
+          "watchdog": []
+        }
+      }
+    },
+    {
+      "address": "module.host[\"mail\"].proxmox_virtual_environment_vm.vm",
+      "module_address": "module.host[\"mail\"]",
+      "mode": "managed",
+      "type": "proxmox_virtual_environment_vm",
+      "name": "vm",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "acpi": true,
+          "agent": [
+            {
+              "enabled": false,
+              "timeout": "1m",
+              "trim": false,
+              "type": "virtio",
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "bios": "seabios",
+          "cdrom": [],
+          "clone": [
+            {
+              "datastore_id": null,
+              "full": true,
+              "node_name": "pve",
+              "retries": 1,
+              "vm_id": 105
+            }
+          ],
+          "cpu": [
+            {
+              "affinity": null,
+              "architecture": null,
+              "cores": 1,
+              "flags": null,
+              "hotplugged": 0,
+              "limit": 0,
+              "numa": false,
+              "sockets": 1,
+              "type": "qemu64"
+            }
+          ],
+          "delete_unreferenced_disks_on_destroy": true,
+          "description": "",
+          "disk": [],
+          "efi_disk": [],
+          "hook_script_file_id": null,
+          "hostpci": [],
+          "initialization": [],
+          "keyboard_layout": "en-us",
+          "kvm_arguments": null,
+          "machine": null,
+          "memory": [
+            {
+              "dedicated": 512,
+              "floating": 0,
+              "hugepages": null,
+              "keep_hugepages": false,
+              "shared": 0
+            }
+          ],
+          "migrate": false,
+          "name": "mail-demo",
+          "network_device": [
+            {
+              "bridge": "vbef54fe",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            }
+          ],
+          "node_name": "pve",
+          "numa": [],
+          "on_boot": true,
+          "operating_system": [],
+          "pool_id": null,
+          "protection": false,
+          "purge_on_destroy": true,
+          "reboot": false,
+          "reboot_after_update": true,
+          "rng": [],
+          "scsi_hardware": "virtio-scsi-pci",
+          "serial_device": [],
+          "smbios": [],
+          "started": true,
+          "startup": [],
+          "stop_on_destroy": false,
+          "tablet_device": true,
+          "tags": null,
+          "template": false,
+          "timeout_clone": 1800,
+          "timeout_create": 1800,
+          "timeout_migrate": 1800,
+          "timeout_move_disk": 1800,
+          "timeout_reboot": 1800,
+          "timeout_shutdown_vm": 1800,
+          "timeout_start_vm": 1800,
+          "timeout_stop_vm": 300,
+          "tpm_state": [],
+          "usb": [],
+          "virtiofs": [],
+          "watchdog": []
+        },
+        "after_unknown": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": true,
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {
+              "units": true
+            }
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "hotplug": true,
+          "id": true,
+          "initialization": [],
+          "ipv4_addresses": true,
+          "ipv6_addresses": true,
+          "mac_addresses": true,
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {
+              "mac_address": true
+            }
+          ],
+          "network_interface_names": true,
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": true,
+          "virtiofs": [],
+          "vm_id": true,
+          "watchdog": []
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": [],
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {}
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "initialization": [],
+          "ipv4_addresses": [],
+          "ipv6_addresses": [],
+          "mac_addresses": [],
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {}
+          ],
+          "network_interface_names": [],
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": [],
+          "virtiofs": [],
+          "watchdog": []
+        }
+      }
+    },
+    {
+      "address": "module.host[\"siem\"].proxmox_virtual_environment_vm.vm",
+      "module_address": "module.host[\"siem\"]",
+      "mode": "managed",
+      "type": "proxmox_virtual_environment_vm",
+      "name": "vm",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "acpi": true,
+          "agent": [
+            {
+              "enabled": false,
+              "timeout": "1m",
+              "trim": false,
+              "type": "virtio",
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "bios": "seabios",
+          "cdrom": [],
+          "clone": [
+            {
+              "datastore_id": null,
+              "full": true,
+              "node_name": "pve",
+              "retries": 1,
+              "vm_id": 105
+            }
+          ],
+          "cpu": [
+            {
+              "affinity": null,
+              "architecture": null,
+              "cores": 1,
+              "flags": null,
+              "hotplugged": 0,
+              "limit": 0,
+              "numa": false,
+              "sockets": 1,
+              "type": "qemu64"
+            }
+          ],
+          "delete_unreferenced_disks_on_destroy": true,
+          "description": "",
+          "disk": [],
+          "efi_disk": [],
+          "hook_script_file_id": null,
+          "hostpci": [],
+          "initialization": [],
+          "keyboard_layout": "en-us",
+          "kvm_arguments": null,
+          "machine": null,
+          "memory": [
+            {
+              "dedicated": 512,
+              "floating": 0,
+              "hugepages": null,
+              "keep_hugepages": false,
+              "shared": 0
+            }
+          ],
+          "migrate": false,
+          "name": "siem-demo",
+          "network_device": [
+            {
+              "bridge": "vcbf3513",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            }
+          ],
+          "node_name": "pve",
+          "numa": [],
+          "on_boot": true,
+          "operating_system": [],
+          "pool_id": null,
+          "protection": false,
+          "purge_on_destroy": true,
+          "reboot": false,
+          "reboot_after_update": true,
+          "rng": [],
+          "scsi_hardware": "virtio-scsi-pci",
+          "serial_device": [],
+          "smbios": [],
+          "started": true,
+          "startup": [],
+          "stop_on_destroy": false,
+          "tablet_device": true,
+          "tags": null,
+          "template": false,
+          "timeout_clone": 1800,
+          "timeout_create": 1800,
+          "timeout_migrate": 1800,
+          "timeout_move_disk": 1800,
+          "timeout_reboot": 1800,
+          "timeout_shutdown_vm": 1800,
+          "timeout_start_vm": 1800,
+          "timeout_stop_vm": 300,
+          "tpm_state": [],
+          "usb": [],
+          "virtiofs": [],
+          "watchdog": []
+        },
+        "after_unknown": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": true,
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {
+              "units": true
+            }
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "hotplug": true,
+          "id": true,
+          "initialization": [],
+          "ipv4_addresses": true,
+          "ipv6_addresses": true,
+          "mac_addresses": true,
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {
+              "mac_address": true
+            }
+          ],
+          "network_interface_names": true,
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": true,
+          "virtiofs": [],
+          "vm_id": true,
+          "watchdog": []
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": [],
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {}
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "initialization": [],
+          "ipv4_addresses": [],
+          "ipv6_addresses": [],
+          "mac_addresses": [],
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {}
+          ],
+          "network_interface_names": [],
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": [],
+          "virtiofs": [],
+          "watchdog": []
+        }
+      }
+    },
+    {
+      "address": "module.host[\"web\"].proxmox_virtual_environment_vm.vm",
+      "module_address": "module.host[\"web\"]",
+      "mode": "managed",
+      "type": "proxmox_virtual_environment_vm",
+      "name": "vm",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "acpi": true,
+          "agent": [
+            {
+              "enabled": false,
+              "timeout": "1m",
+              "trim": false,
+              "type": "virtio",
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "bios": "seabios",
+          "cdrom": [],
+          "clone": [
+            {
+              "datastore_id": null,
+              "full": true,
+              "node_name": "pve",
+              "retries": 1,
+              "vm_id": 105
+            }
+          ],
+          "cpu": [
+            {
+              "affinity": null,
+              "architecture": null,
+              "cores": 1,
+              "flags": null,
+              "hotplugged": 0,
+              "limit": 0,
+              "numa": false,
+              "sockets": 1,
+              "type": "qemu64"
+            }
+          ],
+          "delete_unreferenced_disks_on_destroy": true,
+          "description": "",
+          "disk": [],
+          "efi_disk": [],
+          "hook_script_file_id": null,
+          "hostpci": [],
+          "initialization": [],
+          "keyboard_layout": "en-us",
+          "kvm_arguments": null,
+          "machine": null,
+          "memory": [
+            {
+              "dedicated": 512,
+              "floating": 0,
+              "hugepages": null,
+              "keep_hugepages": false,
+              "shared": 0
+            }
+          ],
+          "migrate": false,
+          "name": "web-demo",
+          "network_device": [
+            {
+              "bridge": "vbef54fe",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            }
+          ],
+          "node_name": "pve",
+          "numa": [],
+          "on_boot": true,
+          "operating_system": [],
+          "pool_id": null,
+          "protection": false,
+          "purge_on_destroy": true,
+          "reboot": false,
+          "reboot_after_update": true,
+          "rng": [],
+          "scsi_hardware": "virtio-scsi-pci",
+          "serial_device": [],
+          "smbios": [],
+          "started": true,
+          "startup": [],
+          "stop_on_destroy": false,
+          "tablet_device": true,
+          "tags": null,
+          "template": false,
+          "timeout_clone": 1800,
+          "timeout_create": 1800,
+          "timeout_migrate": 1800,
+          "timeout_move_disk": 1800,
+          "timeout_reboot": 1800,
+          "timeout_shutdown_vm": 1800,
+          "timeout_start_vm": 1800,
+          "timeout_stop_vm": 300,
+          "tpm_state": [],
+          "usb": [],
+          "virtiofs": [],
+          "watchdog": []
+        },
+        "after_unknown": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": true,
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {
+              "units": true
+            }
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "hotplug": true,
+          "id": true,
+          "initialization": [],
+          "ipv4_addresses": true,
+          "ipv6_addresses": true,
+          "mac_addresses": true,
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {
+              "mac_address": true
+            }
+          ],
+          "network_interface_names": true,
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": true,
+          "virtiofs": [],
+          "vm_id": true,
+          "watchdog": []
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": [],
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {}
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "initialization": [],
+          "ipv4_addresses": [],
+          "ipv6_addresses": [],
+          "mac_addresses": [],
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {}
+          ],
+          "network_interface_names": [],
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": [],
+          "virtiofs": [],
+          "watchdog": []
+        }
+      }
+    },
+    {
+      "address": "module.host[\"ws-1\"].proxmox_virtual_environment_vm.vm",
+      "module_address": "module.host[\"ws-1\"]",
+      "mode": "managed",
+      "type": "proxmox_virtual_environment_vm",
+      "name": "vm",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "acpi": true,
+          "agent": [
+            {
+              "enabled": false,
+              "timeout": "1m",
+              "trim": false,
+              "type": "virtio",
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "bios": "seabios",
+          "cdrom": [],
+          "clone": [
+            {
+              "datastore_id": null,
+              "full": true,
+              "node_name": "pve",
+              "retries": 1,
+              "vm_id": 106
+            }
+          ],
+          "cpu": [
+            {
+              "affinity": null,
+              "architecture": null,
+              "cores": 1,
+              "flags": null,
+              "hotplugged": 0,
+              "limit": 0,
+              "numa": false,
+              "sockets": 1,
+              "type": "qemu64"
+            }
+          ],
+          "delete_unreferenced_disks_on_destroy": true,
+          "description": "",
+          "disk": [],
+          "efi_disk": [],
+          "hook_script_file_id": null,
+          "hostpci": [],
+          "initialization": [],
+          "keyboard_layout": "en-us",
+          "kvm_arguments": null,
+          "machine": null,
+          "memory": [
+            {
+              "dedicated": 512,
+              "floating": 0,
+              "hugepages": null,
+              "keep_hugepages": false,
+              "shared": 0
+            }
+          ],
+          "migrate": false,
+          "name": "ws-1-demo",
+          "network_device": [
+            {
+              "bridge": "vda05d8d",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            }
+          ],
+          "node_name": "pve",
+          "numa": [],
+          "on_boot": true,
+          "operating_system": [],
+          "pool_id": null,
+          "protection": false,
+          "purge_on_destroy": true,
+          "reboot": false,
+          "reboot_after_update": true,
+          "rng": [],
+          "scsi_hardware": "virtio-scsi-pci",
+          "serial_device": [],
+          "smbios": [],
+          "started": true,
+          "startup": [],
+          "stop_on_destroy": false,
+          "tablet_device": true,
+          "tags": null,
+          "template": false,
+          "timeout_clone": 1800,
+          "timeout_create": 1800,
+          "timeout_migrate": 1800,
+          "timeout_move_disk": 1800,
+          "timeout_reboot": 1800,
+          "timeout_shutdown_vm": 1800,
+          "timeout_start_vm": 1800,
+          "timeout_stop_vm": 300,
+          "tpm_state": [],
+          "usb": [],
+          "virtiofs": [],
+          "watchdog": []
+        },
+        "after_unknown": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": true,
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {
+              "units": true
+            }
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "hotplug": true,
+          "id": true,
+          "initialization": [],
+          "ipv4_addresses": true,
+          "ipv6_addresses": true,
+          "mac_addresses": true,
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {
+              "mac_address": true
+            }
+          ],
+          "network_interface_names": true,
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": true,
+          "virtiofs": [],
+          "vm_id": true,
+          "watchdog": []
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": [],
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {}
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "initialization": [],
+          "ipv4_addresses": [],
+          "ipv6_addresses": [],
+          "mac_addresses": [],
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {}
+          ],
+          "network_interface_names": [],
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": [],
+          "virtiofs": [],
+          "watchdog": []
+        }
+      }
+    },
+    {
+      "address": "module.host[\"ws-2\"].proxmox_virtual_environment_vm.vm",
+      "module_address": "module.host[\"ws-2\"]",
+      "mode": "managed",
+      "type": "proxmox_virtual_environment_vm",
+      "name": "vm",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "acpi": true,
+          "agent": [
+            {
+              "enabled": false,
+              "timeout": "1m",
+              "trim": false,
+              "type": "virtio",
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "bios": "seabios",
+          "cdrom": [],
+          "clone": [
+            {
+              "datastore_id": null,
+              "full": true,
+              "node_name": "pve",
+              "retries": 1,
+              "vm_id": 106
+            }
+          ],
+          "cpu": [
+            {
+              "affinity": null,
+              "architecture": null,
+              "cores": 1,
+              "flags": null,
+              "hotplugged": 0,
+              "limit": 0,
+              "numa": false,
+              "sockets": 1,
+              "type": "qemu64"
+            }
+          ],
+          "delete_unreferenced_disks_on_destroy": true,
+          "description": "",
+          "disk": [],
+          "efi_disk": [],
+          "hook_script_file_id": null,
+          "hostpci": [],
+          "initialization": [],
+          "keyboard_layout": "en-us",
+          "kvm_arguments": null,
+          "machine": null,
+          "memory": [
+            {
+              "dedicated": 512,
+              "floating": 0,
+              "hugepages": null,
+              "keep_hugepages": false,
+              "shared": 0
+            }
+          ],
+          "migrate": false,
+          "name": "ws-2-demo",
+          "network_device": [
+            {
+              "bridge": "vda05d8d",
+              "disconnected": null,
+              "enabled": true,
+              "firewall": false,
+              "model": "virtio",
+              "mtu": 0,
+              "queues": 0,
+              "rate_limit": 0,
+              "trunks": null,
+              "vlan_id": 0
+            }
+          ],
+          "node_name": "pve",
+          "numa": [],
+          "on_boot": true,
+          "operating_system": [],
+          "pool_id": null,
+          "protection": false,
+          "purge_on_destroy": true,
+          "reboot": false,
+          "reboot_after_update": true,
+          "rng": [],
+          "scsi_hardware": "virtio-scsi-pci",
+          "serial_device": [],
+          "smbios": [],
+          "started": true,
+          "startup": [],
+          "stop_on_destroy": false,
+          "tablet_device": true,
+          "tags": null,
+          "template": false,
+          "timeout_clone": 1800,
+          "timeout_create": 1800,
+          "timeout_migrate": 1800,
+          "timeout_move_disk": 1800,
+          "timeout_reboot": 1800,
+          "timeout_shutdown_vm": 1800,
+          "timeout_start_vm": 1800,
+          "timeout_stop_vm": 300,
+          "tpm_state": [],
+          "usb": [],
+          "virtiofs": [],
+          "watchdog": []
+        },
+        "after_unknown": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": true,
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {
+              "units": true
+            }
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "hotplug": true,
+          "id": true,
+          "initialization": [],
+          "ipv4_addresses": true,
+          "ipv6_addresses": true,
+          "mac_addresses": true,
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {
+              "mac_address": true
+            }
+          ],
+          "network_interface_names": true,
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": true,
+          "virtiofs": [],
+          "vm_id": true,
+          "watchdog": []
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "agent": [
+            {
+              "wait_for_ip": []
+            }
+          ],
+          "amd_sev": [],
+          "audio_device": [],
+          "boot_order": [],
+          "cdrom": [],
+          "clone": [
+            {}
+          ],
+          "cpu": [
+            {}
+          ],
+          "disk": [],
+          "efi_disk": [],
+          "hostpci": [],
+          "initialization": [],
+          "ipv4_addresses": [],
+          "ipv6_addresses": [],
+          "mac_addresses": [],
+          "memory": [
+            {}
+          ],
+          "network_device": [
+            {}
+          ],
+          "network_interface_names": [],
+          "numa": [],
+          "operating_system": [],
+          "rng": [],
+          "serial_device": [],
+          "smbios": [],
+          "startup": [],
+          "tpm_state": [],
+          "usb": [],
+          "vga": [],
+          "virtiofs": [],
+          "watchdog": []
+        }
+      }
+    },
+    {
+      "address": "module.network.proxmox_sdn_applier.apply",
+      "module_address": "module.network",
+      "mode": "managed",
+      "type": "proxmox_sdn_applier",
+      "name": "apply",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "on_create": true,
+          "on_destroy": false
+        },
+        "after_unknown": {
+          "id": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "module.network.proxmox_sdn_applier.finalizer",
+      "module_address": "module.network",
+      "mode": "managed",
+      "type": "proxmox_sdn_applier",
+      "name": "finalizer",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "on_create": false,
+          "on_destroy": true
+        },
+        "after_unknown": {
+          "id": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "module.network.proxmox_sdn_vnet.segment[\"corp\"]",
+      "module_address": "module.network",
+      "mode": "managed",
+      "type": "proxmox_sdn_vnet",
+      "name": "segment",
+      "index": "corp",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "alias": "demo-corp",
+          "id": "vda05d8d",
+          "isolate_ports": null,
+          "tag": null,
+          "vlan_aware": null,
+          "zone": "crucible"
+        },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "module.network.proxmox_sdn_vnet.segment[\"dmz\"]",
+      "module_address": "module.network",
+      "mode": "managed",
+      "type": "proxmox_sdn_vnet",
+      "name": "segment",
+      "index": "dmz",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "alias": "demo-dmz",
+          "id": "vbef54fe",
+          "isolate_ports": null,
+          "tag": null,
+          "vlan_aware": null,
+          "zone": "crucible"
+        },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "module.network.proxmox_sdn_vnet.segment[\"mgmt\"]",
+      "module_address": "module.network",
+      "mode": "managed",
+      "type": "proxmox_sdn_vnet",
+      "name": "segment",
+      "index": "mgmt",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "alias": "demo-mgmt",
+          "id": "vcbf3513",
+          "isolate_ports": null,
+          "tag": null,
+          "vlan_aware": null,
+          "zone": "crucible"
+        },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "module.network.proxmox_sdn_vnet.segment[\"outside\"]",
+      "module_address": "module.network",
+      "mode": "managed",
+      "type": "proxmox_sdn_vnet",
+      "name": "segment",
+      "index": "outside",
+      "provider_name": "registry.terraform.io/bpg/proxmox",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "alias": "demo-outside",
+          "id": "vbf42720",
+          "isolate_ports": null,
+          "tag": null,
+          "vlan_aware": null,
+          "zone": "crucible"
+        },
+        "after_unknown": {},
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "output_changes": {
+    "networks": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after": {
+        "corp": "vda05d8d",
+        "dmz": "vbef54fe",
+        "mgmt": "vcbf3513",
+        "outside": "vbf42720"
+      },
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    },
+    "vms": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after": {},
+      "after_unknown": {
+        "dc-demo": true,
+        "files-demo": true,
+        "fw-edge-demo": true,
+        "kali-red-demo": true,
+        "mail-demo": true,
+        "siem-demo": true,
+        "web-demo": true,
+        "ws-1-demo": true,
+        "ws-2-demo": true
+      },
+      "before_sensitive": false,
+      "after_sensitive": false
+    }
+  },
+  "prior_state": {
+    "format_version": "1.0",
+    "terraform_version": "1.15.9",
+    "values": {
+      "outputs": {
+        "networks": {
+          "sensitive": false,
+          "value": {
+            "corp": "vda05d8d",
+            "dmz": "vbef54fe",
+            "mgmt": "vcbf3513",
+            "outside": "vbf42720"
+          },
+          "type": [
+            "object",
+            {
+              "corp": "string",
+              "dmz": "string",
+              "mgmt": "string",
+              "outside": "string"
+            }
+          ]
+        }
+      },
+      "root_module": {
+        "child_modules": [
+          {
+            "resources": [
+              {
+                "address": "module.fw_edge.data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_name": "registry.terraform.io/bpg/proxmox",
+                "schema_version": 0,
+                "values": {
+                  "filter": [
+                    {
+                      "name": "template",
+                      "regex": false,
+                      "values": [
+                        "true"
+                      ]
+                    },
+                    {
+                      "name": "name",
+                      "regex": false,
+                      "values": [
+                        "tinycore-linux-template"
+                      ]
+                    }
+                  ],
+                  "id": "a864a61d-c961-4f67-8e6a-2a3e06ed35b8",
+                  "node_name": null,
+                  "tags": null,
+                  "vms": [
+                    {
+                      "name": "tinycore-linux-template",
+                      "node_name": "pve",
+                      "status": "stopped",
+                      "tags": [],
+                      "template": true,
+                      "vm_id": 106
+                    }
+                  ]
+                },
+                "sensitive_values": {
+                  "filter": [
+                    {
+                      "values": [
+                        false
+                      ]
+                    },
+                    {
+                      "values": [
+                        false
+                      ]
+                    }
+                  ],
+                  "vms": [
+                    {
+                      "tags": []
+                    }
+                  ]
+                }
+              }
+            ],
+            "address": "module.fw_edge"
+          },
+          {
+            "resources": [
+              {
+                "address": "module.host[\"dc\"].data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_name": "registry.terraform.io/bpg/proxmox",
+                "schema_version": 0,
+                "values": {
+                  "filter": [
+                    {
+                      "name": "template",
+                      "regex": false,
+                      "values": [
+                        "true"
+                      ]
+                    },
+                    {
+                      "name": "name",
+                      "regex": false,
+                      "values": [
+                        "alpine-linux-template"
+                      ]
+                    }
+                  ],
+                  "id": "099dc2cd-83b3-4724-98a5-32e2beaa9a22",
+                  "node_name": null,
+                  "tags": null,
+                  "vms": [
+                    {
+                      "name": "alpine-linux-template",
+                      "node_name": "pve",
+                      "status": "stopped",
+                      "tags": [],
+                      "template": true,
+                      "vm_id": 105
+                    }
+                  ]
+                },
+                "sensitive_values": {
+                  "filter": [
+                    {
+                      "values": [
+                        false
+                      ]
+                    },
+                    {
+                      "values": [
+                        false
+                      ]
+                    }
+                  ],
+                  "vms": [
+                    {
+                      "tags": []
+                    }
+                  ]
+                }
+              }
+            ],
+            "address": "module.host[\"dc\"]"
+          },
+          {
+            "resources": [
+              {
+                "address": "module.host[\"files\"].data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_name": "registry.terraform.io/bpg/proxmox",
+                "schema_version": 0,
+                "values": {
+                  "filter": [
+                    {
+                      "name": "template",
+                      "regex": false,
+                      "values": [
+                        "true"
+                      ]
+                    },
+                    {
+                      "name": "name",
+                      "regex": false,
+                      "values": [
+                        "alpine-linux-template"
+                      ]
+                    }
+                  ],
+                  "id": "69c8f63a-4a8d-4592-990e-48e08c2f4a25",
+                  "node_name": null,
+                  "tags": null,
+                  "vms": [
+                    {
+                      "name": "alpine-linux-template",
+                      "node_name": "pve",
+                      "status": "stopped",
+                      "tags": [],
+                      "template": true,
+                      "vm_id": 105
+                    }
+                  ]
+                },
+                "sensitive_values": {
+                  "filter": [
+                    {
+                      "values": [
+                        false
+                      ]
+                    },
+                    {
+                      "values": [
+                        false
+                      ]
+                    }
+                  ],
+                  "vms": [
+                    {
+                      "tags": []
+                    }
+                  ]
+                }
+              }
+            ],
+            "address": "module.host[\"files\"]"
+          },
+          {
+            "resources": [
+              {
+                "address": "module.host[\"kali-red\"].data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_name": "registry.terraform.io/bpg/proxmox",
+                "schema_version": 0,
+                "values": {
+                  "filter": [
+                    {
+                      "name": "template",
+                      "regex": false,
+                      "values": [
+                        "true"
+                      ]
+                    },
+                    {
+                      "name": "name",
+                      "regex": false,
+                      "values": [
+                        "alpine-linux-template"
+                      ]
+                    }
+                  ],
+                  "id": "5613d940-c51b-4997-ab6f-6863d681357c",
+                  "node_name": null,
+                  "tags": null,
+                  "vms": [
+                    {
+                      "name": "alpine-linux-template",
+                      "node_name": "pve",
+                      "status": "stopped",
+                      "tags": [],
+                      "template": true,
+                      "vm_id": 105
+                    }
+                  ]
+                },
+                "sensitive_values": {
+                  "filter": [
+                    {
+                      "values": [
+                        false
+                      ]
+                    },
+                    {
+                      "values": [
+                        false
+                      ]
+                    }
+                  ],
+                  "vms": [
+                    {
+                      "tags": []
+                    }
+                  ]
+                }
+              }
+            ],
+            "address": "module.host[\"kali-red\"]"
+          },
+          {
+            "resources": [
+              {
+                "address": "module.host[\"mail\"].data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_name": "registry.terraform.io/bpg/proxmox",
+                "schema_version": 0,
+                "values": {
+                  "filter": [
+                    {
+                      "name": "template",
+                      "regex": false,
+                      "values": [
+                        "true"
+                      ]
+                    },
+                    {
+                      "name": "name",
+                      "regex": false,
+                      "values": [
+                        "alpine-linux-template"
+                      ]
+                    }
+                  ],
+                  "id": "edc1bb47-9f86-4616-9ea6-89f96fdaf6fb",
+                  "node_name": null,
+                  "tags": null,
+                  "vms": [
+                    {
+                      "name": "alpine-linux-template",
+                      "node_name": "pve",
+                      "status": "stopped",
+                      "tags": [],
+                      "template": true,
+                      "vm_id": 105
+                    }
+                  ]
+                },
+                "sensitive_values": {
+                  "filter": [
+                    {
+                      "values": [
+                        false
+                      ]
+                    },
+                    {
+                      "values": [
+                        false
+                      ]
+                    }
+                  ],
+                  "vms": [
+                    {
+                      "tags": []
+                    }
+                  ]
+                }
+              }
+            ],
+            "address": "module.host[\"mail\"]"
+          },
+          {
+            "resources": [
+              {
+                "address": "module.host[\"siem\"].data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_name": "registry.terraform.io/bpg/proxmox",
+                "schema_version": 0,
+                "values": {
+                  "filter": [
+                    {
+                      "name": "template",
+                      "regex": false,
+                      "values": [
+                        "true"
+                      ]
+                    },
+                    {
+                      "name": "name",
+                      "regex": false,
+                      "values": [
+                        "alpine-linux-template"
+                      ]
+                    }
+                  ],
+                  "id": "ff70a430-c7e3-40bf-89d4-06e22f3a9a0c",
+                  "node_name": null,
+                  "tags": null,
+                  "vms": [
+                    {
+                      "name": "alpine-linux-template",
+                      "node_name": "pve",
+                      "status": "stopped",
+                      "tags": [],
+                      "template": true,
+                      "vm_id": 105
+                    }
+                  ]
+                },
+                "sensitive_values": {
+                  "filter": [
+                    {
+                      "values": [
+                        false
+                      ]
+                    },
+                    {
+                      "values": [
+                        false
+                      ]
+                    }
+                  ],
+                  "vms": [
+                    {
+                      "tags": []
+                    }
+                  ]
+                }
+              }
+            ],
+            "address": "module.host[\"siem\"]"
+          },
+          {
+            "resources": [
+              {
+                "address": "module.host[\"web\"].data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_name": "registry.terraform.io/bpg/proxmox",
+                "schema_version": 0,
+                "values": {
+                  "filter": [
+                    {
+                      "name": "template",
+                      "regex": false,
+                      "values": [
+                        "true"
+                      ]
+                    },
+                    {
+                      "name": "name",
+                      "regex": false,
+                      "values": [
+                        "alpine-linux-template"
+                      ]
+                    }
+                  ],
+                  "id": "67961639-543a-40c3-8a2d-86f09b1a08f5",
+                  "node_name": null,
+                  "tags": null,
+                  "vms": [
+                    {
+                      "name": "alpine-linux-template",
+                      "node_name": "pve",
+                      "status": "stopped",
+                      "tags": [],
+                      "template": true,
+                      "vm_id": 105
+                    }
+                  ]
+                },
+                "sensitive_values": {
+                  "filter": [
+                    {
+                      "values": [
+                        false
+                      ]
+                    },
+                    {
+                      "values": [
+                        false
+                      ]
+                    }
+                  ],
+                  "vms": [
+                    {
+                      "tags": []
+                    }
+                  ]
+                }
+              }
+            ],
+            "address": "module.host[\"web\"]"
+          },
+          {
+            "resources": [
+              {
+                "address": "module.host[\"ws-1\"].data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_name": "registry.terraform.io/bpg/proxmox",
+                "schema_version": 0,
+                "values": {
+                  "filter": [
+                    {
+                      "name": "template",
+                      "regex": false,
+                      "values": [
+                        "true"
+                      ]
+                    },
+                    {
+                      "name": "name",
+                      "regex": false,
+                      "values": [
+                        "tinycore-linux-template"
+                      ]
+                    }
+                  ],
+                  "id": "f9a37e0b-796c-4901-b853-8e4c16a10353",
+                  "node_name": null,
+                  "tags": null,
+                  "vms": [
+                    {
+                      "name": "tinycore-linux-template",
+                      "node_name": "pve",
+                      "status": "stopped",
+                      "tags": [],
+                      "template": true,
+                      "vm_id": 106
+                    }
+                  ]
+                },
+                "sensitive_values": {
+                  "filter": [
+                    {
+                      "values": [
+                        false
+                      ]
+                    },
+                    {
+                      "values": [
+                        false
+                      ]
+                    }
+                  ],
+                  "vms": [
+                    {
+                      "tags": []
+                    }
+                  ]
+                }
+              }
+            ],
+            "address": "module.host[\"ws-1\"]"
+          },
+          {
+            "resources": [
+              {
+                "address": "module.host[\"ws-2\"].data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_name": "registry.terraform.io/bpg/proxmox",
+                "schema_version": 0,
+                "values": {
+                  "filter": [
+                    {
+                      "name": "template",
+                      "regex": false,
+                      "values": [
+                        "true"
+                      ]
+                    },
+                    {
+                      "name": "name",
+                      "regex": false,
+                      "values": [
+                        "tinycore-linux-template"
+                      ]
+                    }
+                  ],
+                  "id": "c154c386-8735-4492-83c4-2550c4b66eb9",
+                  "node_name": null,
+                  "tags": null,
+                  "vms": [
+                    {
+                      "name": "tinycore-linux-template",
+                      "node_name": "pve",
+                      "status": "stopped",
+                      "tags": [],
+                      "template": true,
+                      "vm_id": 106
+                    }
+                  ]
+                },
+                "sensitive_values": {
+                  "filter": [
+                    {
+                      "values": [
+                        false
+                      ]
+                    },
+                    {
+                      "values": [
+                        false
+                      ]
+                    }
+                  ],
+                  "vms": [
+                    {
+                      "tags": []
+                    }
+                  ]
+                }
+              }
+            ],
+            "address": "module.host[\"ws-2\"]"
+          }
+        ]
+      }
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "proxmox": {
+        "name": "proxmox",
+        "full_name": "registry.terraform.io/bpg/proxmox",
+        "version_constraint": "0.106.0",
+        "expressions": {
+          "api_token": {
+            "references": [
+              "var.proxmox_api_token"
+            ]
+          },
+          "endpoint": {
+            "references": [
+              "var.proxmox_endpoint"
+            ]
+          },
+          "insecure": {
+            "constant_value": true
+          }
+        }
+      }
+    },
+    "root_module": {
+      "outputs": {
+        "networks": {
+          "expression": {
+            "references": [
+              "module.network.network_names",
+              "module.network"
+            ]
+          }
+        },
+        "vms": {
+          "expression": {
+            "references": [
+              "module.fw_edge.name",
+              "module.fw_edge",
+              "module.fw_edge.id",
+              "module.fw_edge",
+              "module.host"
+            ]
+          }
+        }
+      },
+      "module_calls": {
+        "fw_edge": {
+          "source": "git::https://git.example.com/modules.git//proxmox-router-gateway",
+          "expressions": {
+            "lan_network_names": {
+              "references": [
+                "module.network.network_names",
+                "module.network"
+              ]
+            },
+            "name": {
+              "references": [
+                "var.name"
+              ]
+            },
+            "network_name": {
+              "references": [
+                "module.network.network_names[\"outside\"]",
+                "module.network.network_names",
+                "module.network"
+              ]
+            },
+            "node_name": {
+              "references": [
+                "var.node_name"
+              ]
+            },
+            "template_name": {
+              "constant_value": "tinycore-linux-template"
+            }
+          },
+          "module": {
+            "outputs": {
+              "id": {
+                "expression": {
+                  "constant_value": "${proxmox_virtual_environment_vm.vm.vm_id}",
+                  "references": [
+                    "proxmox_virtual_environment_vm.vm.vm_id",
+                    "proxmox_virtual_environment_vm.vm"
+                  ]
+                },
+                "description": "Proxmox VM ID of the created virtual machine."
+              },
+              "ip_address": {
+                "expression": {
+                  "constant_value": "${local.ip_address}",
+                  "references": [
+                    "local.ip_address"
+                  ]
+                },
+                "description": "First non-loopback IPv4 address reported by the QEMU guest agent. Null when the guest never reported one, which is always the case if wait_for_guest_ip_timeout is 0."
+              },
+              "ip_addresses": {
+                "expression": {
+                  "constant_value": "${local.ip_addresses}",
+                  "references": [
+                    "local.ip_addresses"
+                  ]
+                },
+                "description": "All non-loopback IPv4 addresses reported by the QEMU guest agent for the created virtual machine."
+              },
+              "lan_network_names": {
+                "expression": {
+                  "constant_value": "${var.lan_network_names}",
+                  "references": [
+                    "var.lan_network_names"
+                  ]
+                },
+                "description": "Names of the bridges attached to the LAN adapters, in adapter order."
+              },
+              "name": {
+                "expression": {
+                  "constant_value": "${proxmox_virtual_environment_vm.vm.name}",
+                  "references": [
+                    "proxmox_virtual_environment_vm.vm.name",
+                    "proxmox_virtual_environment_vm.vm"
+                  ]
+                },
+                "description": "Name of the created virtual machine."
+              },
+              "node_name": {
+                "expression": {
+                  "constant_value": "${proxmox_virtual_environment_vm.vm.node_name}",
+                  "references": [
+                    "proxmox_virtual_environment_vm.vm.node_name",
+                    "proxmox_virtual_environment_vm.vm"
+                  ]
+                },
+                "description": "Proxmox node the created virtual machine runs on."
+              },
+              "uplink_network_name": {
+                "expression": {
+                  "constant_value": "${var.network_name}",
+                  "references": [
+                    "var.network_name"
+                  ]
+                },
+                "description": "Name of the bridge attached to the first (uplink) adapter."
+              }
+            },
+            "resources": [
+              {
+                "address": "proxmox_virtual_environment_vm.vm",
+                "mode": "managed",
+                "type": "proxmox_virtual_environment_vm",
+                "name": "vm",
+                "provider_config_key": "proxmox",
+                "expressions": {
+                  "agent": [
+                    {
+                      "enabled": {
+                        "references": [
+                          "local.agent"
+                        ]
+                      },
+                      "timeout": {
+                        "references": [
+                          "var.wait_for_guest_ip_timeout"
+                        ]
+                      }
+                    }
+                  ],
+                  "clone": [
+                    {
+                      "datastore_id": {
+                        "references": [
+                          "local.datastore_id"
+                        ]
+                      },
+                      "full": {
+                        "constant_value": true
+                      },
+                      "node_name": {
+                        "references": [
+                          "local.template.node_name",
+                          "local.template"
+                        ]
+                      },
+                      "vm_id": {
+                        "references": [
+                          "local.template.vm_id",
+                          "local.template"
+                        ]
+                      }
+                    }
+                  ],
+                  "cpu": [
+                    {
+                      "cores": {
+                        "references": [
+                          "var.num_cpus"
+                        ]
+                      }
+                    }
+                  ],
+                  "description": {
+                    "references": [
+                      "var.annotation"
+                    ]
+                  },
+                  "memory": [
+                    {
+                      "dedicated": {
+                        "references": [
+                          "var.memory_mb"
+                        ]
+                      }
+                    }
+                  ],
+                  "name": {
+                    "references": [
+                      "var.name"
+                    ]
+                  },
+                  "network_device": {
+                    "references": [
+                      "var.network_name"
+                    ]
+                  },
+                  "node_name": {
+                    "references": [
+                      "var.node_name"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_config_key": "proxmox",
+                "expressions": {
+                  "filter": [
+                    {
+                      "name": {
+                        "constant_value": "template"
+                      },
+                      "values": {
+                        "constant_value": [
+                          "true"
+                        ]
+                      }
+                    },
+                    {
+                      "name": {
+                        "constant_value": "name"
+                      },
+                      "values": {
+                        "references": [
+                          "var.template_name"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "schema_version": 0
+              }
+            ],
+            "variables": {
+              "annotation": {
+                "default": "",
+                "description": "Free-form notes recorded on the VM description."
+              },
+              "datastore": {
+                "default": "",
+                "description": "ID of the Proxmox storage that will hold the cloned disks. Leave empty to use the template's storage."
+              },
+              "lan_network_names": {
+                "description": "Names of the inside/LAN bridges (vnet IDs). One additional network adapter is created per entry, in list order, after the uplink adapter."
+              },
+              "memory_mb": {
+                "default": 512,
+                "description": "Guest memory size in megabytes."
+              },
+              "name": {
+                "description": "Name of the virtual machine as it will appear in Proxmox. Must be a valid DNS name."
+              },
+              "network_name": {
+                "description": "Name of the bridge (vnet ID) that the first network adapter (the uplink or WAN side) attaches to."
+              },
+              "node_name": {
+                "description": "Name of the Proxmox node the virtual machine runs on."
+              },
+              "num_cpus": {
+                "default": 1,
+                "description": "Number of virtual CPUs."
+              },
+              "template_name": {
+                "description": "Name of the existing Proxmox VM template for the router appliance. It must be marked as a template and the name must be unique in the cluster."
+              },
+              "wait_for_guest_ip_timeout": {
+                "default": 0,
+                "description": "Minutes to wait for the QEMU guest agent to report a network address. Set to 0 to disable the agent and the wait, which is required for a template without qemu-guest-agent installed."
+              }
+            }
+          }
+        },
+        "host": {
+          "source": "git::https://git.example.com/modules.git//proxmox-machine-from-template",
+          "expressions": {
+            "memory_mb": {
+              "constant_value": 512
+            },
+            "name": {
+              "references": [
+                "each.key",
+                "var.name"
+              ]
+            },
+            "network_name": {
+              "references": [
+                "module.network.network_names",
+                "module.network",
+                "each.value.segment",
+                "each.value"
+              ]
+            },
+            "node_name": {
+              "references": [
+                "var.node_name"
+              ]
+            },
+            "template_name": {
+              "references": [
+                "each.value.template",
+                "each.value"
+              ]
+            }
+          },
+          "for_each_expression": {
+            "references": [
+              "local.hosts"
+            ]
+          },
+          "module": {
+            "outputs": {
+              "id": {
+                "expression": {
+                  "constant_value": "${proxmox_virtual_environment_vm.vm.vm_id}",
+                  "references": [
+                    "proxmox_virtual_environment_vm.vm.vm_id",
+                    "proxmox_virtual_environment_vm.vm"
+                  ]
+                },
+                "description": "Proxmox VM ID of the created virtual machine."
+              },
+              "ip_address": {
+                "expression": {
+                  "constant_value": "${local.ip_address}",
+                  "references": [
+                    "local.ip_address"
+                  ]
+                },
+                "description": "First non-loopback IPv4 address reported by the QEMU guest agent. Null when the guest never reported one, which is always the case if wait_for_guest_ip_timeout is 0."
+              },
+              "ip_addresses": {
+                "expression": {
+                  "constant_value": "${local.ip_addresses}",
+                  "references": [
+                    "local.ip_addresses"
+                  ]
+                },
+                "description": "All non-loopback IPv4 addresses reported by the QEMU guest agent for the created virtual machine."
+              },
+              "name": {
+                "expression": {
+                  "constant_value": "${proxmox_virtual_environment_vm.vm.name}",
+                  "references": [
+                    "proxmox_virtual_environment_vm.vm.name",
+                    "proxmox_virtual_environment_vm.vm"
+                  ]
+                },
+                "description": "Name of the created virtual machine."
+              },
+              "node_name": {
+                "expression": {
+                  "constant_value": "${proxmox_virtual_environment_vm.vm.node_name}",
+                  "references": [
+                    "proxmox_virtual_environment_vm.vm.node_name",
+                    "proxmox_virtual_environment_vm.vm"
+                  ]
+                },
+                "description": "Proxmox node the created virtual machine runs on."
+              }
+            },
+            "resources": [
+              {
+                "address": "proxmox_virtual_environment_vm.vm",
+                "mode": "managed",
+                "type": "proxmox_virtual_environment_vm",
+                "name": "vm",
+                "provider_config_key": "proxmox",
+                "expressions": {
+                  "agent": [
+                    {
+                      "enabled": {
+                        "references": [
+                          "local.agent"
+                        ]
+                      },
+                      "timeout": {
+                        "references": [
+                          "var.wait_for_guest_ip_timeout"
+                        ]
+                      }
+                    }
+                  ],
+                  "clone": [
+                    {
+                      "datastore_id": {
+                        "references": [
+                          "local.datastore_id"
+                        ]
+                      },
+                      "full": {
+                        "constant_value": true
+                      },
+                      "node_name": {
+                        "references": [
+                          "local.template.node_name",
+                          "local.template"
+                        ]
+                      },
+                      "vm_id": {
+                        "references": [
+                          "local.template.vm_id",
+                          "local.template"
+                        ]
+                      }
+                    }
+                  ],
+                  "cpu": [
+                    {
+                      "cores": {
+                        "references": [
+                          "var.num_cpus"
+                        ]
+                      }
+                    }
+                  ],
+                  "description": {
+                    "references": [
+                      "var.annotation"
+                    ]
+                  },
+                  "memory": [
+                    {
+                      "dedicated": {
+                        "references": [
+                          "var.memory_mb"
+                        ]
+                      }
+                    }
+                  ],
+                  "name": {
+                    "references": [
+                      "var.name"
+                    ]
+                  },
+                  "network_device": {
+                    "references": [
+                      "var.network_name"
+                    ]
+                  },
+                  "node_name": {
+                    "references": [
+                      "var.node_name"
+                    ]
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "data.proxmox_virtual_environment_vms.template",
+                "mode": "data",
+                "type": "proxmox_virtual_environment_vms",
+                "name": "template",
+                "provider_config_key": "proxmox",
+                "expressions": {
+                  "filter": [
+                    {
+                      "name": {
+                        "constant_value": "template"
+                      },
+                      "values": {
+                        "constant_value": [
+                          "true"
+                        ]
+                      }
+                    },
+                    {
+                      "name": {
+                        "constant_value": "name"
+                      },
+                      "values": {
+                        "references": [
+                          "var.template_name"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "schema_version": 0
+              }
+            ],
+            "variables": {
+              "annotation": {
+                "default": "",
+                "description": "Free-form notes recorded on the VM description."
+              },
+              "datastore": {
+                "default": "",
+                "description": "ID of the Proxmox storage that will hold the cloned disks. Leave empty to use the template's storage."
+              },
+              "memory_mb": {
+                "default": 1024,
+                "description": "Guest memory size in megabytes."
+              },
+              "name": {
+                "description": "Name of the virtual machine as it will appear in Proxmox. Must be a valid DNS name."
+              },
+              "network_name": {
+                "description": "Name of the bridge (vnet ID) that the network adapter attaches to."
+              },
+              "node_name": {
+                "description": "Name of the Proxmox node the virtual machine runs on."
+              },
+              "num_cpus": {
+                "default": 1,
+                "description": "Number of virtual CPUs."
+              },
+              "template_name": {
+                "description": "Name of the existing Proxmox VM template to clone. It must be marked as a template and the name must be unique in the cluster."
+              },
+              "wait_for_guest_ip_timeout": {
+                "default": 0,
+                "description": "Minutes to wait for the QEMU guest agent to report a network address. Set to 0 to disable the agent and the wait, which is required for a template without qemu-guest-agent installed."
+              }
+            }
+          }
+        },
+        "network": {
+          "source": "git::https://git.example.com/modules.git//proxmox-network",
+          "expressions": {
+            "name": {
+              "references": [
+                "var.name"
+              ]
+            },
+            "sdn_zone": {
+              "references": [
+                "var.sdn_zone"
+              ]
+            },
+            "segment_names": {
+              "constant_value": [
+                "outside",
+                "dmz",
+                "corp",
+                "mgmt"
+              ]
+            }
+          },
+          "module": {
+            "outputs": {
+              "network_names": {
+                "expression": {
+                  "constant_value": "${local.network_names}",
+                  "references": [
+                    "local.network_names"
+                  ]
+                },
+                "depends_on": [
+                  "proxmox_sdn_applier.apply"
+                ],
+                "description": "Map of segment name to bridge name (vnet ID). Pass an entry to a compute module's network_name input. Available only after the SDN apply."
+              },
+              "sdn_zone": {
+                "expression": {
+                  "constant_value": "${var.sdn_zone}",
+                  "references": [
+                    "var.sdn_zone"
+                  ]
+                },
+                "description": "SDN zone the segments were created in."
+              },
+              "segment_names": {
+                "expression": {
+                  "constant_value": "${var.segment_names}",
+                  "references": [
+                    "var.segment_names"
+                  ]
+                },
+                "description": "Names of the created segments, in the order given."
+              }
+            },
+            "resources": [
+              {
+                "address": "proxmox_sdn_applier.apply",
+                "mode": "managed",
+                "type": "proxmox_sdn_applier",
+                "name": "apply",
+                "provider_config_key": "proxmox",
+                "expressions": {
+                  "on_destroy": {
+                    "constant_value": false
+                  }
+                },
+                "schema_version": 0,
+                "depends_on": [
+                  "proxmox_sdn_vnet.segment"
+                ]
+              },
+              {
+                "address": "proxmox_sdn_applier.finalizer",
+                "mode": "managed",
+                "type": "proxmox_sdn_applier",
+                "name": "finalizer",
+                "provider_config_key": "proxmox",
+                "expressions": {
+                  "on_create": {
+                    "constant_value": false
+                  }
+                },
+                "schema_version": 0
+              },
+              {
+                "address": "proxmox_sdn_vnet.segment",
+                "mode": "managed",
+                "type": "proxmox_sdn_vnet",
+                "name": "segment",
+                "provider_config_key": "proxmox",
+                "expressions": {
+                  "alias": {
+                    "references": [
+                      "var.name",
+                      "each.key"
+                    ]
+                  },
+                  "id": {
+                    "references": [
+                      "local.vnet_ids",
+                      "each.key"
+                    ]
+                  },
+                  "zone": {
+                    "references": [
+                      "var.sdn_zone"
+                    ]
+                  }
+                },
+                "schema_version": 0,
+                "for_each_expression": {
+                  "references": [
+                    "var.segment_names"
+                  ]
+                },
+                "depends_on": [
+                  "proxmox_sdn_applier.finalizer"
+                ]
+              }
+            ],
+            "variables": {
+              "name": {
+                "description": "Name of this exercise network. Prefixes every vnet alias and seeds the vnet IDs, so it must be unique on the cluster."
+              },
+              "sdn_zone": {
+                "description": "ID of the existing Proxmox SDN zone that the segments are created in."
+              },
+              "segment_names": {
+                "description": "Names of the isolated layer 2 segments to create, one vnet each."
+              }
+            }
+          }
+        }
+      },
+      "variables": {
+        "name": {
+          "default": "demo"
+        },
+        "node_name": {
+          "default": "pve"
+        },
+        "proxmox_api_token": {
+          "sensitive": true
+        },
+        "proxmox_endpoint": {},
+        "sdn_zone": {
+          "default": "crucible"
+        }
+      }
+    }
+  },
+  "relevant_attributes": [
+    {
+      "resource": "module.host[\"dc\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.host[\"kali-red\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.host[\"mail\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.host[\"kali-red\"].data.proxmox_virtual_environment_vms.template",
+      "attribute": [
+        "vms"
+      ]
+    },
+    {
+      "resource": "module.host.proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-1\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.fw_edge.proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.host[\"files\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.host[\"files\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-2\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.fw_edge.proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.host[\"dc\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.host[\"web\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.fw_edge.proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.host[\"siem\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-1\"].data.proxmox_virtual_environment_vms.template",
+      "attribute": [
+        "vms"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-1\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.host[\"siem\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.host[\"files\"].data.proxmox_virtual_environment_vms.template",
+      "attribute": [
+        "vms"
+      ]
+    },
+    {
+      "resource": "module.host[\"mail\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-1\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-2\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.host[\"files\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-2\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-1\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.host[\"dc\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-2\"].data.proxmox_virtual_environment_vms.template",
+      "attribute": [
+        "vms"
+      ]
+    },
+    {
+      "resource": "module.host.proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.host[\"kali-red\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.host[\"kali-red\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.host[\"web\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.host[\"dc\"].data.proxmox_virtual_environment_vms.template",
+      "attribute": [
+        "vms"
+      ]
+    },
+    {
+      "resource": "module.host[\"siem\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.host[\"ws-2\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.fw_edge.proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.host.proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.host[\"dc\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.host[\"web\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.host[\"mail\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "vm_id"
+      ]
+    },
+    {
+      "resource": "module.fw_edge.data.proxmox_virtual_environment_vms.template",
+      "attribute": [
+        "vms"
+      ]
+    },
+    {
+      "resource": "module.host[\"web\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.network.proxmox_sdn_vnet.segment",
+      "attribute": []
+    },
+    {
+      "resource": "module.host[\"files\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.host.proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "module.host[\"mail\"].data.proxmox_virtual_environment_vms.template",
+      "attribute": [
+        "vms"
+      ]
+    },
+    {
+      "resource": "module.host[\"mail\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.host[\"siem\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "node_name"
+      ]
+    },
+    {
+      "resource": "module.host[\"kali-red\"].proxmox_virtual_environment_vm.vm",
+      "attribute": [
+        "ipv4_addresses"
+      ]
+    },
+    {
+      "resource": "module.host[\"siem\"].data.proxmox_virtual_environment_vms.template",
+      "attribute": [
+        "vms"
+      ]
+    },
+    {
+      "resource": "module.host[\"web\"].data.proxmox_virtual_environment_vms.template",
+      "attribute": [
+        "vms"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "address": {
+        "kind": "resource",
+        "mode": "managed",
+        "module": "module.fw_edge",
+        "name": "vm",
+        "to_display": "module.fw_edge.proxmox_virtual_environment_vm.vm",
+        "type": "proxmox_virtual_environment_vm"
+      },
+      "status": "pass",
+      "instances": [
+        {
+          "address": {
+            "module": "module.fw_edge",
+            "to_display": "module.fw_edge.proxmox_virtual_environment_vm.vm"
+          },
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "address": {
+        "kind": "resource",
+        "mode": "managed",
+        "module": "module.host",
+        "name": "vm",
+        "to_display": "module.host.proxmox_virtual_environment_vm.vm",
+        "type": "proxmox_virtual_environment_vm"
+      },
+      "status": "pass",
+      "instances": [
+        {
+          "address": {
+            "module": "module.host[\"dc\"]",
+            "to_display": "module.host[\"dc\"].proxmox_virtual_environment_vm.vm"
+          },
+          "status": "pass"
+        },
+        {
+          "address": {
+            "module": "module.host[\"files\"]",
+            "to_display": "module.host[\"files\"].proxmox_virtual_environment_vm.vm"
+          },
+          "status": "pass"
+        },
+        {
+          "address": {
+            "module": "module.host[\"kali-red\"]",
+            "to_display": "module.host[\"kali-red\"].proxmox_virtual_environment_vm.vm"
+          },
+          "status": "pass"
+        },
+        {
+          "address": {
+            "module": "module.host[\"mail\"]",
+            "to_display": "module.host[\"mail\"].proxmox_virtual_environment_vm.vm"
+          },
+          "status": "pass"
+        },
+        {
+          "address": {
+            "module": "module.host[\"siem\"]",
+            "to_display": "module.host[\"siem\"].proxmox_virtual_environment_vm.vm"
+          },
+          "status": "pass"
+        },
+        {
+          "address": {
+            "module": "module.host[\"web\"]",
+            "to_display": "module.host[\"web\"].proxmox_virtual_environment_vm.vm"
+          },
+          "status": "pass"
+        },
+        {
+          "address": {
+            "module": "module.host[\"ws-1\"]",
+            "to_display": "module.host[\"ws-1\"].proxmox_virtual_environment_vm.vm"
+          },
+          "status": "pass"
+        },
+        {
+          "address": {
+            "module": "module.host[\"ws-2\"]",
+            "to_display": "module.host[\"ws-2\"].proxmox_virtual_environment_vm.vm"
+          },
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-10-13T12:40:16Z",
+  "applyable": true,
+  "complete": true,
+  "errored": false
+}
