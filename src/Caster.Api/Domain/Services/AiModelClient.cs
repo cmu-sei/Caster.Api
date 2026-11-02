@@ -125,16 +125,33 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             using var client = new AmazonBedrockRuntimeClient(config);
 
             JsonElement response;
-            try
+            // one ask, and one more for each newer part of the request Bedrock refuses
+            for (var attempt = 1; ; attempt++)
             {
-                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
-            }
-            catch (AmazonBedrockRuntimeException ex) when (RefusesEffort(ex, body))
-            {
-                // an older model or Bedrock deployment refuses the effort setting: the model then thinks at its own default
-                _logger.LogInformation("{Model} refused output_config; asking without it: {Message}", model.ModelId, ex.Message);
-                body.Remove("output_config");
-                response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
+                try
+                {
+                    response = await InvokeAsync(client, model.ModelId, body, toolName, ct);
+                    break;
+                }
+                catch (AmazonBedrockRuntimeException ex) when (attempt < 3 && RefusesStrict(ex, body))
+                {
+                    // strict mode compiles the schema to a grammar, which Bedrock refuses when it is too large
+                    _logger.LogInformation("{Model} refused strict tool use; asking without it: {Message}", model.ModelId, ex.Message);
+                    DropStrict(body, inputSchema);
+                }
+                catch (AmazonBedrockRuntimeException ex) when (attempt < 3 && RefusesEffort(ex, body))
+                {
+                    // an older model or Bedrock deployment refuses the effort setting: the model then thinks at its own default
+                    _logger.LogInformation("{Model} refused output_config; asking without it: {Message}", model.ModelId, ex.Message);
+                    body.Remove("output_config");
+                }
+                catch (Exception ex) when (attempt < 3 && IsStrict(body) && ex is not OperationCanceledException && ex is not InvalidOperationException)
+                {
+                    // the stream failed while the answer was constrained to its schema, which a schema too large for strict mode
+                    // can do too
+                    _logger.LogWarning(ex, "The {Tool} answer from {Model} failed with strict tool use; asking again without it", toolName, model.ModelId);
+                    DropStrict(body, inputSchema);
+                }
             }
             // a safety classifier can decline training content; one retry on another model, as the Claude API's own fallback does
             if (StopReason(response) == "refusal" && !string.IsNullOrWhiteSpace(model.FallbackModelId))
@@ -160,13 +177,19 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 {
                     ["name"] = toolName,
                     ["description"] = toolDescription,
-                    ["input_schema"] = inputSchema
+                    ["input_schema"] = inputSchema.DeepClone()
                 }),
                 // newer models reject a forced tool choice, so the system prompt asks for the tool instead
                 ["tool_choice"] = new JsonObject { ["type"] = "auto" }
             };
             if (!string.IsNullOrWhiteSpace(model.Effort))
                 body["output_config"] = new JsonObject { ["effort"] = model.Effort.Trim().ToLowerInvariant() };
+            // constrained to the schema, so the answer is JSON of its shape
+            if (model.Strict == true)
+            {
+                body["tools"][0]["input_schema"] = StrictSchema(inputSchema);
+                body["tools"][0]["strict"] = true;
+            }
             return body;
         }
 
@@ -174,6 +197,64 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
         public static bool RefusesEffort(AmazonBedrockRuntimeException ex, JsonObject body) =>
             body.ContainsKey("output_config")
             && (ex.Message.Contains("output_config", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("effort", StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Whether Bedrock refused strict tool use, e.g. "compiled grammar is too large", which is then dropped</summary>
+        public static bool RefusesStrict(AmazonBedrockRuntimeException ex, JsonObject body) =>
+            IsStrict(body)
+            && (ex.Message.Contains("strict", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("schema", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("grammar", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("too complex", StringComparison.OrdinalIgnoreCase));
+
+        private static bool IsStrict(JsonObject body) => body["tools"]?[0] is JsonObject tool && tool.ContainsKey("strict");
+
+        // back to the schema as the caller wrote it, unconstrained
+        private static void DropStrict(JsonObject body, JsonObject inputSchema)
+        {
+            var tool = body["tools"][0].AsObject();
+            tool.Remove("strict");
+            tool["input_schema"] = inputSchema.DeepClone();
+        }
+
+        // what strict tool use cannot constrain, which the caller checks once the answer is read
+        private static readonly string[] Unconstrained = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+            "minLength", "maxLength", "minItems", "maxItems", "uniqueItems", "pattern"];
+
+        /// <summary>
+        /// The schema as strict tool use takes it: every object closed to properties it does not name, and without the
+        /// numeric, length and array limits it does not support.
+        /// </summary>
+        public static JsonObject StrictSchema(JsonObject schema)
+        {
+            var copy = schema.DeepClone().AsObject();
+            Close(copy);
+            return copy;
+
+            static void Close(JsonNode node)
+            {
+                if (node is JsonArray array)
+                {
+                    foreach (var item in array)
+                        Close(item);
+                    return;
+                }
+                if (node is not JsonObject obj)
+                    return;
+                foreach (var name in Unconstrained)
+                    obj.Remove(name);
+                if (obj["type"] is JsonValue type && type.TryGetValue<string>(out var kind) && kind == "object")
+                    obj["additionalProperties"] = false;
+                foreach (var (key, child) in obj.ToList())
+                {
+                    // a properties map is keyed by the answer's field names, which are not keywords whatever they are called
+                    if (key == "properties" && child is JsonObject fields)
+                        foreach (var (_, field) in fields.ToList())
+                            Close(field);
+                    else
+                        Close(child);
+                }
+            }
+        }
 
         /// <summary>
         /// Models sometimes send a large array or object of a tool input as a string holding its JSON.
