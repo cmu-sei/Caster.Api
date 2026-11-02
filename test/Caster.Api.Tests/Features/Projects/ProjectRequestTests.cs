@@ -708,6 +708,21 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
         Assert.Empty(result.Warnings);
     }
 
+    [Fact]
+    public async Task Import_of_an_archive_with_a_disk_manifest_says_the_disk_list_is_best_effort()
+    {
+        var project = await SeedProjectWithAFile();
+        var archive = ArchiveHelper.Zip(
+            ($"{SeededDirectoryName}/{SeededFileName}", System.Text.Encoding.ASCII.GetBytes(ImportedContent)),
+            (ArchiveService.DiskManifestEntryName, System.Text.Encoding.UTF8.GetBytes("""{ "schemaVersion": 1, "disks": [ { "kind": "VmTemplate", "name": "ubuntu-2404", "referencedBy": ["main.tf"] } ] }""")));
+
+        var response = await RootClient.PostAsync(ImportUrl(project.Id), archive, Ct);
+
+        var result = await ReadAsync<ImportProjectResult>(response);
+        Assert.Equal("ubuntu-2404", Assert.Single(result.Disks).Name);
+        Assert.Contains(Caster.Api.Domain.Services.Inventory.DiskManifestMessages.BestEffort, result.Warnings);
+    }
+
     // ---- api/projects/projects/{id}/actions/export|import: the obsolete aliases ---------------------
 
     /// <summary>The double-prefixed export route stays as an alias of the corrected one.</summary>

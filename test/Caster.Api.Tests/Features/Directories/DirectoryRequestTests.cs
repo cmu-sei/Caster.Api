@@ -1067,6 +1067,21 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
     }
 
     [Fact]
+    public async Task Import_of_an_archive_with_a_disk_manifest_says_the_disk_list_is_best_effort()
+    {
+        var (_, directory) = await SeedDirectory();
+        var archive = ArchiveHelper.Zip(
+            (ImportedFileName, Encoding.ASCII.GetBytes(ImportedContent)),
+            (ArchiveService.DiskManifestEntryName, Encoding.UTF8.GetBytes("""{ "schemaVersion": 1, "disks": [ { "kind": "VmTemplate", "name": "ubuntu-2404", "referencedBy": ["main.tf"] } ] }""")));
+
+        var response = await RootClient.PostAsync(ImportUrl(directory), archive, Ct);
+
+        var result = await ReadAsync<ImportResultView>(response);
+        Assert.Equal("ubuntu-2404", Assert.Single(result.Disks).Name);
+        Assert.Contains(Caster.Api.Domain.Services.Inventory.DiskManifestMessages.BestEffort, result.Warnings);
+    }
+
+    [Fact]
     public async Task Import_by_a_caller_holding_EditProjects_adds_a_new_file()
     {
         var (_, directory) = await SeedDirectory();

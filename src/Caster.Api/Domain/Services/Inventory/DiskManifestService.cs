@@ -24,6 +24,15 @@ public interface IDiskManifestService
     List<ImportedDisk> Check(DiskManifest manifest);
 }
 
+public static class DiskManifestMessages
+{
+    /// <summary>
+    /// Every disk list says how it was made, since it can miss disks. Parsing a plan
+    /// or state for the real values is a follow-up.
+    /// </summary>
+    public const string BestEffort = "This disk list is best effort. It has the VM templates and ISOs named as plain strings in the Terraform files, not ones set through variables or modules, or computed at plan time.";
+}
+
 /// <summary>
 /// Caster does not know which attribute of which Terraform resource holds a disk, and
 /// providers disagree. It does know every template and ISO name the inventory discovered,
@@ -45,6 +54,8 @@ public partial class DiskManifestService(IInventoryService inventoryService) : I
 
         if (catalog.Count == 0)
             return manifest;
+
+        manifest.Warnings.Insert(0, DiskManifestMessages.BestEffort);
 
         var found = new Dictionary<(DiskKind, string, string), DiskManifestEntry>();
 
