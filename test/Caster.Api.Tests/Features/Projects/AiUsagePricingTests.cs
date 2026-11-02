@@ -12,6 +12,7 @@ using Caster.Api.Features.Projects;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Tests.Support;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Caster.Api.Tests.Features.Projects;
@@ -35,6 +36,35 @@ public class AiUsagePricingTests
         Assert.Same(Sonnet, GetAiUsage.PriceFor(prices, "us.anthropic.claude-sonnet-5-5"));
         Assert.Null(GetAiUsage.PriceFor(prices, "us.anthropic.claude-haiku-5-5"));
         Assert.Null(GetAiUsage.PriceFor(prices, null));
+    }
+
+    /// <summary>
+    /// A price set as the environment variables Ai__Prices__us_anthropic_claude_sonnet_5_5__InputPerMillion and
+    /// ..OutputPerMillion binds to that key, prices the Sonnet inference profile's calls, and leaves nothing unpriced.
+    /// </summary>
+    [Fact]
+    public void A_price_set_as_an_environment_variable_estimates_the_cost_of_its_model()
+    {
+        var options = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string>
+            {
+                ["Ai:Prices:us_anthropic_claude_sonnet_5_5:InputPerMillion"] = "3",
+                ["Ai:Prices:us_anthropic_claude_sonnet_5_5:OutputPerMillion"] = "15"
+            })
+            .Build()
+            .GetSection("Ai")
+            .Get<AiOptions>();
+        List<AiUsage> rows =
+        [
+            new() { Task = AiTasks.Terraform, Model = "us.anthropic.claude-sonnet-5-5", InputTokens = 45565, OutputTokens = 39573, DateCreated = DateTime.UtcNow }
+        ];
+
+        var summary = GetAiUsage.Summarize(Guid.NewGuid(), "p", rows, options.Prices);
+
+        // 45,565 in at $3 and 39,573 out at $15 a million: $0.136695 + $0.593595
+        Assert.Equal(730_290, summary.EstimatedCostMicros);
+        Assert.Equal(730_290, Assert.Single(summary.ByTask).EstimatedCostMicros);
+        Assert.Empty(summary.Unpriced);
     }
 
     /// <summary>The usage a Messages API answer reports is read whole, a refusal included.</summary>
