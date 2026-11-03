@@ -99,7 +99,7 @@ public class EnvironmentSecrets
     public string[] Patterns { get; set; } = [];
 
     /// <summary>
-    /// How runs execute. In Kubernetes job mode, set values are plain env vars in the Job spec,
+    /// How runs execute: fixed when the API starts (<c>Terraform:KubernetesJobs:Enabled</c>). In Kubernetes job mode, set values are plain env vars in the Job spec,
     /// and Terraform variable values also reach pod logs.
     /// </summary>
     public TerraformRunMode RunMode { get; set; }

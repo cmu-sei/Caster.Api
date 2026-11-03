@@ -8,7 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Services.EnvironmentSets;
+using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Features.Shared;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Options;
@@ -28,7 +30,8 @@ public class GetSecrets
         ICasterAuthorizationService authorizationService,
         CasterContext dbContext,
         ISecretSource secretSource,
-        TerraformOptions terraformOptions) : BaseHandler<Query, EnvironmentSecrets>
+        TerraformOptions terraformOptions,
+        ITerraformService terraformService) : BaseHandler<Query, EnvironmentSecrets>
     {
         public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize([SystemPermission.ViewEnvironmentSets], cancellationToken);
@@ -51,7 +54,9 @@ public class GetSecrets
                 Patterns = (terraformOptions.Secrets?.Patterns ?? [])
                     .Where(x => !string.IsNullOrWhiteSpace(x))
                     .ToArray(),
-                RunMode = terraformOptions.KubernetesJobs?.Enabled == true ? TerraformRunMode.Kubernetes : TerraformRunMode.Process,
+                // The mode is chosen once, at startup; report the one in use rather than
+                // the current setting, which a configuration reload can change.
+                RunMode = terraformService is KubernetesTerraformService ? TerraformRunMode.Kubernetes : TerraformRunMode.Process,
                 InheritAll = terraformOptions.EnvironmentVariables?.InheritAll == true
             };
         }
