@@ -973,6 +973,7 @@ namespace Caster.Api.Tests.Unit.Topology
             Assert.Equal(
                 "azurerm_subnet.dmz=10.2.1.4;azurerm_subnet.app=10.2.2.4;azurerm_subnet.app=fd00:2::4",
                 web["ip_addresses_by_network"]);
+            Assert.Equal("10.2.2.0/24,fd00:2::/64", PropertiesOf(topology, "azurerm_subnet.app")["cidr"]);
         }
 
         [Fact]
@@ -991,6 +992,58 @@ namespace Caster.Api.Tests.Unit.Topology
             // The public address is on no subnet.
             Assert.Equal("aws_subnet.dmz=10.1.0.5;aws_subnet.dmz=2600:1f18::5", web["ip_addresses_by_network"]);
             Assert.Equal("10.1.0.6", PropertiesOf(topology, "aws_instance.new")["ip_addresses"]);
+            Assert.Equal("10.1.0.0/24", PropertiesOf(topology, "aws_subnet.dmz")["cidr"]);
+        }
+
+        [Fact]
+        public void ProxmoxNetworks_TakeTheirSdnSubnetsOrTheBridgeAddress()
+        {
+            var configuration = """
+                {"resources":[{"address":"proxmox_virtual_environment_sdn_subnet.b","expressions":
+                  {"vnet":{"references":["proxmox_virtual_environment_sdn_vnet.b.id","proxmox_virtual_environment_sdn_vnet.b"]}}}]}
+                """;
+
+            var topology = PlanTopologyParser.Parse(Plan(
+                Change("proxmox_virtual_environment_sdn_vnet.a", """{"id":"a","zone":"z"}""") + "," +
+                Change("proxmox_virtual_environment_sdn_vnet.b", """{"zone":"z"}""") + "," +
+                Change("proxmox_virtual_environment_sdn_vnet.c", """{"id":"c","zone":"z"}""") + "," +
+                Change("proxmox_virtual_environment_sdn_subnet.a", """{"vnet":"a","cidr":"10.0.1.0/24","gateway":"10.0.1.1"}""") + "," +
+                Change("proxmox_virtual_environment_sdn_subnet.a6", """{"vnet":"a","cidr":"fd00:1::/64"}""") + "," +
+                // Its vnet's id is known only after apply: found by reference.
+                Change("proxmox_virtual_environment_sdn_subnet.b", """{"cidr":"10.0.2.0/24"}""") + "," +
+                Change("proxmox_virtual_environment_network_linux_bridge.lab", """{"name":"vmbr5","address":"10.5.0.1/24"}""") + "," +
+                Change("proxmox_network_linux_bridge.bare", """{"name":"vmbr6"}"""),
+                configuration));
+
+            Assert.Equal("10.0.1.0/24,fd00:1::/64", PropertiesOf(topology, "proxmox_virtual_environment_sdn_vnet.a")["cidr"]);
+            Assert.Equal("10.0.2.0/24", PropertiesOf(topology, "proxmox_virtual_environment_sdn_vnet.b")["cidr"]);
+            // A vnet with no subnet has no cidr.
+            Assert.False(PropertiesOf(topology, "proxmox_virtual_environment_sdn_vnet.c").ContainsKey("cidr"));
+            // The bridge's own address names its network.
+            Assert.Equal("10.5.0.0/24", PropertiesOf(topology, "proxmox_virtual_environment_network_linux_bridge.lab")["cidr"]);
+            Assert.False(PropertiesOf(topology, "proxmox_network_linux_bridge.bare").ContainsKey("cidr"));
+            // The subnets are not drawn.
+            Assert.DoesNotContain(topology.Nodes, x => x.Type == "proxmox_virtual_environment_sdn_subnet");
+        }
+
+        [Fact]
+        public void UnknownOrSensitiveCidr_IsLeftOut()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Change("aws_subnet.a", """{"id":"subnet-a"}""", unknown: """{"cidr_block":true}""") + "," +
+                Change("aws_subnet.b", """{"id":"subnet-b","cidr_block":"10.7.0.0/24"}""", sensitive: """{"cidr_block":true}""")));
+
+            Assert.False(PropertiesOf(topology, "aws_subnet.a").ContainsKey("cidr"));
+            Assert.False(PropertiesOf(topology, "aws_subnet.b").ContainsKey("cidr"));
+            Assert.DoesNotContain("10.7.0", System.Text.Json.JsonSerializer.Serialize(topology));
+        }
+
+        [Fact]
+        public void VspherePortGroups_HaveNoCidr()
+        {
+            Assert.All(
+                Vsphere().Nodes.Where(x => x.Kind == TopologyNodeKind.Network),
+                x => Assert.False(x.Properties.ContainsKey("cidr")));
         }
 
         [Fact]
@@ -1007,6 +1060,7 @@ namespace Caster.Api.Tests.Unit.Topology
                 Change("aws_subnet.dmz", """{"id":"subnet-1","cidr_block":"10.1.0.0/24"}""")), options);
 
             Assert.Empty(PropertiesOf(topology, "aws_instance.web"));
+            Assert.Empty(PropertiesOf(topology, "aws_subnet.dmz"));
         }
 
         #endregion

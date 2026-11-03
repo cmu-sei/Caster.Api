@@ -14,12 +14,13 @@ using Caster.Api.Infrastructure.Options;
 namespace Caster.Api.Domain.Services.Topology;
 
 /// <summary>
-/// The IP addresses on each machine, as
+/// The IP addresses on each machine and the CIDRs of each network, as
 /// <see cref="TopologyNode.Properties"/>:
 /// <list type="bullet">
 /// <item><c>ip_addresses</c>: comma-separated, in NIC order, IPv4 before IPv6, without prefix lengths.</item>
 /// <item><c>gateway</c>: the machine's first IPv4 gateway.</item>
 /// <item><c>ip_addresses_by_network</c>: <c>networkNodeId=address;...</c>, for the addresses whose NIC is drawn on a network.</item>
+/// <item><c>cidr</c>: on a network, comma-separated, IPv4 before IPv6.</item>
 /// </list>
 /// </summary>
 /// <remarks>
@@ -308,4 +309,112 @@ public static partial class PlanTopologyParser
 
     #endregion
 
+    #region Networks
+
+    private static readonly Dictionary<string, Func<Field, IEnumerable<string>>> CidrReaders = new(StringComparer.Ordinal)
+    {
+        ["aws_subnet"] = x => [x["cidr_block"].Text, x["ipv6_cidr_block"].Text],
+        ["aws_default_subnet"] = x => [x["cidr_block"].Text, x["ipv6_cidr_block"].Text],
+        ["azurerm_subnet"] = x => [.. x["address_prefixes"].Items.Select(p => p.Text), x["address_prefix"].Text],
+        // The bridge's own address, such as 10.0.0.1/24, is on the network 10.0.0.0/24.
+        ["proxmox_virtual_environment_network_linux_bridge"] = x => [x["address"].Text, x["address6"].Text],
+    };
+
+    private static readonly string[] SdnVnets = ["proxmox_virtual_environment_sdn_vnet", "proxmox_sdn_vnet"];
+    private static readonly string[] SdnSubnets = ["proxmox_virtual_environment_sdn_subnet", "proxmox_sdn_subnet"];
+
+    /// <summary>
+    /// Each network's CIDRs: its own, or, for a Proxmox SDN vnet, those of the
+    /// subnets on it, matched by the subnet's <c>vnet</c> value or else its reference.
+    /// </summary>
+    private static void AddCidrs(
+        Dictionary<string, Instance> instances,
+        List<Instance> networks,
+        Dictionary<string, JsonElement> configuration,
+        TypeTable types,
+        Models.Topology topology)
+    {
+        var builtIn = networks
+            .Where(x => ReferenceEquals(types.Networks[x.Type], BuiltInNetworks.GetValueOrDefault(x.Type)))
+            .ToList();
+        var cidrs = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+        void Add(Instance network, string value)
+        {
+            if (Cidr(value) is { } cidr)
+            {
+                (cidrs.TryGetValue(network.Address, out var list) ? list : cidrs[network.Address] = []).Add(cidr);
+            }
+        }
+
+        foreach (var network in builtIn)
+        {
+            if (CidrReaders.TryGetValue(network.Type, out var read))
+            {
+                foreach (var value in read(Field.Of(network)))
+                {
+                    Add(network, value);
+                }
+            }
+        }
+
+        var vnets = builtIn.Where(x => SdnVnets.Contains(x.Type)).ToList();
+
+        foreach (var subnet in instances.Values.Where(x => SdnSubnets.Contains(x.Type)))
+        {
+            var vnet = GetScalar(subnet.Values, "vnet");
+            var target = !string.IsNullOrEmpty(vnet)
+                ? vnets.FirstOrDefault(x => GetScalar(x.Values, "id") == vnet)
+                : configuration.TryGetValue(ConfigAddress(subnet.Address), out var expressions)
+                    ? References(expressions, "vnet")
+                        .Select(reference => FindInModule(vnets, subnet.Module, reference))
+                        .FirstOrDefault(x => x != null)
+                    : null;
+
+            if (target != null)
+            {
+                Add(target, Field.Of(subnet)["cidr"].Text);
+            }
+        }
+
+        foreach (var (address, list) in cidrs)
+        {
+            if (topology.Nodes.FirstOrDefault(x => x.Id == address) is { } node)
+            {
+                node.Properties["cidr"] = string.Join(",", list
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(x => x.Contains(':') ? 1 : 0));
+            }
+        }
+    }
+
+    /// <summary>The network an address and prefix length are on, such as 10.0.0.0/24 for 10.0.0.1/24; null for anything else.</summary>
+    private static string Cidr(string value)
+    {
+        var parts = value?.Trim().Split('/');
+
+        if (parts is not [var text, var length] ||
+            !IPAddress.TryParse(text, out var address) ||
+            !int.TryParse(length, NumberStyles.None, CultureInfo.InvariantCulture, out var prefix))
+        {
+            return null;
+        }
+
+        var bytes = address.GetAddressBytes();
+
+        if (prefix > bytes.Length * 8)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            var keep = Math.Clamp(prefix - (i * 8), 0, 8);
+            bytes[i] &= (byte)(0xFF << (8 - keep));
+        }
+
+        return $"{new IPAddress(bytes)}/{prefix}";
+    }
+
+    #endregion
 }

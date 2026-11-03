@@ -148,6 +148,11 @@ public static partial class PlanTopologyParser
             {
                 AddressReaders[alias] = addresses;
             }
+
+            if (CidrReaders.TryGetValue(name, out var cidrs))
+            {
+                CidrReaders[alias] = cidrs;
+            }
         }
     }
 
@@ -259,6 +264,7 @@ public static partial class PlanTopologyParser
         }
 
         var aliases = FoldNetworkDataSources(networks, configuration, topology);
+        AddCidrs(instances, networks, configuration, types, topology);
 
         var interfaces = instances.Values.Where(x => types.Interfaces.ContainsKey(x.Type)).ToList();
         var interfaceByKey = new Dictionary<string, Instance>(StringComparer.Ordinal);
