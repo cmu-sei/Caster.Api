@@ -18,6 +18,8 @@ The Administration area now can be accessed by any User with View or Manage Perm
 
 There are many more Permissions available. They can be viewed by going to the new Roles section of the Administration area.
 
+`ViewEnvironmentSets` and `ManageEnvironmentSets` govern [Environment Sets](EnvironmentSets.md), the credentials and values admins assign to projects' Terraform runs.
+
 # Roles
 
 Permissions can be applied to Users by grouping them into Roles. There are two types of Roles in Caster:

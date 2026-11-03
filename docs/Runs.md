@@ -151,12 +151,16 @@ Environment variables are injected into either:
 #### Options
 
 * **InheritAll**
-  Inherits *all* environment variables from the Caster API process, including sensitive values. **Recommended to set this to `false` in production**.
+  Inherits *all* environment variables from the Caster API process, including its own database connection string, OIDC client secret and GitLab token. Defaults to `false` (it was `true` before Environment Sets). See [Migrating off InheritAll](EnvironmentSets.md#migrating-off-inheritall).
 
 * **Inherit**
   List of regular expressions used to selectively inherit environment variables when `InheritAll` is `false`.
 
   Useful for including provider‑specific variables (e.g., Terraform provider prefixes).
+
+  Variables matching `Terraform:Secrets:Patterns` are never inherited, whatever `Inherit` or `InheritAll` say: they reach only the projects an [Environment Set](EnvironmentSets.md) gives them to.
+
+  In **Process mode**, the API's `PATH` and `HOME` are always passed, as a local process starts from an empty environment.
 
 * **Direct**
   Explicitly defines environment variables injected into the Run, as a map of name to value:
@@ -168,6 +172,10 @@ Environment variables are injected into either:
   ```
 
   As an environment variable: `Terraform__EnvironmentVariables__Direct__SSL_CERT_DIR`. Values defined here override any inherited variables with the same name.
+
+### Secrets and Environment Sets
+
+Credentials for runs belong in API environment variables whose names match `Terraform:Secrets:Patterns` (default `^CASTER_SECRET_`), given to projects through Environment Sets. A project's sets override same-named inherited and direct variables. See [Environment Sets](EnvironmentSets.md).
 
 ### Git Credentials for Module Sources
 
