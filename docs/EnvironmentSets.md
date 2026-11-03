@@ -51,6 +51,41 @@ An Environment Set has a name, a description and entries. Each entry has:
 * A target name can come from only one set on a project. Assigning a set is refused if one of its target names already comes from another set on the project, and editing a set is refused if the change would cause that on any project it is assigned to.
 * A secret's source name is checked against the patterns when the entry is saved, when the set is assigned, and again at every run, as the patterns can change.
 
+### Seeding sets
+
+`SeedData:EnvironmentSets` creates sets at startup, so a deployment can ship with its sets defined in configuration:
+
+```json
+"SeedData": {
+  "EnvironmentSets": [
+    {
+      "Name": "vSphere",
+      "Description": "Lab vCenter",
+      "Entries": [
+        { "Kind": "EnvironmentVariable", "TargetName": "VSPHERE_SERVER", "ValueSource": "Plain", "Value": "vcenter.example.com" },
+        { "Kind": "EnvironmentVariable", "TargetName": "VSPHERE_PASSWORD", "ValueSource": "Secret", "SecretName": "CASTER_SECRET_VSPHERE_PASSWORD" }
+      ]
+    }
+  ]
+}
+```
+
+As environment variables (Helm values, `.env` files):
+
+```text
+SeedData__EnvironmentSets__0__Name=vSphere
+SeedData__EnvironmentSets__0__Entries__0__Kind=EnvironmentVariable
+SeedData__EnvironmentSets__0__Entries__0__TargetName=VSPHERE_PASSWORD
+SeedData__EnvironmentSets__0__Entries__0__ValueSource=Secret
+SeedData__EnvironmentSets__0__Entries__0__SecretName=CASTER_SECRET_VSPHERE_PASSWORD
+```
+
+* A set is added only if no set has its name (case-insensitive). An existing set is never changed, so changes made in Caster survive restarts; to apply a changed seed, delete the set and restart.
+* Seeded sets are not assigned to projects. Assign them in Administration.
+* Entries follow the [rules](#rules) above, `Kind` defaults to `EnvironmentVariable` and `ValueSource` to `Plain`. A secret's source may be missing at startup; the set shows as incomplete until it is set.
+* Seeds name secret sources, never secret values, so they are safe in configuration that is not secret.
+* A mistake in any seeded set fails startup with errors naming the set and entry (`SeedData:EnvironmentSets:0 "vSphere", Entries:1 ...`), and no set is added.
+
 ### Deleting a set
 
 Deleting a set that is assigned to projects removes it from them. Their next runs do not get its variables. The UI lists the affected projects and asks for confirmation first.
