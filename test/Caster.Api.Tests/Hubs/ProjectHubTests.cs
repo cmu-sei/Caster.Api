@@ -324,6 +324,28 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
     }
 
     [Fact]
+    public async Task JoinEnvironmentSetsAdmin_adds_a_caller_holding_ViewEnvironmentSets()
+    {
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewEnvironmentSets));
+
+        await hub.JoinEnvironmentSetsAdmin();
+
+        await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, nameof(HubGroups.EnvironmentSetsAdmin), Arg.Any<CancellationToken>());
+        harness.NothingAddressed();
+    }
+
+    [Fact]
+    public async Task JoinEnvironmentSetsAdmin_refuses_a_caller_holding_only_ManageEnvironmentSets()
+    {
+        var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ManageEnvironmentSets));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => hub.JoinEnvironmentSetsAdmin());
+
+        await harness.Groups.DidNotReceiveWithAnyArgs().AddToGroupAsync(default, default, Ct);
+        harness.NothingAddressed();
+    }
+
+    [Fact]
     public async Task JoinRolesAdmin_adds_a_caller_holding_ViewRoles()
     {
         var (hub, harness) = Hub(new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewRoles));
