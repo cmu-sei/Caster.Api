@@ -33,6 +33,8 @@ namespace Caster.Api.Domain.Services.Topology;
 /// A Proxmox NIC with a VLAN tag on a plain bridge is on a different segment
 /// from an untagged NIC on that bridge, so the tag is part of its key:
 /// <c>vmbr0.10</c>, the way Linux names the VLAN interface.
+///
+/// A value the plan or state marks sensitive is never a label or property.
 /// </remarks>
 public static partial class PlanTopologyParser
 {
@@ -228,7 +230,7 @@ public static partial class PlanTopologyParser
                 Id = instance.Address,
                 Kind = TopologyNodeKind.Network,
                 Type = instance.Type,
-                Label = FirstString(instance.Values, type.Label ?? ["name"]) ?? instance.Name,
+                Label = FirstString(instance, type.Label ?? ["name"]) ?? instance.Name,
                 Module = instance.Module,
                 Action = instance.Action,
             };
@@ -281,14 +283,14 @@ public static partial class PlanTopologyParser
                 Id = instance.Address,
                 Kind = TopologyNodeKind.Machine,
                 Type = instance.Type,
-                Label = FirstString(instance.Values, type.Label ?? ["name"]) ?? instance.Name,
+                Label = FirstString(instance, type.Label ?? ["name"]) ?? instance.Name,
                 Module = instance.Module,
                 Action = instance.Action,
             };
 
             foreach (var (name, path) in type.Properties ?? [])
             {
-                var value = GetScalar(instance.Values, path);
+                var value = Field.Of(instance).At(path).Text;
 
                 if (value != null)
                 {
@@ -876,6 +878,13 @@ public static partial class PlanTopologyParser
         public string Module { get; init; }
         public string Action { get; init; }
         public JsonElement Values { get; init; }
+
+        /// <summary>
+        /// Paths into <see cref="Values"/> that are not known until apply, or
+        /// are sensitive, as <see cref="Field"/> paths: nothing under them is
+        /// a label or a property.
+        /// </summary>
+        public HashSet<string> Hidden { get; init; } = [];
     }
 
     /// <summary>
@@ -899,9 +908,13 @@ public static partial class PlanTopologyParser
                 }
 
                 var body = change.GetProperty("change");
-                var values = body.TryGetProperty("after", out var after) && after.ValueKind == JsonValueKind.Object
+                var useAfter = body.TryGetProperty("after", out var after) && after.ValueKind == JsonValueKind.Object;
+                var values = useAfter
                     ? after
                     : body.TryGetProperty("before", out var before) ? before : default;
+                var hidden = useAfter
+                    ? Mask(body, "after_unknown").Concat(Mask(body, "after_sensitive"))
+                    : Mask(body, "before_sensitive");
 
                 var address = GetString(change, "address");
 
@@ -914,6 +927,7 @@ public static partial class PlanTopologyParser
                     Module = GetString(change, "module_address"),
                     Action = ReadAction(body),
                     Values = values,
+                    Hidden = [.. hidden],
                 };
             }
         }
@@ -952,6 +966,7 @@ public static partial class PlanTopologyParser
                     Module = moduleAddress,
                     Action = "no-op",
                     Values = resource.TryGetProperty("values", out var values) ? values : default,
+                    Hidden = [.. Mask(resource, "sensitive_values")],
                 };
             }
         }
@@ -1008,6 +1023,7 @@ public static partial class PlanTopologyParser
                     Name = name,
                     Module = module,
                     Values = instance.TryGetProperty("attributes", out var attributes) ? attributes : default,
+                    Hidden = [.. SensitiveAttributes(instance)],
                 };
             }
         }
@@ -1150,8 +1166,9 @@ public static partial class PlanTopologyParser
             ? value.GetString()
             : null;
 
-    private static string FirstString(JsonElement element, string[] paths) =>
-        paths.Select(x => GetScalar(element, x)).FirstOrDefault(x => !string.IsNullOrEmpty(x));
+    /// <summary>The first of the paths with a value, leaving out sensitive ones.</summary>
+    private static string FirstString(Instance instance, string[] paths) =>
+        paths.Select(x => Field.Of(instance).At(x).Text).FirstOrDefault(x => !string.IsNullOrEmpty(x));
 
     /// <summary>Follows a dotted path such as <c>cpu.0.cores</c> and returns a string or number as text.</summary>
     private static string GetScalar(JsonElement element, string path)

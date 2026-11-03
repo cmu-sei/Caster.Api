@@ -683,6 +683,30 @@ namespace Caster.Api.Tests.Unit.Topology
         }
 
         [Fact]
+        public void SensitiveValue_IsNeitherLabelNorProperty()
+        {
+            var plan = """
+                {"format_version":"1.2","resource_changes":[
+                  {"address":"aws_subnet.b","mode":"managed","type":"aws_subnet","name":"b",
+                   "change":{"actions":["create"],"after":{"id":"subnet-b","cidr_block":"10.7.0.0/24","tags":{"Name":"secret-name"}},
+                             "after_sensitive":{"cidr_block":true,"tags":{"Name":true}}}},
+                  {"address":"aws_instance.web","mode":"managed","type":"aws_instance","name":"web",
+                   "change":{"actions":["create"],"after":{"subnet_id":"subnet-b","instance_type":"t3.secret","tags":{"Name":"web"}},
+                             "after_sensitive":{"instance_type":true}}}]}
+                """;
+
+            var topology = PlanTopologyParser.Parse(plan);
+
+            // Not tags.Name, not cidr_block: the resource's own name.
+            Assert.Equal("b", topology.Nodes.Single(x => x.Id == "aws_subnet.b").Label);
+            Assert.Equal("web", topology.Nodes.Single(x => x.Id == "aws_instance.web").Label);
+            Assert.False(topology.Nodes.Single(x => x.Id == "aws_instance.web").Properties.ContainsKey("instance_type"));
+            var json = System.Text.Json.JsonSerializer.Serialize(topology);
+            Assert.DoesNotContain("10.7.0", json);
+            Assert.DoesNotContain("secret", json);
+        }
+
+        [Fact]
         public void PlanWithNoKnownTypes_IsEmpty()
         {
             var topology = PlanTopologyParser.Parse(Plan("""
