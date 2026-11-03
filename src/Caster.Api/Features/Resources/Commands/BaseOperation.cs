@@ -116,6 +116,11 @@ namespace Caster.Api.Features.Resources
                 await dbContext.SaveChangesAsync();
                 workspace.CleanupFileSystem(terraformOptions.RootWorkingDirectory);
             }
+            else
+            {
+                // An incomplete Environment Set stops init; say so rather than answering with no error.
+                errors.Add(initResult.Output);
+            }
 
             return new ResourceCommandResult
             {

@@ -37,20 +37,20 @@ public class KubernetesTerraformService : BaseTerraformService
     private const string _workspaceNameLabel = "workspaceName";
     private const string _hostVolumeName = "host-vol";
 
-    public KubernetesTerraformService(TerraformOptions options, ILogger<KubernetesTerraformService> logger, IKubernetes k8sClient, IImageTagService imageTagService, IRegexService regexService) : base(options, regexService)
+    public KubernetesTerraformService(TerraformOptions options, ILogger<KubernetesTerraformService> logger, IKubernetes k8sClient, IImageTagService imageTagService, ITerraformEnvironmentBuilder environmentBuilder) : base(options, environmentBuilder)
     {
         _logger = logger;
         _k8sClient = k8sClient;
         _imageTagService = imageTagService;
-        _regexService = regexService;
     }
 
-    protected override async Task<TerraformResult> Run(Workspace workspace,
-                                                       IEnumerable<string> argumentList,
-                                                       Action<string> outputHandler,
-                                                       bool resume,
-                                                       Func<string, Task> finalizer,
-                                                       bool redirectStandardError = true)
+    protected override async Task<TerraformResult> RunCore(Workspace workspace,
+                                                           IEnumerable<string> argumentList,
+                                                           TerraformEnvironment environment,
+                                                           Action<string> outputHandler,
+                                                           bool resume,
+                                                           Func<string, Task> finalizer,
+                                                           bool redirectStandardError)
     {
         int exitCode = -1;
         StringBuilder outputBuilder = new StringBuilder();
@@ -73,10 +73,17 @@ public class KubernetesTerraformService : BaseTerraformService
                 };
             }
 
+            // A job already running is reattached to above whatever the sets say now; a new
+            // one must not start without its credentials.
+            if (!environment.IsValid)
+            {
+                return EnvironmentFailure(environment, outputHandler);
+            }
+
             var jobTemplate = GetJobTemplate();
             var securityContext = await GetSecurityContext(jobTemplate);
             var (volumes, volumeMounts) = GetVolumes();
-            var envVars = GetEnvironmentVariables(workspace);
+            var envVars = GetEnvironmentVariables(environment);
 
             var jobRequest = BuildJobRequest(jobTemplate, jobName, workspace, argumentList, securityContext, volumes, volumeMounts, envVars);
 
@@ -702,9 +709,9 @@ public class KubernetesTerraformService : BaseTerraformService
         return (volumes.ToArray(), volumeMounts.ToArray());
     }
 
-    private new V1EnvVar[] GetEnvironmentVariables(Workspace workspace)
+    private static V1EnvVar[] GetEnvironmentVariables(TerraformEnvironment environment)
     {
-        return base.GetEnvironmentVariables(workspace)
+        return environment.Variables
             .Select(x => new V1EnvVar
             {
                 Name = x.Key,

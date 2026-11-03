@@ -2,10 +2,8 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Exceptions;
@@ -16,12 +14,12 @@ namespace Caster.Api.Domain.Services.Terraform;
 public abstract class BaseTerraformService : ITerraformService
 {
     protected readonly TerraformOptions _options;
-    protected IRegexService _regexService;
+    private readonly ITerraformEnvironmentBuilder _environmentBuilder;
 
-    public BaseTerraformService(TerraformOptions options, IRegexService regexService)
+    public BaseTerraformService(TerraformOptions options, ITerraformEnvironmentBuilder environmentBuilder)
     {
         _options = options;
-        _regexService = regexService;
+        _environmentBuilder = environmentBuilder;
     }
 
     /// <summary>
@@ -189,56 +187,62 @@ public abstract class BaseTerraformService : ITerraformService
         }
     }
 
-    protected Dictionary<string, string> GetEnvironmentVariables(Workspace workspace)
+    /// <summary>
+    /// API variables a run needs even when they are not inherited. None by default: a
+    /// Kubernetes job gets PATH and HOME from its image.
+    /// </summary>
+    protected virtual IEnumerable<string> BaselineEnvironmentVariables => [];
+
+    /// <summary>
+    /// Builds the run's environment from the project's Environment Sets and masks their
+    /// secret values in everything the command outputs: the streamed lines, what the
+    /// finalizer saves and the result.
+    /// </summary>
+    protected async Task<TerraformResult> Run(Workspace workspace, IEnumerable<string> argumentList,
+                                              Action<string> outputHandler, bool resume = false,
+                                              Func<string, Task> finalizer = null, bool redirectStandardError = true)
     {
-        var envVars = new Dictionary<string, string>
+        var environment = await _environmentBuilder.BuildAsync(workspace, BaselineEnvironmentVariables);
+        var masker = environment.Masker;
+
+        Action<string> maskedOutputHandler = outputHandler is null
+            ? null
+            : line => outputHandler(masker.Apply(line));
+
+        Func<string, Task> maskedFinalizer = finalizer is null
+            ? null
+            : output => finalizer(masker.Apply(output));
+
+        var result = await RunCore(workspace, argumentList, environment, maskedOutputHandler, resume, maskedFinalizer, redirectStandardError);
+
+        if (result is not null)
         {
-            { "TF_IN_AUTOMATION", "true" }
+            result.Output = masker.Apply(result.Output);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The result of a command that cannot start because its environment is incomplete
+    /// (<see cref="TerraformEnvironment.Errors"/>). Fails rather than starting without a
+    /// credential, which would let providers fall back to other ambient credentials.
+    /// </summary>
+    protected static TerraformResult EnvironmentFailure(TerraformEnvironment environment, Action<string> outputHandler)
+    {
+        var lines = new List<string> { "Terraform was not started: the project's Environment Sets are incomplete." };
+        lines.AddRange(environment.Errors);
+
+        foreach (var line in lines)
+        {
+            outputHandler?.Invoke(line);
+        }
+
+        return new TerraformResult
+        {
+            ExitCode = -1,
+            Output = string.Join(Environment.NewLine, lines) + Environment.NewLine
         };
-
-        if (!workspace.IsDefault)
-        {
-            envVars.Add("TF_WORKSPACE", workspace.Name);
-        }
-
-        var envVarOptions = _options.EnvironmentVariables;
-
-        var appEnvVars = Environment.GetEnvironmentVariables()
-            .Cast<DictionaryEntry>()
-            .ToDictionary(
-                e => e.Key?.ToString() ?? string.Empty,
-                e => e.Value?.ToString() ?? string.Empty
-            );
-
-        if (!envVarOptions.InheritAll)
-        {
-            Regex[] regexes = _regexService.GetEnvironmentVariableRegexes();
-
-            appEnvVars = appEnvVars.Where(x =>
-            {
-                foreach (var regex in regexes)
-                {
-                    if (regex.IsMatch(x.Key))
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
-            }).ToDictionary();
-        }
-
-        foreach (var appEnvVar in appEnvVars)
-        {
-            envVars.Add(appEnvVar.Key, appEnvVar.Value);
-        }
-
-        foreach (var kvp in envVarOptions.Direct)
-        {
-            envVars[kvp.Key] = kvp.Value;
-        }
-
-        return envVars;
     }
 
     public abstract bool EnableOutputTimer { get; }
@@ -254,7 +258,12 @@ public abstract class BaseTerraformService : ITerraformService
 
     public abstract Task<IEnumerable<Guid>> GetActiveWorkspaces();
 
-    protected abstract Task<TerraformResult> Run(Workspace workspace, IEnumerable<string> argumentList,
-                                                 Action<string> outputHandler, bool resume = false,
-                                                 Func<string, Task> finalizer = null, bool redirectStandardError = true);
+    /// <summary>
+    /// Runs one Terraform command with <paramref name="environment"/>. Must not start a new
+    /// process or job when <see cref="TerraformEnvironment.IsValid"/> is false
+    /// (return <see cref="EnvironmentFailure"/>); reattaching to one already running is fine.
+    /// </summary>
+    protected abstract Task<TerraformResult> RunCore(Workspace workspace, IEnumerable<string> argumentList,
+                                                     TerraformEnvironment environment, Action<string> outputHandler,
+                                                     bool resume, Func<string, Task> finalizer, bool redirectStandardError);
 }

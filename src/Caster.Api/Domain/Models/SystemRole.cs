@@ -46,7 +46,9 @@ public enum SystemPermission
     ViewHosts,
     ManageHosts,
     ViewModules,
-    ManageModules
+    ManageModules,
+    ViewEnvironmentSets,
+    ManageEnvironmentSets
 }
 
 public static class SystemRoleDefaults
