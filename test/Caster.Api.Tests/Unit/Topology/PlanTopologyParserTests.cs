@@ -719,5 +719,296 @@ namespace Caster.Api.Tests.Unit.Topology
         }
 
         #endregion
+
+        #region Addresses and CIDRs
+
+        private static string Change(
+            string address, string after, string actions = "\"create\"", string unknown = "{}", string sensitive = "{}") =>
+            $$$$"""
+            {"address":"{{{{address}}}}","mode":"managed","type":"{{{{address.Split('.')[0]}}}}","name":"{{{{address.Split('.')[1]}}}}",
+             "change":{"actions":[{{{{actions}}}}],"after":{{{{after}}}},"after_unknown":{{{{unknown}}}},"after_sensitive":{{{{sensitive}}}}}}
+            """;
+
+        private static string State(params string[] resources) =>
+            $$"""{"version":4,"terraform_version":"1.15.0","resources":[{{string.Join(",", resources)}}]}""";
+
+        private static string StateResource(string address, string attributes, string sensitive = "[]") =>
+            $$$$"""
+            {"mode":"managed","type":"{{{{address.Split('.')[0]}}}}","name":"{{{{address.Split('.')[1]}}}}",
+             "instances":[{"schema_version":0,"attributes":{{{{attributes}}}},"sensitive_attributes":{{{{sensitive}}}}}]}
+            """;
+
+        private static Dictionary<string, string> PropertiesOf(Caster.Api.Domain.Models.Topology topology, string id) =>
+            topology.Nodes.Single(x => x.Id == id).Properties;
+
+        private const string ThreeVnets = """
+            {"address":"proxmox_sdn_vnet.a","mode":"managed","type":"proxmox_sdn_vnet","name":"a","change":{"actions":["create"],"after":{"id":"a","zone":"z"}}},
+            {"address":"proxmox_sdn_vnet.b","mode":"managed","type":"proxmox_sdn_vnet","name":"b","change":{"actions":["create"],"after":{"id":"b","zone":"z"}}},
+            {"address":"proxmox_sdn_vnet.c","mode":"managed","type":"proxmox_sdn_vnet","name":"c","change":{"actions":["create"],"after":{"id":"c","zone":"z"}}}
+            """;
+
+        [Fact]
+        public void ProxmoxCloudInit_GivesAddressesInNicOrderIpv4First()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(Change("proxmox_virtual_environment_vm.dc", """
+                {"name":"dc","network_device":[{"bridge":"a"},{"bridge":"b"},{"bridge":"c"}],
+                 "initialization":[{"ip_config":[
+                   {"ipv4":[{"address":"10.0.1.5/24","gateway":"10.0.1.1"}],"ipv6":[{"address":"fd00:1::5/64"}]},
+                   {"ipv4":[{"address":"dhcp"}],"ipv6":[{"address":"auto"}]},
+                   {"ipv4":[{"address":"10.0.3.5/24","gateway":"10.0.3.1"}]}]}]}
+                """) + "," + ThreeVnets));
+
+            var dc = PropertiesOf(topology, "proxmox_virtual_environment_vm.dc");
+            Assert.Equal("10.0.1.5,10.0.3.5,fd00:1::5", dc["ip_addresses"]);
+            // The first NIC's gateway.
+            Assert.Equal("10.0.1.1", dc["gateway"]);
+            Assert.Equal(
+                "proxmox_sdn_vnet.a=10.0.1.5;proxmox_sdn_vnet.c=10.0.3.5;proxmox_sdn_vnet.a=fd00:1::5",
+                dc["ip_addresses_by_network"]);
+        }
+
+        [Fact]
+        public void ProxmoxDhcpEverywhere_HasNoAddresses()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(Change("proxmox_virtual_environment_vm.ws", """
+                {"name":"ws","network_device":[{"bridge":"vmbr0"}],
+                 "initialization":[{"ip_config":[{"ipv4":[{"address":"dhcp"}],"ipv6":[{"address":"dhcp"}]}]}]}
+                """)));
+
+            var ws = PropertiesOf(topology, "proxmox_virtual_environment_vm.ws");
+            Assert.False(ws.ContainsKey("ip_addresses"));
+            Assert.False(ws.ContainsKey("gateway"));
+            Assert.False(ws.ContainsKey("ip_addresses_by_network"));
+        }
+
+        [Fact]
+        public void TheSameAddressOnTwoNics_IsListedOnce()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(Change("proxmox_virtual_environment_vm.fw", """
+                {"name":"fw","network_device":[{"bridge":"a"},{"bridge":"b"}],
+                 "initialization":[{"ip_config":[{"ipv4":[{"address":"10.0.0.1/24"}]},{"ipv4":[{"address":"10.0.0.1/24"}]}]}]}
+                """) + "," + ThreeVnets));
+
+            var fw = PropertiesOf(topology, "proxmox_virtual_environment_vm.fw");
+            Assert.Equal("10.0.0.1", fw["ip_addresses"]);
+            Assert.Equal("proxmox_sdn_vnet.a=10.0.0.1;proxmox_sdn_vnet.b=10.0.0.1", fw["ip_addresses_by_network"]);
+        }
+
+        [Fact]
+        public void ProxmoxContainerAndClonedVm_ReadTheirIpConfig()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Change("proxmox_virtual_environment_container.ct", """
+                    {"initialization":[{"hostname":"web","ip_config":[{"ipv4":[{"address":"10.0.2.20/24","gateway":"10.0.2.1"}]}]}],
+                     "network_interface":[{"name":"eth0","bridge":"b"}]}
+                    """) + "," +
+                Change("proxmox_cloned_vm.fw", """
+                    {"name":"fw","network":{"net0":{"bridge":"a"}},
+                     "initialization":{"ip_config":[{"ipv4":{"address":"10.0.1.254/24"}}]}}
+                    """) + "," + ThreeVnets));
+
+            Assert.Equal("10.0.2.20", PropertiesOf(topology, "proxmox_virtual_environment_container.ct")["ip_addresses"]);
+            Assert.Equal("10.0.2.1", PropertiesOf(topology, "proxmox_virtual_environment_container.ct")["gateway"]);
+            Assert.Equal("proxmox_sdn_vnet.a=10.0.1.254", PropertiesOf(topology, "proxmox_cloned_vm.fw")["ip_addresses_by_network"]);
+        }
+
+        [Fact]
+        public void TelmateIpConfigStrings_AreParsed()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Change("proxmox_vm_qemu.dc", """
+                    {"name":"dc","network":[{"bridge":"a"},{"bridge":"b"}],
+                     "ipconfig0":"ip=10.0.1.10/24,gw=10.0.1.1,ip6=2001:db8:1::10/64","ipconfig1":"ip=dhcp,ip6=auto"}
+                    """) + "," +
+                Change("proxmox_lxc.web", """
+                    {"hostname":"web","network":[{"name":"eth0","bridge":"b","ip":"10.0.2.10/24","gw":"10.0.2.1","ip6":"manual"}]}
+                    """) + "," + ThreeVnets));
+
+            var dc = PropertiesOf(topology, "proxmox_vm_qemu.dc");
+            Assert.Equal("10.0.1.10,2001:db8:1::10", dc["ip_addresses"]);
+            Assert.Equal("10.0.1.1", dc["gateway"]);
+
+            var web = PropertiesOf(topology, "proxmox_lxc.web");
+            Assert.Equal("10.0.2.10", web["ip_addresses"]);
+            Assert.Equal("10.0.2.1", web["gateway"]);
+            Assert.Equal("proxmox_sdn_vnet.b=10.0.2.10", web["ip_addresses_by_network"]);
+        }
+
+        [Fact]
+        public void AddressKnownOnlyAfterApply_IsLeftOut()
+        {
+            // Terraform leaves an unknown value out of "after"; the mask is
+            // honoured even if a value is there.
+            var topology = PlanTopologyParser.Parse(Plan(Change(
+                "proxmox_virtual_environment_vm.dc",
+                """
+                {"name":"dc","network_device":[{"bridge":"a"},{"bridge":"b"}],
+                 "initialization":[{"ip_config":[{"ipv4":[{"address":"10.0.1.5/24"}]},{"ipv4":[{"address":"10.0.2.5/24"}]}]}]}
+                """,
+                unknown: """{"initialization":[{"ip_config":[{"ipv4":[{"address":true}]},{}]}]}""") + "," + ThreeVnets));
+
+            Assert.Equal("10.0.2.5", PropertiesOf(topology, "proxmox_virtual_environment_vm.dc")["ip_addresses"]);
+        }
+
+        [Fact]
+        public void SensitiveAddress_IsLeftOutAndAppearsNowhere()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(Change(
+                "proxmox_virtual_environment_vm.dc",
+                """
+                {"name":"dc","network_device":[{"bridge":"a"}],
+                 "initialization":[{"ip_config":[{"ipv4":[{"address":"10.9.9.9/24","gateway":"10.9.9.1"}]}]}]}
+                """,
+                sensitive: """{"initialization":true}""") + "," + ThreeVnets));
+
+            var dc = PropertiesOf(topology, "proxmox_virtual_environment_vm.dc");
+            Assert.False(dc.ContainsKey("ip_addresses"));
+            Assert.False(dc.ContainsKey("gateway"));
+            Assert.DoesNotContain("10.9.9", System.Text.Json.JsonSerializer.Serialize(topology));
+        }
+
+        [Fact]
+        public void SensitiveAddressInThePriorState_IsLeftOut()
+        {
+            var plan = """
+                {"format_version":"1.2","resource_changes":[],"prior_state":{"values":{"root_module":{"resources":[
+                  {"address":"aws_instance.web","mode":"managed","type":"aws_instance","name":"web",
+                   "values":{"private_ip":"10.1.0.5","public_ip":"203.0.113.9"},"sensitive_values":{"public_ip":true}}]}}}}
+                """;
+
+            var web = PropertiesOf(PlanTopologyParser.Parse(plan), "aws_instance.web");
+            Assert.Equal("10.1.0.5", web["ip_addresses"]);
+        }
+
+        [Fact]
+        public void SensitiveAddressInTheState_IsLeftOut()
+        {
+            var topology = PlanTopologyParser.ParseState(State(StateResource(
+                "proxmox_virtual_environment_vm.dc",
+                """
+                {"name":"dc","network_device":[{"bridge":"vmbr0"},{"bridge":"vmbr1"}],
+                 "initialization":[{"ip_config":[{"ipv4":[{"address":"10.9.9.9/24"}]},{"ipv4":[{"address":"10.0.2.5/24"}]}]}]}
+                """,
+                """
+                [[{"type":"get_attr","value":"initialization"},{"type":"index","value":{"value":0,"type":"number"}},
+                  {"type":"get_attr","value":"ip_config"},{"type":"index","value":{"value":0,"type":"number"}}]]
+                """)));
+
+            Assert.Equal("10.0.2.5", PropertiesOf(topology, "proxmox_virtual_environment_vm.dc")["ip_addresses"]);
+            Assert.DoesNotContain("10.9.9", System.Text.Json.JsonSerializer.Serialize(topology));
+        }
+
+        private const string VsphereClone = """
+            "network_interface":[{"network_id":"network-1"},{"network_id":"network-2"}],
+            "clone":[{"customize":[{"ipv4_gateway":"10.0.0.1","network_interface":[{"ipv4_address":"10.0.0.10","ipv4_netmask":24},{"ipv4_address":"10.0.1.10","ipv4_netmask":24}]}]}]
+            """;
+
+        [Fact]
+        public void VspherePlan_UsesTheCustomizeAddresses()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(Change(
+                "vsphere_virtual_machine.dc",
+                $$"""{"name":"dc",{{VsphereClone}}}""",
+                unknown: """{"default_ip_address":true,"guest_ip_addresses":true}""")));
+
+            var dc = PropertiesOf(topology, "vsphere_virtual_machine.dc");
+            Assert.Equal("10.0.0.10,10.0.1.10", dc["ip_addresses"]);
+            Assert.Equal("10.0.0.1", dc["gateway"]);
+            Assert.Equal("external:network-1=10.0.0.10;external:network-2=10.0.1.10", dc["ip_addresses_by_network"]);
+        }
+
+        [Fact]
+        public void VsphereState_PrefersTheGuestsOwnAddresses()
+        {
+            // Customize has no address: the clone uses DHCP.
+            var dhcp = PlanTopologyParser.ParseState(State(StateResource("vsphere_virtual_machine.ws", """
+                {"name":"ws","network_interface":[{"network_id":"network-1"}],
+                 "clone":[{"customize":[{"network_interface":[{"ipv4_address":""}]}]}],
+                 "default_ip_address":"10.0.0.57","guest_ip_addresses":["10.0.0.57","fe80::250:56ff:fe01:2","2001:db8::57"]}
+                """)));
+
+            Assert.Equal("10.0.0.57,2001:db8::57", PropertiesOf(dhcp, "vsphere_virtual_machine.ws")["ip_addresses"]);
+            Assert.False(PropertiesOf(dhcp, "vsphere_virtual_machine.ws").ContainsKey("ip_addresses_by_network"));
+
+            // A static clone whose guest has since been given another address.
+            var changed = PlanTopologyParser.ParseState(State(StateResource("vsphere_virtual_machine.dc", $$"""
+                {"name":"dc",{{VsphereClone}},"default_ip_address":"10.0.0.10","guest_ip_addresses":["10.0.0.10","10.0.0.99"]}
+                """)));
+
+            var dc = PropertiesOf(changed, "vsphere_virtual_machine.dc");
+            Assert.Equal("10.0.0.10,10.0.0.99", dc["ip_addresses"]);
+            // Only the address the guest still has is placed on its network.
+            Assert.Equal("external:network-1=10.0.0.10", dc["ip_addresses_by_network"]);
+        }
+
+        [Fact]
+        public void VspherePlanThatChangesTheMachine_PrefersItsCustomizeAddresses()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(Change(
+                "vsphere_virtual_machine.dc",
+                $$"""{"name":"dc",{{VsphereClone}},"default_ip_address":"10.0.0.99","guest_ip_addresses":["10.0.0.99"]}""",
+                actions: "\"update\"")));
+
+            Assert.Equal("10.0.0.10,10.0.1.10", PropertiesOf(topology, "vsphere_virtual_machine.dc")["ip_addresses"]);
+        }
+
+        [Fact]
+        public void AzureNicAddresses_AreOnTheirMachine()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Change("azurerm_linux_virtual_machine.web", """{"name":"web","network_interface_ids":["nic-a","nic-b"]}""", "\"no-op\"") + "," +
+                Change("azurerm_network_interface.a", """
+                    {"id":"nic-a","ip_configuration":[{"name":"ip","subnet_id":"subnet-dmz","private_ip_address":"10.2.1.4","public_ip_address_id":"pip-1"}]}
+                    """, "\"no-op\"") + "," +
+                Change("azurerm_network_interface.b", """
+                    {"id":"nic-b","ip_configuration":[{"name":"ip","subnet_id":"subnet-app","private_ip_address":"10.2.2.4"},
+                                                      {"name":"ip6","subnet_id":"subnet-app","private_ip_address":"fd00:2::4"}]}
+                    """, "\"no-op\"") + "," +
+                Change("azurerm_public_ip.web", """{"id":"pip-1","ip_address":"203.0.113.40"}""", "\"no-op\"") + "," +
+                Change("azurerm_subnet.dmz", """{"id":"subnet-dmz","name":"dmz","address_prefixes":["10.2.1.0/24"]}""", "\"no-op\"") + "," +
+                Change("azurerm_subnet.app", """{"id":"subnet-app","name":"app","address_prefixes":["10.2.2.0/24","fd00:2::/64"]}""", "\"no-op\"")));
+
+            var web = PropertiesOf(topology, "azurerm_linux_virtual_machine.web");
+            Assert.Equal("10.2.1.4,10.2.2.4,203.0.113.40,fd00:2::4", web["ip_addresses"]);
+            Assert.Equal(
+                "azurerm_subnet.dmz=10.2.1.4;azurerm_subnet.app=10.2.2.4;azurerm_subnet.app=fd00:2::4",
+                web["ip_addresses_by_network"]);
+        }
+
+        [Fact]
+        public void AwsInstance_HasItsPrivateAndPublicAddresses()
+        {
+            var topology = PlanTopologyParser.Parse(Plan(
+                Change("aws_instance.web", """
+                    {"subnet_id":"subnet-1","private_ip":"10.1.0.5","public_ip":"203.0.113.7","ipv6_addresses":["2600:1f18::5"]}
+                    """, "\"no-op\"") + "," +
+                Change("aws_instance.new", """{"subnet_id":"subnet-1","private_ip":"10.1.0.6"}""",
+                    unknown: """{"public_ip":true,"ipv6_addresses":true}""") + "," +
+                Change("aws_subnet.dmz", """{"id":"subnet-1","cidr_block":"10.1.0.0/24"}""")));
+
+            var web = PropertiesOf(topology, "aws_instance.web");
+            Assert.Equal("10.1.0.5,203.0.113.7,2600:1f18::5", web["ip_addresses"]);
+            // The public address is on no subnet.
+            Assert.Equal("aws_subnet.dmz=10.1.0.5;aws_subnet.dmz=2600:1f18::5", web["ip_addresses_by_network"]);
+            Assert.Equal("10.1.0.6", PropertiesOf(topology, "aws_instance.new")["ip_addresses"]);
+        }
+
+        [Fact]
+        public void ConfiguredTypeReplacingABuiltIn_HasNoAddresses()
+        {
+            var options = new TopologyOptions
+            {
+                Machines = { ["aws_instance"] = new TopologyMachineType { Network = "subnet_id" } },
+                Networks = { ["aws_subnet"] = new TopologyNetworkType { Keys = ["id"] } },
+            };
+
+            var topology = PlanTopologyParser.Parse(Plan(
+                Change("aws_instance.web", """{"subnet_id":"subnet-1","private_ip":"10.1.0.5"}""") + "," +
+                Change("aws_subnet.dmz", """{"id":"subnet-1","cidr_block":"10.1.0.0/24"}""")), options);
+
+            Assert.Empty(PropertiesOf(topology, "aws_instance.web"));
+        }
+
+        #endregion
     }
 }

@@ -52,7 +52,13 @@ public class TopologyNode
     /// </summary>
     public bool NotCreated { get; set; }
 
-    /// <summary>A few display values, such as cpus and memory_mb, when the plan knows them.</summary>
+    /// <summary>
+    /// A few display values, such as cpus and memory_mb, when the plan knows them.
+    /// A machine of a built-in type also has <c>ip_addresses</c> (comma-separated,
+    /// IPv4 first), <c>gateway</c> and <c>ip_addresses_by_network</c>
+    /// (<c>networkNodeId=address;...</c>). Values known only after apply, or
+    /// marked sensitive, are left out.
+    /// </summary>
     public Dictionary<string, string> Properties { get; set; } = [];
 
     /// <summary>

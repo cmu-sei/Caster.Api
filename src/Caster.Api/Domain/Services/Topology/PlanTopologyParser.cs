@@ -143,6 +143,11 @@ public static partial class PlanTopologyParser
             {
                 BuiltInNetworks[alias] = BuiltInNetworks[name];
             }
+
+            if (AddressReaders.TryGetValue(name, out var addresses))
+            {
+                AddressReaders[alias] = addresses;
+            }
         }
     }
 
@@ -357,6 +362,8 @@ public static partial class PlanTopologyParser
                     Nic = nics.Count + i,
                 });
             }
+
+            AddAddresses(instance, node, types, nics.Count, attached, instances, topology);
         }
 
         ReadConsoles(instances, configuration, machines, variables);
