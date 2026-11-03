@@ -56,6 +56,7 @@ public class TerraformOptions
 
     public KubernetesJobOptions KubernetesJobs { get; set; } = new();
     public EnvironmentVariableOptions EnvironmentVariables { get; set; } = new();
+    public SecretOptions Secrets { get; set; } = new();
 }
 
 public class KubernetesJobOptions
@@ -106,9 +107,27 @@ public class KubernetesJobOptions
 
 public class EnvironmentVariableOptions
 {
+    /// <summary>
+    /// Pass every API environment variable to every run, except those matching
+    /// <see cref="SecretOptions.Patterns"/>. Off by default: the API's environment
+    /// holds its own database connection string, OIDC client secret and GitLab token.
+    /// </summary>
     public bool InheritAll { get; set; }
     public string[] Inherit { get; set; } = [];
     public Dictionary<string, string> Direct { get; set; } = [];
+}
+
+public class SecretOptions
+{
+    /// <summary>
+    /// Regular expressions naming the API environment variables that hold secrets.
+    /// A matching variable never reaches a run through
+    /// <see cref="EnvironmentVariableOptions.Inherit"/> or <see cref="EnvironmentVariableOptions.InheritAll"/>;
+    /// it only reaches the projects an Environment Set gives it to.
+    /// The shipped default (appsettings.json) is <c>^CASTER_SECRET_</c>. No default is set here,
+    /// because the configuration binder appends to an array that already holds values.
+    /// </summary>
+    public string[] Patterns { get; set; } = [];
 }
 
 public class ConfigMap

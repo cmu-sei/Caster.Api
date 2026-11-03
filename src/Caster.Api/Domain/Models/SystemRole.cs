@@ -49,7 +49,9 @@ public enum SystemPermission
     ManageModules,
     // Appended, not grouped with the others: stored as ints, so existing roles
     // keep their meaning.
-    ViewInfrastructure
+    ViewInfrastructure,
+    ViewEnvironmentSets,
+    ManageEnvironmentSets
 }
 
 public static class SystemRoleDefaults
