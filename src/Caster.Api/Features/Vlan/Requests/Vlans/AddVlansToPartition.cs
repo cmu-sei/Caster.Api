@@ -52,6 +52,13 @@ public class AddVlansToPartition
         public Validator(IValidationService validationService)
         {
             RuleFor(x => x.PartitionId).PartitionExists(validationService);
+
+            // A count that reaches the query unchecked fails in the database
+            // ("LIMIT must not be negative"), so say what is allowed instead.
+            RuleFor(x => x.Vlans)
+                .InclusiveBetween(1, 4096)
+                .When(x => x.VlanIds == null || x.VlanIds.Length == 0)
+                .WithMessage("Add between 1 and 4096 VLANs.");
         }
     }
 
