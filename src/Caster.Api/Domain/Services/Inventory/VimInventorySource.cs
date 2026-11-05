@@ -335,10 +335,12 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
     }
 
     /// <summary>
-    /// Where to search for ISOs: every accessible datastore, or only the
-    /// IsoLocations entries, each a datastore name ("iso-ds") or a datastore path
-    /// ("[iso-ds] stock"). Every search is a vCenter task, so a location that fails
-    /// or times out is reported in IsoError and the rest are still listed.
+    /// Where to search for ISOs: only the IsoLocations entries, each a datastore
+    /// name ("iso-ds") or a datastore path ("[iso-ds] stock"). With none, nothing
+    /// is searched and IsoError says what to set: a recursive search of every
+    /// datastore is slow on a large vCenter and lists the ISOs inside VM folders
+    /// too. Every search is a vCenter task, so a location that fails or times out
+    /// is reported in IsoError and the rest are still listed.
     /// </summary>
     private async Task SearchIsosAsync(
         VimPortTypeClient client, ManagedObjectReference collector, VimInventory inventory, List<ObjectContent> objects,
@@ -349,6 +351,17 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
             .Select(x => (Datastore: inventory.Datastores.FirstOrDefault(d => d.Id == x.obj.Value), Browser: x.propSet?.FirstOrDefault(p => p.name == "browser")?.val as ManagedObjectReference))
             .Where(x => x.Datastore != null && x.Datastore.Accessible && x.Browser != null && !string.IsNullOrEmpty(x.Datastore.Name))
             .ToDictionary(x => x.Datastore.Name, x => x.Browser, StringComparer.Ordinal);
+
+        if (!(isoLocations ?? []).Any(x => !string.IsNullOrWhiteSpace(x)))
+        {
+            var datastores = browsers.Count == 0
+                ? "There are no accessible datastores."
+                : $"Accessible datastores: {string.Join(", ", browsers.Keys.Order(StringComparer.Ordinal))}.";
+            inventory.IsoError =
+                "ISOs are not listed until this connection's IsoLocations names the datastores or folders that hold them, " +
+                $"e.g. \"iso-datastore\" or \"[iso-datastore] stock\". {datastores}";
+            return;
+        }
 
         var (targets, unknown) = IsoTargets(isoLocations, browsers.Keys);
         var failed = new List<string>();
@@ -405,9 +418,9 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
     }
 
     /// <summary>
-    /// The datastores and folders to search. No locations means every datastore
-    /// from its root. A datastore named twice, or once whole and once by folder,
-    /// is searched once per distinct folder, and its root wins over its folders.
+    /// The datastores and folders to search; no locations means none. A
+    /// datastore named twice, or once whole and once by folder, is searched once
+    /// per distinct folder, and its root wins over its folders.
     /// </summary>
     public static ((string Datastore, string Folder)[] Targets, string[] Unknown) IsoTargets(
         string[] isoLocations, IEnumerable<string> datastores)
@@ -416,7 +429,7 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
         var locations = (isoLocations ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
 
         if (locations.Length == 0)
-            return (known.Order(StringComparer.Ordinal).Select(x => (x, string.Empty)).ToArray(), []);
+            return ([], []);
 
         var targets = new List<(string Datastore, string Folder)>();
         var unknown = new List<string>();
