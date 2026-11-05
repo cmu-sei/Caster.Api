@@ -20,10 +20,6 @@ namespace Caster.Api.Domain.Services.Inventory;
 /// Read-only inventory reader for Proxmox VE, using the <c>/api2/json</c> rest
 /// api. Like the vSphere reader it depends on nothing but IHttpClientFactory, and
 /// issues nothing but GET plus the one optional POST /access/ticket login.
-/// <para>
-/// Unlike vSphere this provider can enumerate ISOs, because Proxmox exposes
-/// storage content listings over rest - see CRU-2828.
-/// </para>
 /// </summary>
 public class ProxmoxInventoryClient(
     IHttpClientFactory httpClientFactory,
@@ -131,7 +127,8 @@ public class ProxmoxInventoryClient(
             VmTemplates = await ReadVmTemplatesAsync(client, credential, options, cancellationToken),
             Isos = await ReadIsosAsync(client, credential, nodes, storages, options, cancellationToken),
             Networks = await ReadNetworksAsync(client, credential, nodes, options, cancellationToken),
-            Datastores = ProjectDatastores(storages)
+            Datastores = ProjectDatastores(storages),
+            Hosts = await ReadHostsAsync(client, credential, nodes, options, cancellationToken)
         };
     }
 
@@ -386,6 +383,58 @@ public class ProxmoxInventoryClient(
             logger.LogWarning(ex, "Could not read the config of template {VmId} at {ProxmoxUrl}", vmId, options.Url);
             return null;
         }
+    }
+
+    /// <summary>
+    /// The nodes, from the shared node list, with how loaded each one is and how
+    /// many VMs and containers it holds. The counts come from the cluster's VM
+    /// list; when that cannot be read the nodes are still listed, without them.
+    /// </summary>
+    private async Task<InventoryCategoryResult> ReadHostsAsync(
+        HttpClient client, ProxmoxCredential credential, ProviderRead<ProxmoxNode> nodes, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
+    {
+        if (!nodes.Ok)
+            return InventoryCategoryResult.Unavailable($"Host discovery needs the Proxmox node list. {nodes.Error}");
+
+        var guests = await ReadAsync<ProxmoxResource>(client, credential, VmResourcesPath, "VMs", options, cancellationToken);
+        var byNode = guests.Ok
+            ? guests.Values
+                .Where(x => x.Template != true && !string.IsNullOrWhiteSpace(x.Node))
+                .GroupBy(x => x.Node, StringComparer.Ordinal)
+                .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.Ordinal)
+            : null;
+
+        var entries = nodes.Values
+            .Where(x => !string.IsNullOrWhiteSpace(x.Node))
+            .Select(x =>
+            {
+                var properties = new Dictionary<string, string>();
+                AddIfPresent(properties, "status", x.Status);
+                AddIfPresent(properties, "cpu", x.Cpu?.ToString("0.####", CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "maxcpu", x.MaxCpu?.ToString(CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "mem", x.Mem?.ToString(CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "maxmem", x.MaxMem?.ToString(CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "disk", x.Disk?.ToString(CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "maxdisk", x.MaxDisk?.ToString(CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "uptime", x.Uptime?.ToString(CultureInfo.InvariantCulture));
+
+                if (byNode != null)
+                {
+                    var onNode = byNode.GetValueOrDefault(x.Node) ?? [];
+                    properties["vmsTotal"] = onNode.Length.ToString(CultureInfo.InvariantCulture);
+                    properties["vmsRunning"] = onNode.Count(g => g.Status == "running").ToString(CultureInfo.InvariantCulture);
+                }
+
+                return new InventoryEntry
+                {
+                    Id = x.Node,
+                    Name = x.Node,
+                    Path = x.Node,
+                    Properties = properties
+                };
+            });
+
+        return InventoryCategoryResult.Ok(Ordered(entries));
     }
 
     /// <summary>
@@ -959,6 +1008,28 @@ public class ProxmoxInventoryClient(
 
         [JsonPropertyName("status")]
         public string Status { get; set; }
+
+        /// <summary>CPU in use, as a fraction of <see cref="MaxCpu"/>: 0.25 is a quarter.</summary>
+        [JsonPropertyName("cpu")]
+        public double? Cpu { get; set; }
+
+        [JsonPropertyName("maxcpu")]
+        public int? MaxCpu { get; set; }
+
+        [JsonPropertyName("mem")]
+        public long? Mem { get; set; }
+
+        [JsonPropertyName("maxmem")]
+        public long? MaxMem { get; set; }
+
+        [JsonPropertyName("disk")]
+        public long? Disk { get; set; }
+
+        [JsonPropertyName("maxdisk")]
+        public long? MaxDisk { get; set; }
+
+        [JsonPropertyName("uptime")]
+        public long? Uptime { get; set; }
     }
 
     /// <summary>

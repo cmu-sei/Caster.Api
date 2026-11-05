@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -29,12 +30,15 @@ public interface IInventoryProviderClient
 }
 
 /// <summary>
-/// Read-only inventory reader for vCenter, using the vSphere Automation REST api.
-/// Deliberately has no dependency beyond IHttpClientFactory, and never issues
-/// anything but GET, POST /api/session and DELETE /api/session.
+/// Read-only inventory reader for vCenter. Templates, networks, datastores, hosts
+/// and ISOs come from the vSphere SOAP (vim25) api, as in Player and TopoMojo,
+/// since only it has host usage, folder parents and datastore browsing. Content
+/// libraries are not in vim25, so they come from the Automation REST api, which
+/// is only ever sent POST /api/session, GET and DELETE /api/session.
 /// </summary>
 public class VsphereInventoryClient(
     IHttpClientFactory httpClientFactory,
+    IVimInventorySource vimSource,
     ILogger<VsphereInventoryClient> logger) : IInventoryProvider
 {
     public const string HttpClientName = "vsphere-inventory";
@@ -45,19 +49,11 @@ public class VsphereInventoryClient(
 
     private const string SessionHeader = "vmware-api-session-id";
     private const string SessionPath = "api/session";
-    private const string VmPath = "api/vcenter/vm";
-    private const string DatastorePath = "api/vcenter/datastore";
-    private const string NetworkPath = "api/vcenter/network";
-    private const string DatacenterPath = "api/vcenter/datacenter";
-    private const string FolderPath = "api/vcenter/folder";
     private const string LibraryPath = "api/content/library";
     private const string LibraryItemPath = "api/content/library/item";
 
-    /// <summary>
-    /// The folder walk costs two requests per folder, so it stops here. Templates
-    /// it did not reach keep their bare name as their path.
-    /// </summary>
-    internal const int MaxFolders = 500;
+    /// <summary>A folder chain deeper than this is treated as broken.</summary>
+    private const int MaxFolderDepth = 64;
 
     /// <summary>
     /// Each content library item costs a request. Past this the category reports
@@ -88,6 +84,239 @@ public class VsphereInventoryClient(
             return InventorySnapshot.AllUnavailable(InventoryMessages.NotConfigured);
         }
 
+        VimInventory vim = null;
+        string vimError = null;
+
+        try
+        {
+            vim = await vimSource.ReadAsync(options, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            vimError = Redact($"Could not read vCenter at {options.Url}: {ex.Message}", options);
+            logger.LogError(ex, "Could not read the vCenter inventory at {VsphereUrl} as {VsphereUsername}", options.Url, options.Username);
+        }
+
+        var (contentLibrary, connected) = await ReadContentLibraryAsync(options, cancellationToken);
+
+        // Nothing reached vCenter, so there is no read to keep.
+        if (vim == null && !connected)
+            return InventorySnapshot.AllUnavailable(vimError);
+
+        var unavailable = vim == null ? InventoryCategoryResult.Unavailable(vimError) : null;
+
+        return new InventorySnapshot
+        {
+            LastUpdated = DateTime.UtcNow,
+            VmTemplates = unavailable ?? Templates(vim),
+            Networks = unavailable ?? Networks(vim),
+            Datastores = unavailable ?? Datastores(vim),
+            Hosts = unavailable ?? Hosts(vim),
+            Isos = unavailable ?? Isos(vim),
+            ContentLibrary = contentLibrary
+        };
+    }
+
+    #region vim25 categories
+
+    /// <summary>
+    /// Each template's path is its folder path below its datacenter's VM folder,
+    /// e.g. "Templates/Linux/ubuntu-22", the relative path Terraform's
+    /// vsphere_virtual_machine data source accepts in place of a name. A template
+    /// whose folders cannot be followed up to a datacenter keeps its bare name.
+    /// </summary>
+    internal static InventoryCategoryResult Templates(VimInventory vim)
+    {
+        var folders = vim.Folders.Where(x => x.Id != null).DistinctBy(x => x.Id).ToDictionary(x => x.Id, StringComparer.Ordinal);
+        var datacenters = vim.Datacenters.Where(x => x.VmFolder != null).DistinctBy(x => x.VmFolder).ToDictionary(x => x.VmFolder, StringComparer.Ordinal);
+
+        return InventoryCategoryResult.Ok(vim.Vms
+            .Where(x => x.Template && !string.IsNullOrWhiteSpace(x.Name))
+            .Select(x =>
+            {
+                var properties = new Dictionary<string, string>();
+                AddIfPresent(properties, "powerState", x.PowerState);
+                AddIfPresent(properties, "cpuCount", x.Cpus?.ToString(CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "memorySizeMiB", x.MemoryMiB?.ToString(CultureInfo.InvariantCulture));
+
+                var (datacenter, folder) = Place(x.Parent, folders, datacenters);
+                AddIfPresent(properties, "datacenter", datacenter);
+                AddIfPresent(properties, "folder", folder);
+
+                var path = string.IsNullOrEmpty(folder) ? x.Name : $"{folder}/{x.Name}";
+
+                return new InventoryEntry
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    Path = path,
+                    Properties = properties,
+                    Terraform = TerraformSnippets.VsphereTemplate(x.Name, path, datacenter)
+                };
+            })
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+            .ToArray());
+    }
+
+    /// <summary>
+    /// Follows a VM's parent folders up to a datacenter's VM folder. Returns the
+    /// datacenter's name and the folders between, or nulls when the chain does not
+    /// reach one.
+    /// </summary>
+    private static (string Datacenter, string Folder) Place(
+        string parent, Dictionary<string, VimFolder> folders, Dictionary<string, VimDatacenter> datacenters)
+    {
+        var names = new List<string>();
+        var current = parent;
+
+        for (var depth = 0; current != null && depth < MaxFolderDepth; depth++)
+        {
+            if (datacenters.TryGetValue(current, out var datacenter))
+            {
+                names.Reverse();
+                return (datacenter.Name, string.Join("/", names));
+            }
+
+            if (!folders.TryGetValue(current, out var folder))
+                break;
+
+            names.Add(folder.Name);
+            current = folder.Parent;
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>
+    /// Portgroups and standard networks. A distributed switch's uplink portgroup
+    /// is left out, since VMs cannot attach to it.
+    /// </summary>
+    internal static InventoryCategoryResult Networks(VimInventory vim) =>
+        InventoryCategoryResult.Ok(vim.Networks
+            .Where(x => !x.Uplink && !string.IsNullOrWhiteSpace(x.Name))
+            .Select(x =>
+            {
+                var properties = new Dictionary<string, string>();
+                AddIfPresent(properties, "type", x.Type switch
+                {
+                    "DistributedVirtualPortgroup" => "DISTRIBUTED_PORTGROUP",
+                    "OpaqueNetwork" => "OPAQUE_NETWORK",
+                    _ => "STANDARD_PORTGROUP"
+                });
+
+                return new InventoryEntry { Id = x.Id, Name = x.Name, Path = x.Name, Properties = properties };
+            })
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray());
+
+    internal static InventoryCategoryResult Datastores(VimInventory vim) =>
+        InventoryCategoryResult.Ok(vim.Datastores
+            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+            .Select(x =>
+            {
+                var properties = new Dictionary<string, string>();
+                AddIfPresent(properties, "type", x.Type);
+                AddIfPresent(properties, "capacity", x.Capacity?.ToString(CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "freeSpace", x.FreeSpace?.ToString(CultureInfo.InvariantCulture));
+                properties["accessible"] = x.Accessible ? "true" : "false";
+
+                return new InventoryEntry { Id = x.Id, Name = x.Name, Path = x.Name, Properties = properties };
+            })
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray());
+
+    /// <summary>
+    /// The ESXi hosts, with their usage and capacity and what their VMs are
+    /// allocated. cpu, maxcpu, mem and maxmem are in the same units as a Proxmox
+    /// node's (a fraction of the host, cores, bytes, bytes) so hosts from either
+    /// provider can be shown alike; the vSphere units are alongside.
+    /// </summary>
+    internal static InventoryCategoryResult Hosts(VimInventory vim)
+    {
+        var vms = vim.Vms.Where(x => !x.Template && x.Host != null).ToLookup(x => x.Host, StringComparer.Ordinal);
+
+        return InventoryCategoryResult.Ok(vim.Hosts
+            .Where(x => !string.IsNullOrWhiteSpace(x.Id))
+            .Select(x =>
+            {
+                var properties = new Dictionary<string, string>();
+                AddIfPresent(properties, "connectionState", x.ConnectionState);
+                AddIfPresent(properties, "powerState", x.PowerState);
+                AddIfPresent(properties, "cpuUsageMhz", x.CpuUsageMhz?.ToString(CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "maxcpu", x.Cores?.ToString(CultureInfo.InvariantCulture));
+                AddIfPresent(properties, "maxmem", x.MemoryBytes?.ToString(CultureInfo.InvariantCulture));
+
+                var capacityMhz = (long?)x.CpuMhz * x.Cores;
+                AddIfPresent(properties, "cpuCapacityMhz", capacityMhz?.ToString(CultureInfo.InvariantCulture));
+
+                if (x.CpuUsageMhz.HasValue && capacityMhz > 0)
+                    properties["cpu"] = ((double)x.CpuUsageMhz.Value / capacityMhz.Value).ToString("0.####", CultureInfo.InvariantCulture);
+
+                if (x.MemoryUsageMiB.HasValue)
+                {
+                    properties["memoryUsageMiB"] = x.MemoryUsageMiB.Value.ToString(CultureInfo.InvariantCulture);
+                    properties["mem"] = (x.MemoryUsageMiB.Value * 1024L * 1024L).ToString(CultureInfo.InvariantCulture);
+                }
+
+                var guests = vms[x.Id].ToArray();
+                var running = guests.Where(v => string.Equals(v.PowerState, "poweredOn", StringComparison.OrdinalIgnoreCase)).ToArray();
+                properties["vmsTotal"] = guests.Length.ToString(CultureInfo.InvariantCulture);
+                properties["vmsRunning"] = running.Length.ToString(CultureInfo.InvariantCulture);
+                properties["allocatedCpus"] = running.Sum(v => v.Cpus ?? 0).ToString(CultureInfo.InvariantCulture);
+                properties["allocatedMemoryMiB"] = running.Sum(v => v.MemoryMiB ?? 0).ToString(CultureInfo.InvariantCulture);
+
+                var name = string.IsNullOrWhiteSpace(x.Name) ? x.Id : x.Name;
+                return new InventoryEntry { Id = x.Id, Name = name, Path = name, Properties = properties };
+            })
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray());
+    }
+
+    /// <summary>
+    /// An ISO's name is its path on its datastore, e.g. "iso/alpine.iso", which
+    /// is what a vsphere_virtual_machine cdrom block's path takes alongside the
+    /// datastore; its path is the full datastore path, "[ds] iso/alpine.iso". A
+    /// partial list is not returned, since it would let a disk manifest call an
+    /// ISO missing.
+    /// </summary>
+    internal static InventoryCategoryResult Isos(VimInventory vim)
+    {
+        if (vim.IsoError != null)
+            return InventoryCategoryResult.Unavailable(vim.IsoError);
+
+        return InventoryCategoryResult.Ok(vim.Isos
+            .Select(x =>
+            {
+                var close = x.Path.IndexOf(']');
+                var relative = close >= 0 ? x.Path[(close + 1)..].Trim() : x.Path;
+                var properties = new Dictionary<string, string> { ["datastore"] = x.Datastore };
+                AddIfPresent(properties, "size", x.Size?.ToString(CultureInfo.InvariantCulture));
+
+                return new InventoryEntry { Id = x.Path, Name = relative, Path = x.Path, Properties = properties };
+            })
+            .DistinctBy(x => x.Path, StringComparer.Ordinal)
+            .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+            .ToArray());
+    }
+
+    #endregion
+
+    #region Content libraries (REST)
+
+    private HttpClient CreateClient(InfrastructureConnectionOptions options)
+    {
+        var client = httpClientFactory.CreateClient(InventoryHttpClients.For(HttpClientName, options));
+        client.BaseAddress = new Uri(options.Url.TrimEnd('/') + "/", UriKind.Absolute);
+        return client;
+    }
+
+    /// <summary>
+    /// The content library read over REST, and whether a REST session was made.
+    /// </summary>
+    private async Task<(InventoryCategoryResult Result, bool Connected)> ReadContentLibraryAsync(
+        InfrastructureConnectionOptions options, CancellationToken cancellationToken)
+    {
         using var client = CreateClient(options);
         string sessionToken;
 
@@ -97,25 +326,14 @@ public class VsphereInventoryClient(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            var message = Redact($"Could not connect to vCenter at {options.Url}: {ex.Message}", options);
-            logger.LogError(ex, "Could not create a vCenter session for {VsphereUrl} as {VsphereUsername}", options.Url, options.Username);
-            return InventorySnapshot.AllUnavailable(message);
+            logger.LogError(ex, "Could not create a vCenter REST session for {VsphereUrl} as {VsphereUsername}", options.Url, options.Username);
+            return (InventoryCategoryResult.Unavailable(
+                Redact($"Could not connect to the vCenter REST api at {options.Url} to read content libraries: {ex.Message}", options)), false);
         }
 
         try
         {
-            var snapshot = new InventorySnapshot
-            {
-                LastUpdated = DateTime.UtcNow,
-                VmTemplates = await ReadVmTemplatesAsync(client, sessionToken, options, cancellationToken),
-                Networks = await ReadNetworksAsync(client, sessionToken, options, cancellationToken),
-                Datastores = await ReadDatastoresAsync(client, sessionToken, options, cancellationToken),
-                ContentLibrary = await ReadContentLibraryAsync(client, sessionToken, options, cancellationToken),
-                // See InventoryMessages.IsoNotSupported / CRU-2828.
-                Isos = InventoryCategoryResult.Unavailable(InventoryMessages.IsoNotSupported)
-            };
-
-            return snapshot;
+            return (await ReadContentLibraryAsync(client, sessionToken, options, cancellationToken), true);
         }
         finally
         {
@@ -123,14 +341,6 @@ public class VsphereInventoryClient(
         }
     }
 
-    private HttpClient CreateClient(InfrastructureConnectionOptions options)
-    {
-        var client = httpClientFactory.CreateClient(InventoryHttpClients.For(HttpClientName, options));
-        client.BaseAddress = new Uri(options.Url.TrimEnd('/') + "/", UriKind.Absolute);
-        return client;
-    }
-
-    #region Session
 
     private static async Task<string> CreateSessionAsync(HttpClient client, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
@@ -197,157 +407,6 @@ public class VsphereInventoryClient(
         catch (JsonException)
         {
             return body.Trim().Trim('"');
-        }
-    }
-
-    #endregion
-
-    #region Categories
-
-    private async Task<InventoryCategoryResult> ReadVmTemplatesAsync(
-        HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
-    {
-        var result = await ReadTemplateVmsAsync(client, sessionToken, options, cancellationToken);
-
-        if (result.Available && result.Entries.Length > 0)
-            await AddFolderPathsAsync(client, sessionToken, result.Entries, options, cancellationToken);
-
-        // After the walk, so a template it placed is found by its path and datacenter.
-        foreach (var template in result.Entries)
-        {
-            template.Terraform = TerraformSnippets.VsphereTemplate(
-                template.Name, template.Path, template.Properties.GetValueOrDefault("datacenter"));
-        }
-
-        return result;
-    }
-
-    private async Task<InventoryCategoryResult> ReadTemplateVmsAsync(
-        HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
-    {
-        return await ReadCategoryAsync<VsphereVm>(client, sessionToken, VmPath, "VM templates", options, cancellationToken, vms =>
-        {
-            if (vms.Length == 0)
-            {
-                return InventoryCategoryResult.Ok([]);
-            }
-
-            // Not every vCenter build reports a template flag on the VM list. If
-            // none of them do we cannot tell templates from running VMs, and
-            // returning an empty list would look like "there are no templates".
-            if (!vms.Any(x => x.Template.HasValue))
-            {
-                return InventoryCategoryResult.Unavailable(
-                    $"vCenter returned {vms.Length} VMs but none reported a template flag, so VM templates cannot be identified through the Automation REST API on this vCenter build.");
-            }
-
-            var entries = vms
-                .Where(x => x.Template == true)
-                .Select(x =>
-                {
-                    var properties = new Dictionary<string, string>();
-                    AddIfPresent(properties, "powerState", x.PowerState);
-                    AddIfPresent(properties, "cpuCount", x.CpuCount?.ToString());
-                    AddIfPresent(properties, "memorySizeMiB", x.MemorySizeMiB?.ToString());
-
-                    return new InventoryEntry
-                    {
-                        Id = x.Vm,
-                        Name = x.Name,
-                        Path = x.Name,
-                        Properties = properties
-                    };
-                })
-                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            return InventoryCategoryResult.Ok(entries);
-        });
-    }
-
-    /// <summary>
-    /// Gives each template its folder path below its datacenter's VM folder, e.g.
-    /// "Templates/Linux/ubuntu-22", which is the relative path Terraform's
-    /// vsphere_virtual_machine data source accepts in place of a name. The
-    /// Automation REST api puts no path on a VM and no parent on a folder, so the
-    /// walk lists each folder's children from the datacenter's VM folder down.
-    /// A template takes the path of the deepest folder that lists it, which is
-    /// right whether the folders filter matches direct children or a subtree.
-    /// <para>
-    /// The path is extra detail, so a failed walk is logged and the templates keep
-    /// their bare names. It never makes the category unavailable.
-    /// </para>
-    /// </summary>
-    private async Task AddFolderPathsAsync(
-        HttpClient client, string sessionToken, InventoryEntry[] templates, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
-    {
-        var templateIds = templates.Select(x => x.Id).Where(x => x != null).ToHashSet(StringComparer.Ordinal);
-        var placed = new Dictionary<string, (int Depth, string Folder, string Datacenter)>(StringComparer.Ordinal);
-        var walked = 0;
-
-        try
-        {
-            var datacenters = DeserializeList<VsphereDatacenter>(await GetAsync(client, sessionToken, DatacenterPath, cancellationToken));
-
-            foreach (var datacenter in datacenters)
-            {
-                var info = DeserializeObject<VsphereDatacenterInfo>(
-                    await GetAsync(client, sessionToken, $"{DatacenterPath}/{Uri.EscapeDataString(datacenter.Datacenter)}", cancellationToken));
-
-                if (string.IsNullOrWhiteSpace(info?.VmFolder))
-                    continue;
-
-                var folders = new Queue<(string Id, string Path, int Depth)>();
-                folders.Enqueue((info.VmFolder, string.Empty, 0));
-
-                while (folders.Count > 0)
-                {
-                    if (++walked > MaxFolders)
-                    {
-                        logger.LogWarning("Stopped the vCenter folder walk at {MaxFolders} folders; templates beyond it are listed without a folder path", MaxFolders);
-                        return;
-                    }
-
-                    var (folder, path, depth) = folders.Dequeue();
-                    var escaped = Uri.EscapeDataString(folder);
-
-                    foreach (var vm in DeserializeList<VsphereVm>(await GetAsync(client, sessionToken, $"{VmPath}?folders={escaped}", cancellationToken)))
-                    {
-                        if (vm.Vm != null && templateIds.Contains(vm.Vm) &&
-                            (!placed.TryGetValue(vm.Vm, out var current) || depth > current.Depth))
-                        {
-                            placed[vm.Vm] = (depth, path, datacenter.Name);
-                        }
-                    }
-
-                    foreach (var child in DeserializeList<VsphereFolder>(
-                        await GetAsync(client, sessionToken, $"{FolderPath}?type=VIRTUAL_MACHINE&parent_folders={escaped}", cancellationToken)))
-                    {
-                        if (!string.IsNullOrEmpty(child.Folder))
-                            folders.Enqueue((child.Folder, depth == 0 ? child.Name : $"{path}/{child.Name}", depth + 1));
-                    }
-                }
-            }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Could not read the vCenter folders at {VsphereUrl}; some VM templates are listed without a folder path", options.Url);
-        }
-        finally
-        {
-            foreach (var template in templates)
-            {
-                if (template.Id == null || !placed.TryGetValue(template.Id, out var place))
-                    continue;
-
-                AddIfPresent(template.Properties, "datacenter", place.Datacenter);
-
-                if (!string.IsNullOrEmpty(place.Folder))
-                {
-                    template.Path = $"{place.Folder}/{template.Name}";
-                    template.Properties["folder"] = place.Folder;
-                }
-            }
         }
     }
 
@@ -445,96 +504,6 @@ public class VsphereInventoryClient(
         }
     }
 
-    private async Task<InventoryCategoryResult> ReadNetworksAsync(
-        HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
-    {
-        return await ReadCategoryAsync<VsphereNetwork>(client, sessionToken, NetworkPath, "networks", options, cancellationToken, networks =>
-        {
-            var entries = networks
-                .Select(x =>
-                {
-                    var properties = new Dictionary<string, string>();
-                    AddIfPresent(properties, "type", x.Type);
-
-                    return new InventoryEntry
-                    {
-                        Id = x.Network,
-                        Name = x.Name,
-                        Path = x.Name,
-                        Properties = properties
-                    };
-                })
-                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            return InventoryCategoryResult.Ok(entries);
-        });
-    }
-
-    private async Task<InventoryCategoryResult> ReadDatastoresAsync(
-        HttpClient client, string sessionToken, InfrastructureConnectionOptions options, CancellationToken cancellationToken)
-    {
-        return await ReadCategoryAsync<VsphereDatastore>(client, sessionToken, DatastorePath, "datastores", options, cancellationToken, datastores =>
-        {
-            var entries = datastores
-                .Select(x =>
-                {
-                    var properties = new Dictionary<string, string>();
-                    AddIfPresent(properties, "type", x.Type);
-                    AddIfPresent(properties, "capacity", x.Capacity?.ToString());
-                    AddIfPresent(properties, "freeSpace", x.FreeSpace?.ToString());
-
-                    return new InventoryEntry
-                    {
-                        Id = x.Datastore,
-                        Name = x.Name,
-                        Path = x.Name,
-                        Properties = properties
-                    };
-                })
-                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            return InventoryCategoryResult.Ok(entries);
-        });
-    }
-
-    private async Task<InventoryCategoryResult> ReadCategoryAsync<T>(
-        HttpClient client,
-        string sessionToken,
-        string path,
-        string description,
-        InfrastructureConnectionOptions options,
-        CancellationToken cancellationToken,
-        Func<T[], InventoryCategoryResult> project)
-    {
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, path);
-            request.Headers.Add(SessionHeader, sessionToken);
-
-            using var response = await client.SendAsync(request, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                return InventoryCategoryResult.Unavailable(
-                    $"vCenter returned {(int)response.StatusCode} {response.StatusCode} when reading {description}.");
-            }
-
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            var values = DeserializeList<T>(body);
-
-            logger.LogInformation("Read {Count} raw {Description} from {VsphereUrl}", values.Length, description, options.Url);
-
-            return project(values);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogError(ex, "Exception reading {Description} from {VsphereUrl}", description, options.Url);
-            return InventoryCategoryResult.Unavailable(Redact($"Could not read {description} from vCenter: {ex.Message}", options));
-        }
-    }
-
     /// <summary>
     /// A GET body, or an <see cref="HttpRequestException"/> carrying the status code.
     /// </summary>
@@ -608,51 +577,6 @@ public class VsphereInventoryClient(
 
     #region vSphere response shapes
 
-    private class VsphereVm
-    {
-        [JsonPropertyName("vm")]
-        public string Vm { get; set; }
-
-        [JsonPropertyName("name")]
-        public string Name { get; set; }
-
-        [JsonPropertyName("power_state")]
-        public string PowerState { get; set; }
-
-        [JsonPropertyName("cpu_count")]
-        public int? CpuCount { get; set; }
-
-        [JsonPropertyName("memory_size_MiB")]
-        public long? MemorySizeMiB { get; set; }
-
-        [JsonPropertyName("template")]
-        public bool? Template { get; set; }
-    }
-
-    private class VsphereDatacenter
-    {
-        [JsonPropertyName("datacenter")]
-        public string Datacenter { get; set; }
-
-        [JsonPropertyName("name")]
-        public string Name { get; set; }
-    }
-
-    private class VsphereDatacenterInfo
-    {
-        [JsonPropertyName("vm_folder")]
-        public string VmFolder { get; set; }
-    }
-
-    private class VsphereFolder
-    {
-        [JsonPropertyName("folder")]
-        public string Folder { get; set; }
-
-        [JsonPropertyName("name")]
-        public string Name { get; set; }
-    }
-
     private class VsphereLibrary
     {
         [JsonPropertyName("name")]
@@ -675,36 +599,6 @@ public class VsphereInventoryClient(
 
         [JsonPropertyName("size")]
         public long? Size { get; set; }
-    }
-
-    private class VsphereNetwork
-    {
-        [JsonPropertyName("network")]
-        public string Network { get; set; }
-
-        [JsonPropertyName("name")]
-        public string Name { get; set; }
-
-        [JsonPropertyName("type")]
-        public string Type { get; set; }
-    }
-
-    private class VsphereDatastore
-    {
-        [JsonPropertyName("datastore")]
-        public string Datastore { get; set; }
-
-        [JsonPropertyName("name")]
-        public string Name { get; set; }
-
-        [JsonPropertyName("type")]
-        public string Type { get; set; }
-
-        [JsonPropertyName("free_space")]
-        public long? FreeSpace { get; set; }
-
-        [JsonPropertyName("capacity")]
-        public long? Capacity { get; set; }
     }
 
     #endregion

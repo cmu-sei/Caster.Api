@@ -100,7 +100,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var proxmox = new FakeProvider(InfrastructureProviders.Proxmox);
             using var cts = new CancellationTokenSource();
 
-            var options = new InfrastructureOptions
+            var options = new InfrastructureConnectionOptions
             {
                 Enabled = true,
                 Provider = InfrastructureProviders.Proxmox,
@@ -125,7 +125,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 Substitute.For<ILogger<InventoryProviderDispatcher>>());
 
             var snapshot = await dispatcher.GetInventoryAsync(
-                new InfrastructureOptions { Provider = InfrastructureProviders.Vsphere }, CancellationToken.None);
+                new InfrastructureConnectionOptions { Provider = InfrastructureProviders.Vsphere }, CancellationToken.None);
 
             Assert.False(snapshot.VmTemplates.Available);
             Assert.Equal(InventoryMessages.UnsupportedProvider(InfrastructureProviders.Vsphere), snapshot.VmTemplates.Error);
@@ -171,7 +171,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         {
             var services = new ServiceCollection();
             services.AddLogging();
-            services.AddOptions<InfrastructureOptions>();
+            services.AddOptions<InfrastructureConnectionOptions>();
             services.AddInventoryServices();
 
             using var provider = services.BuildServiceProvider(validateScopes: true);
@@ -207,13 +207,13 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         {
             var services = new ServiceCollection();
             services.AddLogging();
-            services.AddOptions<InfrastructureOptions>();
+            services.AddOptions<InfrastructureConnectionOptions>();
             services.AddInventoryServices();
 
             using var provider = services.BuildServiceProvider(validateScopes: true);
 
             var snapshot = await provider.GetRequiredService<IInventoryProviderClient>().GetInventoryAsync(
-                new InfrastructureOptions { Enabled = true, Provider = InfrastructureProviders.Proxmox },
+                new InfrastructureConnectionOptions { Enabled = true, Provider = InfrastructureProviders.Proxmox },
                 CancellationToken.None);
 
             // proxmox was selected, and failed on its own missing credentials
@@ -229,7 +229,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 Substitute.For<ILogger<InventoryProviderDispatcher>>());
 
             return await dispatcher.GetInventoryAsync(
-                new InfrastructureOptions { Enabled = true, Provider = configured }, CancellationToken.None);
+                new InfrastructureConnectionOptions { Enabled = true, Provider = configured }, CancellationToken.None);
         }
 
         private sealed class FakeProvider(string provider) : IInventoryProvider

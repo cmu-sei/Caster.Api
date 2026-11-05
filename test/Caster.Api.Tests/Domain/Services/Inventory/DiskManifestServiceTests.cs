@@ -35,7 +35,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         {
             VmTemplates = InventoryCategoryResult.Ok(templates),
             Isos = isos == null
-                ? InventoryCategoryResult.Unavailable(InventoryMessages.IsoNotSupported)
+                ? InventoryCategoryResult.Unavailable("ISOs could not be read.")
                 : InventoryCategoryResult.Ok(isos),
             Networks = InventoryCategoryResult.Ok([]),
             Datastores = InventoryCategoryResult.Ok([]),
@@ -91,7 +91,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 File("Range/__Workspaces__/blue/blue.auto.tfvars", "iso_path = \"local:iso/kali-2026.3.iso\"\ntemplate = \"ubuntu-2404\"\n")
             ]);
 
-            Assert.Empty(manifest.Warnings);
+            Assert.Equal([DiskManifestMessages.BestEffort], manifest.Warnings);
             Assert.Collection(manifest.Disks,
                 template =>
                 {
@@ -174,8 +174,9 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var manifest = service.Build([File("main.tf", "template_name = \"ubuntu-2404\"\n")]);
 
             Assert.Single(manifest.Disks);
-            var warning = Assert.Single(manifest.Warnings);
-            Assert.Contains("ISOs on connection 'default' could not be read", warning);
+            Assert.Equal(2, manifest.Warnings.Count);
+            Assert.Equal(DiskManifestMessages.BestEffort, manifest.Warnings[0]);
+            Assert.Contains("ISOs on connection 'default' could not be read", manifest.Warnings[1]);
         }
 
         [Fact]
@@ -236,7 +237,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal("default", disk.Connection);
             Assert.Equal("proxmox", disk.Provider);
 
-            var warning = Assert.Single(manifest.Warnings);
+            Assert.Equal(DiskManifestMessages.BestEffort, manifest.Warnings[0]);
+            var warning = Assert.Single(manifest.Warnings.Skip(1));
             Assert.Contains("VM templates on connection 'default' could not be read", warning);
             Assert.Contains("stale inventory read at 2026-10-24 09:30 UTC", warning);
             Assert.Contains("Connection refused", warning);
@@ -251,6 +253,19 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             Assert.Empty(manifest.Disks);
             Assert.Contains("not enabled", Assert.Single(manifest.Warnings));
+        }
+
+        [Fact]
+        public void Every_Manifest_Built_From_An_Inventory_Says_It_Is_Best_Effort()
+        {
+            // A template named through a variable is not found, so the list says it can miss disks.
+            var service = new DiskManifestService(Inventory(
+                ("default", "proxmox", Snapshot([Entry("ubuntu-2404")], [Entry(Iso, storage: "local")]))));
+
+            var manifest = service.Build([File("main.tf", "template_name = var.template\n")]);
+
+            Assert.Empty(manifest.Disks);
+            Assert.Equal([DiskManifestMessages.BestEffort], manifest.Warnings);
         }
 
         #endregion

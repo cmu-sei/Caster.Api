@@ -44,7 +44,7 @@ namespace Caster.Api.Features.Directories
             /// </summary>
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Directory>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken) &&
-                await authorizationService.Authorize([SystemPermission.ViewHosts], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ViewInfrastructure], cancellationToken);
 
             public override async Task<DiskManifest> HandleRequest(Query request, CancellationToken cancellationToken)
             {

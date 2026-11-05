@@ -28,7 +28,7 @@ namespace Caster.Api.Features.Inventory
             IInventoryService inventoryService) : BaseHandler<Command, InventoryRefreshResult>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermission.ViewHosts], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ViewInfrastructure], cancellationToken);
 
             public override async Task<InventoryRefreshResult> HandleRequest(Command request, CancellationToken cancellationToken)
             {

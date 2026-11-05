@@ -13,6 +13,7 @@ Access to features of Caster are governed by sets of Permissions. Permissions ca
 - CreateProjects - Allows creation of new Projects
 - ViewProjects - Allows viewing all Projects and their Users and Groups
 - ManageUsers - Allows for making changes to Users.
+- ViewInfrastructure - Allows viewing the infrastructure inventory of the configured connections (VM templates, content library items, ISOs, networks, datastores and hosts), including each Project's Infrastructure panel.
 
 The Administration area now can be accessed by any User with View or Manage Permission to an Administration function (e.g. ViewVLANs, ManageWorkspaces, etc), but only the areas they have Permissions for will be accessible in the sidebar menu.
 

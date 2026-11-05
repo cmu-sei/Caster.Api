@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -127,6 +128,9 @@ namespace Caster.Api.Features.Projects
                 importResult.SkippedSettings = extracted.SkippedSettings;
                 importResult.Warnings = GetWarnings(extracted, project.Name);
                 importResult.Disks = diskManifestService.Check(extracted.DiskManifest);
+
+                if (importResult.Disks.Any())
+                    importResult.Warnings = importResult.Warnings.Append(DiskManifestMessages.BestEffort).ToList();
 
                 var entries = dbContext.GetUpdatedEntries();
                 await dbContext.SaveChangesAsync(cancellationToken);

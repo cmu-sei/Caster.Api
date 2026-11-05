@@ -102,6 +102,20 @@ namespace Caster.Api.Features.Inventory
         }
 
         /// <summary>
+        /// Get the cached hosts of an infrastructure connection, the default unless
+        /// connection names another: Proxmox nodes with their CPU, memory and disk
+        /// use, or vSphere hosts with what their powered-on VMs are allocated.
+        /// </summary>
+        [HttpGet("hosts")]
+        [ProducesResponseType(typeof(InventoryResult), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetInventoryHosts")]
+        public async Task<IActionResult> GetHosts([FromQuery] string connection = null)
+        {
+            var result = await _mediator.Send(new GetHosts.Query { Connection = connection });
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Trigger an immediate refresh of one connection's cached inventory, the
         /// default unless connection names another. Waits for the
         /// refresh to land, up to a fixed bound, so the get endpoints return the

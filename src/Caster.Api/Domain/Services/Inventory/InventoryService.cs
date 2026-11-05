@@ -108,23 +108,33 @@ public class InventoryService : BackgroundService, IInventoryService
         optionsMonitor.OnChange(x => Reconcile(optionsMonitor.CurrentValue));
     }
 
-    public IReadOnlyList<InventoryConnectionInfo> GetConnections() =>
-        _connections.Values
-            .OrderBy(x => x.IsDefault ? 0 : 1)
-            .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+    public IReadOnlyList<InventoryConnectionInfo> GetConnections()
+    {
+        var connections = Ordered();
+        var fallback = Default(connections);
+
+        return connections
             .Select(x => new InventoryConnectionInfo
             {
                 Name = x.Name,
                 Provider = x.Options.Provider,
                 Enabled = x.Options.Enabled,
-                IsDefault = x.IsDefault,
+                IsDefault = x == fallback,
                 LastUpdated = x.Snapshot.LastUpdated
             })
             .ToArray();
+    }
 
-    public bool HasConnection(string connection) => Find(connection) is not null;
+    public bool HasConnection(string connection) =>
+        string.IsNullOrWhiteSpace(connection) || Find(connection) is not null;
 
-    public InventorySnapshot GetSnapshot(string connection = null) => Find(connection)?.Snapshot;
+    /// <summary>
+    /// With no connections configured there is still an answer for a request that
+    /// names none: the inventory is not set up, rather than a missing connection.
+    /// </summary>
+    public InventorySnapshot GetSnapshot(string connection = null) =>
+        Find(connection)?.Snapshot ??
+        (string.IsNullOrWhiteSpace(connection) ? InventorySnapshot.AllUnavailable(InventoryMessages.NotEnabled) : null);
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -181,8 +191,10 @@ public class InventoryService : BackgroundService, IInventoryService
     {
         var target = Find(connection);
 
+        // With nothing configured there is nothing to refresh, which is done; a
+        // named connection that does not exist is not.
         if (target is null)
-            return false;
+            return string.IsNullOrWhiteSpace(connection);
 
         // Subscribe before triggering, so a fast refresh cannot complete between
         // the two and leave us waiting for the one after it.
@@ -201,12 +213,24 @@ public class InventoryService : BackgroundService, IInventoryService
         return finished == completion;
     }
 
+    /// <summary>
+    /// The connection by name, or the default one when none is named.
+    /// </summary>
     private Connection Find(string connection)
     {
-        var name = string.IsNullOrWhiteSpace(connection) ? InfrastructureConnections.Default : connection.Trim();
+        if (string.IsNullOrWhiteSpace(connection))
+            return Default(Ordered());
 
-        return _connections.TryGetValue(name, out var found) ? found : null;
+        return _connections.TryGetValue(connection.Trim(), out var found) ? found : null;
     }
+
+    private Connection[] Ordered() => _connections.Values.OrderBy(x => x.Order).ToArray();
+
+    /// <summary>
+    /// The first enabled connection in configuration order, else the first one.
+    /// </summary>
+    private static Connection Default(Connection[] ordered) =>
+        ordered.FirstOrDefault(x => x.Options.Enabled) ?? ordered.FirstOrDefault();
 
     /// <summary>
     /// Brings the connections in line with configuration. A connection that is
@@ -217,44 +241,48 @@ public class InventoryService : BackgroundService, IInventoryService
     {
         options ??= new InfrastructureOptions();
 
-        var desired = new Dictionary<string, InfrastructureConnectionOptions>(StringComparer.OrdinalIgnoreCase)
-        {
-            [InfrastructureConnections.Default] = options
-        };
+        var desired = new Dictionary<string, (int Order, InfrastructureConnectionOptions Options)>(StringComparer.OrdinalIgnoreCase);
+        var configured = options.Connections ?? [];
 
-        foreach (var (name, connection) in options.Connections ?? [])
+        for (var i = 0; i < configured.Count; i++)
         {
-            var trimmed = name?.Trim();
+            var connection = configured[i];
+            var name = connection?.Name?.Trim();
 
-            if (string.IsNullOrEmpty(trimmed) || connection is null)
+            if (connection is null)
                 continue;
 
-            if (desired.ContainsKey(trimmed))
+            if (string.IsNullOrEmpty(name))
             {
-                _logger.LogWarning(
-                    "Ignoring Infrastructure:Connections:{Connection}: the name is reserved for the top-level Infrastructure settings, or used twice",
-                    trimmed);
+                _logger.LogWarning("Ignoring Infrastructure:Connections:{Index}: it has no Name", i);
                 continue;
             }
 
-            desired[trimmed] = connection;
+            if (desired.ContainsKey(name))
+            {
+                _logger.LogWarning("Ignoring Infrastructure:Connections:{Index}: the name {Connection} is already used", i, name);
+                continue;
+            }
+
+            desired[name] = (i, connection);
         }
 
         lock (_connectionsLock)
         {
             var next = new Dictionary<string, Connection>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var (name, connectionOptions) in desired)
+            foreach (var (name, (order, connectionOptions)) in desired)
             {
                 if (_connections.TryGetValue(name, out var existing))
                 {
                     existing.Options = connectionOptions;
+                    existing.Order = order;
                     existing.Wake();
                     next[name] = existing;
                     continue;
                 }
 
-                var added = new Connection(name, connectionOptions);
+                var added = new Connection(name, connectionOptions) { Order = order };
                 next[name] = added;
 
                 if (_running)
@@ -303,7 +331,7 @@ public class InventoryService : BackgroundService, IInventoryService
             if (!options.Enabled)
             {
                 _logger.LogInformation("Infrastructure inventory connection {Connection} disabled, skipping inventory query", connection.Name);
-                connection.Replace(InventorySnapshot.AllUnavailable(InventoryMessages.NotEnabled), null);
+                connection.Replace(InventorySnapshot.AllUnavailable(InventoryMessages.ConnectionNotEnabled), null);
                 return;
             }
 
@@ -344,11 +372,12 @@ public class InventoryService : BackgroundService, IInventoryService
 
         public string Name { get; } = name;
 
-        public bool IsDefault => string.Equals(Name, InfrastructureConnections.Default, StringComparison.OrdinalIgnoreCase);
+        /// <summary>Position in Infrastructure:Connections, which also orders the list.</summary>
+        public int Order { get; set; }
 
         public InfrastructureConnectionOptions Options { get; set; } = options;
 
-        public InventorySnapshot Snapshot { get; private set; } = InventorySnapshot.AllUnavailable(InventoryMessages.NotEnabled);
+        public InventorySnapshot Snapshot { get; private set; } = InventorySnapshot.AllUnavailable(InventoryMessages.ConnectionNotEnabled);
 
         // The provider and url Snapshot was read from. Null when it was not read.
         private string _snapshotTarget;
@@ -425,19 +454,19 @@ public class InventoryService : BackgroundService, IInventoryService
         }
 
         /// <summary>
-        /// Messages name the top-level settings, e.g. "Set Infrastructure:Enabled
-        /// to true". For a named connection they are rewritten to its own keys, so
-        /// the message points at the setting that actually needs changing.
+        /// Messages name a setting without its connection, e.g. "Set
+        /// Infrastructure:Enabled to true". They are rewritten to this connection's
+        /// own keys, so the message points at the setting that actually needs changing.
         /// </summary>
         public InventorySnapshot Scoped(InventorySnapshot snapshot)
         {
-            if (IsDefault || snapshot is null)
+            if (snapshot is null)
                 return snapshot;
 
-            foreach (var category in new[] { snapshot.VmTemplates, snapshot.Isos, snapshot.Networks, snapshot.Datastores, snapshot.ContentLibrary })
+            foreach (var category in new[] { snapshot.VmTemplates, snapshot.Isos, snapshot.Networks, snapshot.Datastores, snapshot.ContentLibrary, snapshot.Hosts })
             {
                 if (category?.Error is not null)
-                    category.Error = TopLevelKey.Replace(category.Error, $"Infrastructure:Connections:{Name}:");
+                    category.Error = TopLevelKey.Replace(category.Error, $"Infrastructure:Connections:{Order}:");
             }
 
             return snapshot;

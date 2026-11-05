@@ -17,7 +17,7 @@ namespace Caster.Api.Features.Inventory
     {
         /// <summary>
         /// The value to pass as the connection parameter of the other inventory
-        /// endpoints. "default" for the top-level Infrastructure settings.
+        /// endpoints: the connection's Name in Infrastructure:Connections.
         /// </summary>
         public string Name { get; set; }
 
@@ -26,7 +26,8 @@ namespace Caster.Api.Features.Inventory
         public bool Enabled { get; set; }
 
         /// <summary>
-        /// True for the connection used when a request names none.
+        /// True for the connection used when a request names none: the first enabled
+        /// one in Infrastructure:Connections.
         /// </summary>
         public bool IsDefault { get; set; }
 
