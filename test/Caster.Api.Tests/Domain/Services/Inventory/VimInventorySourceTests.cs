@@ -39,18 +39,23 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                     ("runtime.powerState", HostSystemPowerState.poweredOn),
                     ("summary.quickStats.overallCpuUsage", 67), ("summary.quickStats.overallMemoryUsage", 1404),
                     ("summary.hardware.cpuMhz", 2294), ("summary.hardware.numCpuCores", (short)2),
-                    ("summary.hardware.memorySize", 4294430720L)),
+                    ("summary.hardware.memorySize", 4294430720L), ("parent", Ref("ClusterComputeResource", "domain-c1"))),
+                Object("ClusterComputeResource", "domain-c1", ("name", "Cluster"), ("parent", Ref("Folder", "group-h1"))),
                 Object("Datastore", "datastore-1",
                     ("summary.name", "LocalDS_0"), ("summary.type", "OTHER"), ("summary.capacity", 100L),
-                    ("summary.freeSpace", 40L), ("summary.accessible", true), ("browser", Ref("HostDatastoreBrowser", "browser-1"))),
+                    ("summary.freeSpace", 40L), ("summary.accessible", true), ("browser", Ref("HostDatastoreBrowser", "browser-1")),
+                    ("parent", Ref("Folder", "group-s1"))),
+                Object("Network", "network-1", ("name", "VM Network"), ("parent", Ref("Folder", "group-n1"))),
                 Object("ResourcePool", "resgroup-1", ("name", "Resources"))
             ]);
 
             Assert.Equal(new VimDatacenter("datacenter-1", "DC1", "group-v1"), Assert.Single(inventory.Datacenters));
             Assert.Equal(new VimFolder("group-v2", "Templates", "group-v1"), Assert.Single(inventory.Folders));
             Assert.Equal(new VimVm("vm-2", "ubuntu", true, "poweredOff", 2, 4096, "group-v2", "host-1"), Assert.Single(inventory.Vms));
-            Assert.Equal(new VimHost("host-1", "esx1", "connected", "poweredOn", 67, 2294, 2, 1404, 4294430720L), Assert.Single(inventory.Hosts));
-            Assert.Equal(new VimDatastore("datastore-1", "LocalDS_0", "OTHER", 100, 40, true, "browser-1"), Assert.Single(inventory.Datastores));
+            Assert.Equal(new VimHost("host-1", "esx1", "connected", "poweredOn", 67, 2294, 2, 1404, 4294430720L, "domain-c1"), Assert.Single(inventory.Hosts));
+            Assert.Equal(new VimFolder("domain-c1", "Cluster", "group-h1"), Assert.Single(inventory.ComputeResources));
+            Assert.Equal(new VimDatastore("datastore-1", "LocalDS_0", "OTHER", 100, 40, true, "browser-1", "group-s1"), Assert.Single(inventory.Datastores));
+            Assert.Equal(new VimNetwork("network-1", "VM Network", "Network", false, "group-n1"), Assert.Single(inventory.Networks));
         }
 
         [Fact]
@@ -76,6 +81,21 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal(2, inventory.Networks.Count);
             Assert.True(inventory.Networks.Single(x => x.Id == "dvportgroup-1").Uplink);
             Assert.False(inventory.Networks.Single(x => x.Id == "network-1").Uplink);
+        }
+
+        [Fact]
+        public void Project_KeepsTheParentOfAPortgroupMatchedTwice()
+        {
+            var inventory = VimInventorySource.Project(
+            [
+                Object("DistributedVirtualPortgroup", "dvportgroup-1", ("name", "vlan-200"), ("parent", Ref("Folder", "group-n1"))),
+                Object("DistributedVirtualPortgroup", "dvportgroup-1", ("name", "vlan-200")),
+                Object("DistributedVirtualPortgroup", "dvportgroup-2", ("name", "Uplinks")),
+                Object("DistributedVirtualPortgroup", "dvportgroup-2", ("name", "Uplinks"), ("config.uplink", true), ("parent", Ref("Folder", "group-n1")))
+            ]);
+
+            Assert.Equal("group-n1", inventory.Networks.Single(x => x.Id == "dvportgroup-1").Parent);
+            Assert.Equal("group-n1", inventory.Networks.Single(x => x.Id == "dvportgroup-2").Parent);
         }
 
         [Fact]

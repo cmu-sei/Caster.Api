@@ -237,9 +237,34 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.False(lvm.Properties.ContainsKey("path"));
         }
 
+        [Fact]
+        public async Task GetInventoryAsync_GivesDiskStoragesTerraform_AndOthersNone()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            var lvm = snapshot.Datastores.Entries.Single(x => x.Id == "local-lvm");
+            Assert.Equal([TerraformSnippets.Bpg, TerraformSnippets.Telmate], lvm.Terraform.Keys.Order());
+            Assert.Contains("datastore_id = \"local-lvm\"", lvm.Terraform[TerraformSnippets.Bpg]);
+            Assert.Contains("storage = \"local-lvm\"", lvm.Terraform[TerraformSnippets.Telmate]);
+
+            // "local" holds ISOs, templates and backups, not disks
+            Assert.Empty(snapshot.Datastores.Entries.Single(x => x.Id == "local").Terraform);
+        }
+
         #endregion
 
         #region ISOs
+
+        [Fact]
+        public async Task GetInventoryAsync_GivesIsosTerraformByTheirVolid()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            var iso = snapshot.Isos.Entries.Single(x => x.Id == "local:iso/TinyCore-current.iso");
+            Assert.Equal([TerraformSnippets.Bpg, TerraformSnippets.Telmate], iso.Terraform.Keys.Order());
+            Assert.Contains("file_id = \"local:iso/TinyCore-current.iso\"", iso.Terraform[TerraformSnippets.Bpg]);
+            Assert.Contains("iso = \"local:iso/TinyCore-current.iso\"", iso.Terraform[TerraformSnippets.Telmate]);
+        }
 
         [Fact]
         public async Task GetInventoryAsync_EnumeratesIsosWithTheVolidAsTheName()
@@ -500,6 +525,22 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal("1", bridge.Properties["active"]);
             Assert.Equal("pve", bridge.Properties["nodes"]);
             Assert.Equal("Exercise LAN", bridge.Properties["comment"]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_GivesBridgesAndVnetsTerraformByTheirName()
+        {
+            var snapshot = await Read(Responder(vnets: """
+            { "data": [ { "vnet": "vnet-dmz", "type": "vnet", "zone": "evpnzone", "tag": 200 } ] }
+            """));
+
+            foreach (var name in new[] { "vmbr0", "vnet-dmz" })
+            {
+                var network = snapshot.Networks.Entries.Single(x => x.Name == name);
+                Assert.Equal([TerraformSnippets.Bpg, TerraformSnippets.Telmate], network.Terraform.Keys.Order());
+                Assert.Contains($"network_device {{\n  bridge = \"{name}\"\n}}", network.Terraform[TerraformSnippets.Bpg]);
+                Assert.Contains($"  bridge = \"{name}\"\n", network.Terraform[TerraformSnippets.Telmate]);
+            }
         }
 
         [Fact]
@@ -997,6 +1038,9 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal("offline", pve2["status"]);
             Assert.Equal("0", pve2["vmsTotal"]);
             Assert.False(pve2.ContainsKey("cpu"));
+
+            Assert.Contains("node_name = \"pve\"", snapshot.Hosts.Entries[0].Terraform[TerraformSnippets.Bpg]);
+            Assert.Contains("target_node = \"pve2\"", snapshot.Hosts.Entries[1].Terraform[TerraformSnippets.Telmate]);
         }
 
         [Fact]

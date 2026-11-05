@@ -23,6 +23,9 @@ public class VimInventory
 {
     public List<VimDatacenter> Datacenters { get; set; } = [];
     public List<VimFolder> Folders { get; set; } = [];
+
+    /// <summary>Hosts' parents: standalone compute resources and clusters.</summary>
+    public List<VimFolder> ComputeResources { get; set; } = [];
     public List<VimVm> Vms { get; set; } = [];
     public List<VimHost> Hosts { get; set; } = [];
     public List<VimNetwork> Networks { get; set; } = [];
@@ -35,6 +38,7 @@ public class VimInventory
 
 public record VimDatacenter(string Id, string Name, string VmFolder);
 
+/// <summary>A folder, or another object that only matters as a parent, e.g. a cluster.</summary>
 public record VimFolder(string Id, string Name, string Parent);
 
 public record VimVm(string Id, string Name, bool Template, string PowerState, int? Cpus, long? MemoryMiB, string Parent, string Host);
@@ -48,13 +52,14 @@ public record VimHost(
     int? CpuMhz,
     short? Cores,
     int? MemoryUsageMiB,
-    long? MemoryBytes);
+    long? MemoryBytes,
+    string Parent = null);
 
 /// <param name="Type">Network, DistributedVirtualPortgroup or OpaqueNetwork.</param>
 /// <param name="Uplink">A distributed switch's uplink portgroup, which VMs are not attached to.</param>
-public record VimNetwork(string Id, string Name, string Type, bool Uplink);
+public record VimNetwork(string Id, string Name, string Type, bool Uplink, string Parent = null);
 
-public record VimDatastore(string Id, string Name, string Type, long? Capacity, long? FreeSpace, bool Accessible, string Browser);
+public record VimDatastore(string Id, string Name, string Type, long? Capacity, long? FreeSpace, bool Accessible, string Browser, string Parent = null);
 
 /// <param name="Path">The datastore path, e.g. "[LocalDS_0] iso/alpine.iso".</param>
 public record VimIso(string Datastore, string Path, string File, long? Size);
@@ -199,17 +204,19 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
                     [
                         "name", "runtime.connectionState", "runtime.powerState",
                         "summary.quickStats.overallCpuUsage", "summary.quickStats.overallMemoryUsage",
-                        "summary.hardware.cpuMhz", "summary.hardware.numCpuCores", "summary.hardware.memorySize"
+                        "summary.hardware.cpuMhz", "summary.hardware.numCpuCores", "summary.hardware.memorySize", "parent"
                     ]
                 },
-                new PropertySpec { type = "Network", pathSet = ["name"] },
-                new PropertySpec { type = "DistributedVirtualPortgroup", pathSet = ["name", "config.uplink", "tag"] },
+                // Subtypes too, e.g. ClusterComputeResource. A host's parent, for its datacenter.
+                new PropertySpec { type = "ComputeResource", pathSet = ["name", "parent"] },
+                new PropertySpec { type = "Network", pathSet = ["name", "parent"] },
+                new PropertySpec { type = "DistributedVirtualPortgroup", pathSet = ["name", "config.uplink", "tag", "parent"] },
                 // Subtypes too, e.g. VmwareDistributedVirtualSwitch.
                 new PropertySpec { type = "DistributedVirtualSwitch", pathSet = ["config.uplinkPortgroup"] },
                 new PropertySpec
                 {
                     type = "Datastore",
-                    pathSet = ["summary.name", "summary.type", "summary.capacity", "summary.freeSpace", "summary.accessible", "browser"]
+                    pathSet = ["summary.name", "summary.type", "summary.capacity", "summary.freeSpace", "summary.accessible", "browser", "parent"]
                 }
             ]
         };
@@ -252,6 +259,8 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
                     inventory.Datacenters.Add(new VimDatacenter(id, Text(values, "name"), Reference(values, "vmFolder")));
                     break;
                 case "Folder":
+                // A datastore cluster, which is a folder of datastores.
+                case "StoragePod":
                     inventory.Folders.Add(new VimFolder(id, Text(values, "name"), Reference(values, "parent")));
                     break;
                 case "VirtualMachine":
@@ -275,19 +284,26 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
                         Value<int>(values, "summary.hardware.cpuMhz"),
                         Value<short>(values, "summary.hardware.numCpuCores"),
                         Value<int>(values, "summary.quickStats.overallMemoryUsage"),
-                        Value<long>(values, "summary.hardware.memorySize")));
+                        Value<long>(values, "summary.hardware.memorySize"),
+                        Reference(values, "parent")));
+                    break;
+                case "ComputeResource":
+                case "ClusterComputeResource":
+                    inventory.ComputeResources.Add(new VimFolder(id, Text(values, "name"), Reference(values, "parent")));
                     break;
                 case "Network":
                 case "OpaqueNetwork":
                 case "DistributedVirtualPortgroup":
                     // Both the Network and the portgroup spec can match a portgroup.
                     var existing = inventory.Networks.FindIndex(x => x.Id == id);
-                    var network = new VimNetwork(id, Text(values, "name"), item.obj.type, IsUplink(values));
+                    var network = new VimNetwork(id, Text(values, "name"), item.obj.type, IsUplink(values), Reference(values, "parent"));
 
                     if (existing < 0)
                         inventory.Networks.Add(network);
                     else if (network.Uplink)
-                        inventory.Networks[existing] = network;
+                        inventory.Networks[existing] = network with { Parent = network.Parent ?? inventory.Networks[existing].Parent };
+                    else if (inventory.Networks[existing].Parent == null)
+                        inventory.Networks[existing] = inventory.Networks[existing] with { Parent = network.Parent };
                     break;
                 case "DistributedVirtualSwitch":
                 case "VmwareDistributedVirtualSwitch":
@@ -302,7 +318,8 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
                         Value<long>(values, "summary.capacity"),
                         Value<long>(values, "summary.freeSpace"),
                         Value<bool>(values, "summary.accessible") ?? false,
-                        Reference(values, "browser")));
+                        Reference(values, "browser"),
+                        Reference(values, "parent")));
                     break;
             }
         }

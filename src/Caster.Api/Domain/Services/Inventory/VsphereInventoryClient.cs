@@ -189,11 +189,44 @@ public class VsphereInventoryClient(
     }
 
     /// <summary>
+    /// The name of the datacenter an object is in, found by following its parents
+    /// (folders, datastore clusters, clusters) up to a datacenter, or null when
+    /// they do not reach one.
+    /// </summary>
+    private static Func<string, string> DatacenterOf(VimInventory vim)
+    {
+        var parents = vim.Folders.Concat(vim.ComputeResources)
+            .Where(x => x.Id != null)
+            .DistinctBy(x => x.Id)
+            .ToDictionary(x => x.Id, x => x.Parent, StringComparer.Ordinal);
+        var datacenters = vim.Datacenters.Where(x => x.Id != null).DistinctBy(x => x.Id).ToDictionary(x => x.Id, x => x.Name, StringComparer.Ordinal);
+
+        return parent =>
+        {
+            var current = parent;
+
+            for (var depth = 0; current != null && depth < MaxFolderDepth; depth++)
+            {
+                if (datacenters.TryGetValue(current, out var datacenter))
+                    return datacenter;
+
+                if (!parents.TryGetValue(current, out current))
+                    break;
+            }
+
+            return null;
+        };
+    }
+
+    /// <summary>
     /// Portgroups and standard networks. A distributed switch's uplink portgroup
     /// is left out, since VMs cannot attach to it.
     /// </summary>
-    internal static InventoryCategoryResult Networks(VimInventory vim) =>
-        InventoryCategoryResult.Ok(vim.Networks
+    internal static InventoryCategoryResult Networks(VimInventory vim)
+    {
+        var datacenterOf = DatacenterOf(vim);
+
+        return InventoryCategoryResult.Ok(vim.Networks
             .Where(x => !x.Uplink && !string.IsNullOrWhiteSpace(x.Name))
             .Select(x =>
             {
@@ -205,13 +238,27 @@ public class VsphereInventoryClient(
                     _ => "STANDARD_PORTGROUP"
                 });
 
-                return new InventoryEntry { Id = x.Id, Name = x.Name, Path = x.Name, Properties = properties };
+                var datacenter = datacenterOf(x.Parent);
+                AddIfPresent(properties, "datacenter", datacenter);
+
+                return new InventoryEntry
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    Path = x.Name,
+                    Properties = properties,
+                    Terraform = TerraformSnippets.VsphereNetwork(x.Name, datacenter)
+                };
             })
             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray());
+    }
 
-    internal static InventoryCategoryResult Datastores(VimInventory vim) =>
-        InventoryCategoryResult.Ok(vim.Datastores
+    internal static InventoryCategoryResult Datastores(VimInventory vim)
+    {
+        var datacenterOf = DatacenterOf(vim);
+
+        return InventoryCategoryResult.Ok(vim.Datastores
             .Where(x => !string.IsNullOrWhiteSpace(x.Name))
             .Select(x =>
             {
@@ -221,10 +268,21 @@ public class VsphereInventoryClient(
                 AddIfPresent(properties, "freeSpace", x.FreeSpace?.ToString(CultureInfo.InvariantCulture));
                 properties["accessible"] = x.Accessible ? "true" : "false";
 
-                return new InventoryEntry { Id = x.Id, Name = x.Name, Path = x.Name, Properties = properties };
+                var datacenter = datacenterOf(x.Parent);
+                AddIfPresent(properties, "datacenter", datacenter);
+
+                return new InventoryEntry
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    Path = x.Name,
+                    Properties = properties,
+                    Terraform = TerraformSnippets.VsphereDatastore(x.Name, datacenter)
+                };
             })
             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray());
+    }
 
     /// <summary>
     /// The ESXi hosts, with their usage and capacity and what their VMs are
@@ -235,6 +293,7 @@ public class VsphereInventoryClient(
     internal static InventoryCategoryResult Hosts(VimInventory vim)
     {
         var vms = vim.Vms.Where(x => !x.Template && x.Host != null).ToLookup(x => x.Host, StringComparer.Ordinal);
+        var datacenterOf = DatacenterOf(vim);
 
         return InventoryCategoryResult.Ok(vim.Hosts
             .Where(x => !string.IsNullOrWhiteSpace(x.Id))
@@ -266,8 +325,19 @@ public class VsphereInventoryClient(
                 properties["allocatedCpus"] = running.Sum(v => v.Cpus ?? 0).ToString(CultureInfo.InvariantCulture);
                 properties["allocatedMemoryMiB"] = running.Sum(v => v.MemoryMiB ?? 0).ToString(CultureInfo.InvariantCulture);
 
+                var datacenter = datacenterOf(x.Parent);
+                AddIfPresent(properties, "datacenter", datacenter);
+
                 var name = string.IsNullOrWhiteSpace(x.Name) ? x.Id : x.Name;
-                return new InventoryEntry { Id = x.Id, Name = name, Path = name, Properties = properties };
+                return new InventoryEntry
+                {
+                    Id = x.Id,
+                    Name = name,
+                    Path = name,
+                    Properties = properties,
+                    // A host without a name cannot be looked up by one.
+                    Terraform = string.IsNullOrWhiteSpace(x.Name) ? [] : TerraformSnippets.VsphereHost(x.Name, datacenter)
+                };
             })
             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray());
@@ -285,6 +355,17 @@ public class VsphereInventoryClient(
         if (vim.IsoError != null)
             return InventoryCategoryResult.Unavailable(vim.IsoError);
 
+        // ISOs name their datastore. A name used in more than one datacenter is
+        // left without one, rather than guess.
+        var datacenterOf = DatacenterOf(vim);
+        var datastoreDatacenters = vim.Datastores
+            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+            .GroupBy(x => x.Name, StringComparer.Ordinal)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Select(d => datacenterOf(d.Parent)).Distinct(StringComparer.Ordinal).ToArray() is [var only] ? only : null,
+                StringComparer.Ordinal);
+
         return InventoryCategoryResult.Ok(vim.Isos
             .Select(x =>
             {
@@ -293,7 +374,17 @@ public class VsphereInventoryClient(
                 var properties = new Dictionary<string, string> { ["datastore"] = x.Datastore };
                 AddIfPresent(properties, "size", x.Size?.ToString(CultureInfo.InvariantCulture));
 
-                return new InventoryEntry { Id = x.Path, Name = relative, Path = x.Path, Properties = properties };
+                var datacenter = x.Datastore == null ? null : datastoreDatacenters.GetValueOrDefault(x.Datastore);
+                AddIfPresent(properties, "datacenter", datacenter);
+
+                return new InventoryEntry
+                {
+                    Id = x.Path,
+                    Name = relative,
+                    Path = x.Path,
+                    Properties = properties,
+                    Terraform = TerraformSnippets.VsphereIso(relative, x.Datastore, datacenter)
+                };
             })
             .DistinctBy(x => x.Path, StringComparer.Ordinal)
             .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)

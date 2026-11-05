@@ -48,6 +48,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         /// (group-v3). win2019-template is in Templates, alpine-template in
         /// Templates/Linux, running-vm at the top, and orphan-template under a folder
         /// that was not read. Two hosts: host-1 runs running-vm and has an idle VM.
+        /// host-1 is in a cluster, vlan-200 and nfs-fast in their DC1 folders; host-2
+        /// and VM Network have no parent that was read.
         /// </summary>
         private static VimInventory Vim() => new()
         {
@@ -56,8 +58,12 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             [
                 new VimFolder("group-v1", "vm", "datacenter-1"),
                 new VimFolder("group-v2", "Templates", "group-v1"),
-                new VimFolder("group-v3", "Linux", "group-v2")
+                new VimFolder("group-v3", "Linux", "group-v2"),
+                new VimFolder("group-h1", "host", "datacenter-1"),
+                new VimFolder("group-n1", "network", "datacenter-1"),
+                new VimFolder("group-s1", "datastore", "datacenter-1")
             ],
+            ComputeResources = [new VimFolder("domain-c1", "Cluster", "group-h1")],
             Vms =
             [
                 new VimVm("vm-1", "running-vm", false, "poweredOn", 2, 4096, "group-v1", "host-1"),
@@ -68,18 +74,18 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             ],
             Hosts =
             [
-                new VimHost("host-1", "esx1.test", "connected", "poweredOn", 1000, 2000, 4, 2048, 8L * 1024 * 1024 * 1024),
+                new VimHost("host-1", "esx1.test", "connected", "poweredOn", 1000, 2000, 4, 2048, 8L * 1024 * 1024 * 1024, "domain-c1"),
                 new VimHost("host-2", "esx2.test", "disconnected", "poweredOff", null, null, null, null, null)
             ],
             Networks =
             [
-                new VimNetwork("dvportgroup-1", "vlan-200", "DistributedVirtualPortgroup", false),
+                new VimNetwork("dvportgroup-1", "vlan-200", "DistributedVirtualPortgroup", false, "group-n1"),
                 new VimNetwork("dvportgroup-2", "DSwitch-Uplinks", "DistributedVirtualPortgroup", true),
                 new VimNetwork("network-1", "VM Network", "Network", false)
             ],
             Datastores =
             [
-                new VimDatastore("datastore-1", "nfs-fast", "NFS", 4096, 1024, true, "browser-1")
+                new VimDatastore("datastore-1", "nfs-fast", "NFS", 4096, 1024, true, "browser-1", "group-s1")
             ],
             Isos =
             [
@@ -200,6 +206,75 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal(["iso/alpine.iso", "kali.iso"], snapshot.Isos.Entries.Select(x => x.Name));
             Assert.Equal("nfs-fast", snapshot.Isos.Entries[0].Properties["datastore"]);
             Assert.Equal("18", snapshot.Isos.Entries[0].Properties["size"]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_GivesNetworksTerraformInTheirDatacenter()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            var portgroup = snapshot.Networks.Entries.Single(x => x.Name == "vlan-200");
+            Assert.Equal("DC1", portgroup.Properties["datacenter"]);
+            Assert.Equal([TerraformSnippets.Vsphere], portgroup.Terraform.Keys);
+            Assert.Contains("data \"vsphere_network\" \"vlan_200\"", portgroup.Terraform[TerraformSnippets.Vsphere]);
+            Assert.Contains("name = \"DC1\"", portgroup.Terraform[TerraformSnippets.Vsphere]);
+
+            // without a datacenter the snippet leaves it out
+            var standard = snapshot.Networks.Entries.Single(x => x.Name == "VM Network");
+            Assert.False(standard.Properties.ContainsKey("datacenter"));
+            Assert.DoesNotContain("datacenter", standard.Terraform[TerraformSnippets.Vsphere]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_GivesDatastoresTerraformInTheirDatacenter()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            var datastore = Assert.Single(snapshot.Datastores.Entries);
+            Assert.Equal("DC1", datastore.Properties["datacenter"]);
+            Assert.Contains("data \"vsphere_datastore\" \"nfs_fast\"", datastore.Terraform[TerraformSnippets.Vsphere]);
+            Assert.Contains("datastore_id = data.vsphere_datastore.nfs_fast.id", datastore.Terraform[TerraformSnippets.Vsphere]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_GivesHostsTerraformThroughTheirCluster_AndNoneWithoutADatacenter()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            var clustered = snapshot.Hosts.Entries.Single(x => x.Id == "host-1");
+            Assert.Equal("DC1", clustered.Properties["datacenter"]);
+            Assert.Contains("data \"vsphere_host\" \"esx1_test\"", clustered.Terraform[TerraformSnippets.Vsphere]);
+            Assert.Contains("host_system_id   = data.vsphere_host.esx1_test.id", clustered.Terraform[TerraformSnippets.Vsphere]);
+
+            // vsphere_host needs a datacenter
+            Assert.Empty(snapshot.Hosts.Entries.Single(x => x.Id == "host-2").Terraform);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_GivesIsosTerraformOnTheirDatastore()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            var iso = snapshot.Isos.Entries.Single(x => x.Name == "iso/alpine.iso");
+            Assert.Equal("DC1", iso.Properties["datacenter"]);
+            var snippet = iso.Terraform[TerraformSnippets.Vsphere];
+            Assert.Contains("data \"vsphere_datastore\" \"iso_alpine_iso_datastore\" {\n  name          = \"nfs-fast\"\n", snippet);
+            Assert.Contains("#     path         = \"iso/alpine.iso\"\n", snippet);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_AnIsoOnADatastoreNameInTwoDatacentersLeavesTheDatacenterOut()
+        {
+            var vim = Vim();
+            vim.Datacenters.Add(new VimDatacenter("datacenter-2", "DC2", "group-v9"));
+            vim.Folders.Add(new VimFolder("group-s2", "datastore", "datacenter-2"));
+            vim.Datastores.Add(new VimDatastore("datastore-2", "nfs-fast", "NFS", 4096, 1024, true, "browser-2", "group-s2"));
+
+            var snapshot = await Read(DefaultResponder(), vim: vim);
+
+            var iso = snapshot.Isos.Entries.Single(x => x.Name == "iso/alpine.iso");
+            Assert.False(iso.Properties.ContainsKey("datacenter"));
+            Assert.DoesNotContain("datacenter", iso.Terraform[TerraformSnippets.Vsphere]);
         }
 
         [Fact]
