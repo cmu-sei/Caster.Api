@@ -140,11 +140,11 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
-        public void IsoTargets_WithNoLocationsSearchesEveryDatastoreFromItsRoot()
+        public void IsoTargets_WithNoLocationsSearchesNothing()
         {
             var (targets, unknown) = VimInventorySource.IsoTargets([], ["b", "a"]);
 
-            Assert.Equal([("a", ""), ("b", "")], targets);
+            Assert.Empty(targets);
             Assert.Empty(unknown);
         }
 
