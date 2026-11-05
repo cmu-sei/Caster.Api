@@ -19,5 +19,11 @@ namespace Caster.Api.Domain.Models
         /// Non-fatal problems with the archive itself.
         /// </summary>
         public IEnumerable<string> Warnings { get; set; } = [];
+
+        /// <summary>
+        /// The VM templates and ISOs named by the archive's disk manifest, checked against this
+        /// system's infrastructure inventory. Empty when the archive has no disk manifest.
+        /// </summary>
+        public IEnumerable<ImportedDisk> Disks { get; set; } = [];
     }
 }

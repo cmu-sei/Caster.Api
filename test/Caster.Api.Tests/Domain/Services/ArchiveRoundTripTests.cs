@@ -620,6 +620,123 @@ namespace Caster.Api.Tests.Domain.Services
             return entries;
         }
 
+        #region Disk Manifest
+
+        private static DiskManifest SampleDiskManifest() => new()
+        {
+            Disks =
+            [
+                new()
+                {
+                    Kind = DiskKind.VmTemplate,
+                    Name = "ubuntu-2404",
+                    Path = "ubuntu-2404",
+                    Connection = "default",
+                    Provider = "proxmox",
+                    Properties = new() { ["node"] = "pve" },
+                    ReferencedBy = ["Infrastructure/main.tf"]
+                }
+            ],
+            Warnings = ["ISOs on connection 'default' could not be read, so any it holds are not listed."]
+        };
+
+        [Theory]
+        [InlineData(ArchiveType.zip)]
+        [InlineData(ArchiveType.tgz)]
+        public async Task The_Disk_Manifest_Survives_A_Round_Trip(ArchiveType archiveType)
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var archive = await service.ArchiveProject(BuildProject(AsciiContent), archiveType, includeIds: false, includeSettings: true, SampleDiskManifest());
+            var extracted = service.ExtractProject(archive.Data, archive.Name);
+
+            var disk = Assert.Single(extracted.DiskManifest.Disks);
+            Assert.Equal(DiskKind.VmTemplate, disk.Kind);
+            Assert.Equal("ubuntu-2404", disk.Name);
+            Assert.Equal("proxmox", disk.Provider);
+            Assert.Equal("pve", disk.Properties["node"]);
+            Assert.Equal(["Infrastructure/main.tf"], disk.ReferencedBy);
+            Assert.Single(extracted.DiskManifest.Warnings);
+            Assert.Empty(extracted.Warnings);
+        }
+
+        [Fact]
+        public async Task The_Disk_Manifest_Is_Not_Imported_As_A_File()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var archive = await service.ArchiveDirectory(SingleDirectory(BuildProject(AsciiContent)), ArchiveType.zip, includeIds: false, includeSettings: false, SampleDiskManifest());
+            var extracted = service.ExtractDirectory(archive.Data, archive.Name);
+
+            Assert.NotNull(extracted.DiskManifest);
+            Assert.Equal("main.tf", Assert.Single(extracted.Entity.Files).Name);
+            Assert.Empty(extracted.Entity.Children);
+        }
+
+        [Fact]
+        public async Task Without_A_Disk_Manifest_None_Is_Written()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var archive = await service.ArchiveProject(BuildProject(AsciiContent), ArchiveType.zip, includeIds: false, includeSettings: true);
+            var extracted = service.ExtractProject(archive.Data, archive.Name);
+
+            Assert.Null(extracted.DiskManifest);
+        }
+
+        [Fact]
+        public void An_Unreadable_Disk_Manifest_Is_A_Warning_Not_A_Failure()
+        {
+            var service = NewArchiveService(InstalledVersion);
+
+            var stream = BuildZip(
+                ("main.tf", Encoding.UTF8.GetBytes(AsciiContent)),
+                (ArchiveService.DiskManifestEntryName, Encoding.UTF8.GetBytes("{ not json")));
+
+            var extracted = service.ExtractDirectory(stream, "Infrastructure.zip");
+
+            Assert.Null(extracted.DiskManifest);
+            Assert.Contains("disk manifest that could not be read", Assert.Single(extracted.Warnings));
+            Assert.Equal(AsciiContent, Assert.Single(extracted.Entity.Files).Content);
+        }
+
+        /// <summary>
+        /// The manifest names files by their path in the archive, so the listing it is built
+        /// from must agree with the entries actually written.
+        /// </summary>
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task ListFiles_Paths_Match_The_Archive_Entries(bool includeIds)
+        {
+            var service = NewArchiveService(InstalledVersion);
+            var project = BuildProject(AsciiContent);
+            var parent = SingleDirectory(project);
+            var child = new Directory("Child", parent) { ProjectId = project.Id };
+            child.Files.Add(new File { Name = "child.tf", Content = AsciiContent });
+            parent.Children.Add(child);
+            project.Directories.Add(child);
+
+            var listed = service.ListFiles(project, includeIds).Select(x => x.Path).ToArray();
+
+            var archive = await service.ArchiveProject(project, ArchiveType.zip, includeIds, includeSettings: false);
+            var written = new System.Collections.Generic.List<string>();
+
+            using (var zip = new ZipInputStream(archive.Data))
+            {
+                while (zip.GetNextEntry() is ZipEntry entry)
+                {
+                    if (entry.IsFile)
+                        written.Add(entry.Name);
+                }
+            }
+
+            Assert.Equal(3, listed.Length);
+            Assert.Equal(written.OrderBy(x => x, StringComparer.Ordinal), listed.OrderBy(x => x, StringComparer.Ordinal));
+        }
+
+        #endregion
+
         private static Stream BuildZip(params (string Name, byte[] Content)[] entries)
         {
             var stream = new MemoryStream();

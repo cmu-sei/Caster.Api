@@ -13,6 +13,11 @@ namespace Caster.Api.Domain.Models
         public ArchiveManifest Manifest { get; set; }
 
         /// <summary>
+        /// The disk manifest found in the archive, or null if it did not contain one.
+        /// </summary>
+        public DiskManifest DiskManifest { get; set; }
+
+        /// <summary>
         /// Settings that were present in the manifest but could not be applied,
         /// for example a Terraform version that is not available on this system.
         /// </summary>

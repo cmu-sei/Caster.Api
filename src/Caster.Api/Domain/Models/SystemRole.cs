@@ -46,7 +46,10 @@ public enum SystemPermission
     ViewHosts,
     ManageHosts,
     ViewModules,
-    ManageModules
+    ManageModules,
+    // Appended, not grouped with the others: stored as ints, so existing roles
+    // keep their meaning.
+    ViewInfrastructure
 }
 
 public static class SystemRoleDefaults

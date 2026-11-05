@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.CodeAnalysis;
 using Swashbuckle.AspNetCore.Annotations;
+using Caster.Api.Domain.Models;
 
 namespace Caster.Api.Features.Projects
 {
@@ -54,6 +55,19 @@ namespace Caster.Api.Features.Projects
             query.Id = id;
             var result = await _mediator.Send(query);
             return File(result.Data, result.Type, result.Name);
+        }
+
+        /// <summary>
+        /// The VM templates and ISOs an export of a project would list in its disk manifest.
+        /// </summary>
+        /// <param name="id">ID of a project.</param>
+        [HttpGet("{id}/disk-manifest")]
+        [ProducesResponseType(typeof(DiskManifest), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "GetProjectDiskManifest")]
+        public async Task<IActionResult> GetDiskManifest([FromRoute] Guid id)
+        {
+            var result = await _mediator.Send(new GetDiskManifest.Query { Id = id });
+            return Ok(result);
         }
 
         /// <summary>
