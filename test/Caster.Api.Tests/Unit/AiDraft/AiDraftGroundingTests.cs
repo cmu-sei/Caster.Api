@@ -65,8 +65,8 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
             });
     }
 
-    private void MayViewHosts(bool allowed) =>
-        _authorization.Authorize(Arg.Is<SystemPermission[]>(p => p.Contains(SystemPermission.ViewHosts)), Arg.Any<CancellationToken>()).Returns(allowed);
+    private void MayViewInfrastructure(bool allowed) =>
+        _authorization.Authorize(Arg.Is<SystemPermission[]>(p => p.Contains(SystemPermission.ViewInfrastructure)), Arg.Any<CancellationToken>()).Returns(allowed);
 
     private async Task<Directory> SeedDirectory(string providerContent = ProxmoxProvider)
     {
@@ -81,10 +81,10 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
         new(_authorization, Db, _model, new AiOptions { Enabled = true }, terraform ?? new TerraformOptions(), _inventory);
 
     [Fact]
-    public async Task A_caller_holding_ViewHosts_gets_a_draft_grounded_in_the_hypervisors_inventory()
+    public async Task A_caller_holding_ViewInfrastructure_gets_a_draft_grounded_in_the_hypervisors_inventory()
     {
         var directory = await SeedDirectory();
-        MayViewHosts(true);
+        MayViewInfrastructure(true);
         Answers(Answer);
 
         var draft = await new FilesDraftWithAi.Handler(_authorization, Db, _model, new AiOptions { Enabled = true }, new TerraformOptions(), _inventory, _task)
@@ -106,10 +106,10 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
     }
 
     [Fact]
-    public async Task A_caller_without_ViewHosts_gets_a_draft_that_was_not_grounded_and_says_why()
+    public async Task A_caller_without_ViewInfrastructure_gets_a_draft_that_was_not_grounded_and_says_why()
     {
         var directory = await SeedDirectory();
-        MayViewHosts(false);
+        MayViewInfrastructure(false);
         Answers(Answer);
 
         var draft = await Drafter().Draft(directory.Id, "a web server", null, [], null, Ct);
@@ -117,7 +117,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
         Assert.DoesNotContain("Infrastructure inventory:", _system);
         Assert.DoesNotContain("ubuntu-22", _system);
         Assert.False(draft.Inventory.Checked);
-        Assert.Contains("ViewHosts", draft.Inventory.Reason);
+        Assert.Contains("ViewInfrastructure", draft.Inventory.Reason);
         Assert.Empty(draft.Inventory.Unknown);
         Assert.DoesNotContain(draft.Warnings, w => w.Contains("inventory"));
     }
@@ -126,7 +126,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
     public async Task A_directory_on_vSphere_is_not_grounded_in_a_Proxmox_inventory()
     {
         var directory = await SeedDirectory("provider \"vsphere\" {}\n");
-        MayViewHosts(true);
+        MayViewInfrastructure(true);
         Answers(Answer);
 
         var draft = await Drafter().Draft(directory.Id, "a web server", null, [], null, Ct);
@@ -140,7 +140,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
     public async Task The_requested_hypervisor_wins_over_the_files()
     {
         var directory = await SeedDirectory("provider \"vsphere\" {}\n");
-        MayViewHosts(true);
+        MayViewInfrastructure(true);
         Answers(Answer);
         var terraform = new TerraformOptions { EnvironmentVariables = new EnvironmentVariableOptions { Direct = new() { ["PROXMOX_VE_ENDPOINT"] = "https://pve.test:8006" } } };
 
@@ -154,7 +154,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
     public async Task An_unreachable_inventory_degrades_to_an_ungrounded_draft()
     {
         var directory = await SeedDirectory();
-        MayViewHosts(true);
+        MayViewInfrastructure(true);
         Answers(Answer);
         var unreachable = AiInventoryTests.Service(("default", InfrastructureProviders.Proxmox, InventorySnapshot.AllUnavailable("Could not reach pve.test")));
 
@@ -170,7 +170,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
     public async Task A_brief_is_drafted_from_its_rendering_and_checked_for_what_it_asks()
     {
         var directory = await SeedDirectory();
-        MayViewHosts(true);
+        MayViewInfrastructure(true);
         Answers(Answer);
         var brief = new AiScenarioBrief
         {
@@ -208,7 +208,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
         version.Variables.Add(new ModuleVariable { Name = "template_id", VariableType = "number" });
         module.Versions.Add(version);
         await Seed(module);
-        MayViewHosts(true);
+        MayViewInfrastructure(true);
         Answers($$$"""{"designName":"lab","summary":"s","modules":[{"moduleId":"{{{module.Id}}}","name":"web","values":{"template_id":"9100"}}]}""");
         var terraform = new TerraformOptions { EnvironmentVariables = new EnvironmentVariableOptions { Direct = new() { ["PROXMOX_VE_ENDPOINT"] = "https://pve.test:8006" } } };
 
