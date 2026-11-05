@@ -11,10 +11,11 @@ using System.Text.RegularExpressions;
 namespace Caster.Api.Domain.Services.Inventory;
 
 /// <summary>
-/// Terraform that references a discovered VM template, for <see cref="InventoryEntry.Terraform"/>.
-/// Each is written to paste as-is: data sources stand alone, and an argument that only
-/// makes sense inside a resource says which resource. Labels come from the template's
-/// name, so pasting two templates does not declare the same block twice.
+/// Terraform that references a discovered template, network, datastore, host or ISO, for
+/// <see cref="InventoryEntry.Terraform"/>. Each is written to paste as-is: data sources
+/// stand alone, and an argument that only makes sense inside a resource says which
+/// resource. Labels come from the object's name, so pasting two of them does not
+/// declare the same block twice.
 /// </summary>
 public static partial class TerraformSnippets
 {
@@ -101,6 +102,99 @@ public static partial class TerraformSnippets
     }
 
     /// <summary>
+    /// A network or distributed portgroup, for a VM's network_interface. Without a
+    /// datacenter the provider searches the default one, as for a template.
+    /// </summary>
+    public static Dictionary<string, string> VsphereNetwork(string name, string datacenter)
+    {
+        var label = Label(name);
+
+        return new()
+        {
+            [Vsphere] = VsphereLookup("vsphere_network", label, name, datacenter, $"{label}_datacenter") + "\n" +
+                InVsphereVm(Block("network_interface", [("network_id", $"data.vsphere_network.{label}.id")]))
+        };
+    }
+
+    /// <summary>A datastore, for a VM's datastore_id.</summary>
+    public static Dictionary<string, string> VsphereDatastore(string name, string datacenter)
+    {
+        var label = Label(name);
+
+        return new()
+        {
+            [Vsphere] = VsphereLookup("vsphere_datastore", label, name, datacenter, $"{label}_datacenter") + "\n" +
+                InVsphereVm(Arguments([("datastore_id", $"data.vsphere_datastore.{label}.id")]))
+        };
+    }
+
+    /// <summary>
+    /// An ESXi host, to place a VM on it: its id, and its root resource pool, which for
+    /// a host in a cluster is the cluster's. vsphere_host requires a datacenter, so
+    /// without one there is no snippet.
+    /// </summary>
+    public static Dictionary<string, string> VsphereHost(string name, string datacenter)
+    {
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(datacenter))
+            return [];
+
+        var label = Label(name);
+
+        return new()
+        {
+            [Vsphere] = VsphereLookup("vsphere_host", label, name, datacenter, $"{label}_datacenter") + "\n" +
+                InVsphereVm(Arguments(
+                [
+                    ("resource_pool_id", $"data.vsphere_host.{label}.resource_pool_id"),
+                    ("host_system_id", $"data.vsphere_host.{label}.id")
+                ]))
+        };
+    }
+
+    /// <summary>
+    /// An ISO, for a VM's cdrom block: its datastore, and its path on that datastore
+    /// without the "[datastore] " prefix, e.g. "iso/alpine.iso".
+    /// </summary>
+    public static Dictionary<string, string> VsphereIso(string path, string datastore, string datacenter)
+    {
+        if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(datastore))
+            return [];
+
+        var label = Label(path);
+
+        return new()
+        {
+            [Vsphere] = VsphereLookup("vsphere_datastore", $"{label}_datastore", datastore, datacenter, $"{label}_datacenter") + "\n" +
+                InVsphereVm(Block("cdrom",
+                [
+                    ("datastore_id", $"data.vsphere_datastore.{label}_datastore.id"),
+                    ("path", Quote(path))
+                ]))
+        };
+    }
+
+    /// <summary>
+    /// A vSphere data source found by name, in its datacenter when that is known.
+    /// </summary>
+    private static string VsphereLookup(string type, string label, string name, string datacenter, string datacenterLabel)
+    {
+        if (string.IsNullOrWhiteSpace(datacenter))
+            return Block($"data \"{type}\" \"{label}\"", [("name", Quote(name))]);
+
+        return Block($"data \"vsphere_datacenter\" \"{datacenterLabel}\"", [("name", Quote(datacenter))]) + "\n" +
+            Block($"data \"{type}\" \"{label}\"",
+            [
+                ("name", Quote(name)),
+                ("datacenter_id", $"data.vsphere_datacenter.{datacenterLabel}.id")
+            ]);
+    }
+
+    /// <summary>Lines that go in a vsphere_virtual_machine resource, commented out as for a template.</summary>
+    private static string InVsphereVm(string text) =>
+        "# In a vsphere_virtual_machine resource:\n" +
+        string.Concat(text.Split('\n').SkipLast(1).Select(x => $"#   {x}\n"));
+
+    /// <summary>
     /// A Proxmox template. bpg clones by VMID and keeps whatever hardware the
     /// resource does not declare. Telmate clones by name and then sets the VM to
     /// exactly what the resource declares, so its snippet has to repeat the
@@ -131,6 +225,85 @@ public static partial class TerraformSnippets
             snippets[Telmate] = TelmateVm(name, node, config);
 
         return snippets;
+    }
+
+    /// <summary>A Linux bridge or an SDN vnet, which a VM attaches to by its name.</summary>
+    public static Dictionary<string, string> ProxmoxNetwork(string bridge)
+    {
+        if (string.IsNullOrWhiteSpace(bridge))
+            return [];
+
+        return new()
+        {
+            [Bpg] = "# In a proxmox_virtual_environment_vm resource:\n" +
+                Block("network_device", [("bridge", Quote(bridge))]),
+            [Telmate] = "# In a proxmox_vm_qemu resource (Telmate/proxmox 3.x):\n" +
+                Block("network", [("id", "0"), ("model", Quote("virtio")), ("bridge", Quote(bridge))])
+        };
+    }
+
+    /// <summary>
+    /// A storage, for a disk. Only a storage that holds VM disk images ("images" in
+    /// its content), or for bpg also container volumes ("rootdir"), can take one, so
+    /// any other storage, or one whose content is not known, has no snippet.
+    /// </summary>
+    public static Dictionary<string, string> ProxmoxStorage(string storage, string content)
+    {
+        var snippets = new Dictionary<string, string>();
+
+        if (string.IsNullOrWhiteSpace(storage))
+            return snippets;
+
+        var images = ProxmoxInventoryClient.HasContent(content, "images");
+        var rootdir = ProxmoxInventoryClient.HasContent(content, "rootdir");
+        var resources = string.Join(" or ", new[]
+        {
+            images ? "proxmox_virtual_environment_vm" : null,
+            rootdir ? "proxmox_virtual_environment_container" : null
+        }.Where(x => x != null));
+
+        if (resources.Length > 0)
+            snippets[Bpg] = $"# In a disk block of a {resources} resource:\n" + Arguments([("datastore_id", Quote(storage))]);
+
+        if (images)
+        {
+            snippets[Telmate] = "# In a disk block of a proxmox_vm_qemu resource (Telmate/proxmox 3.x),\n" +
+                "# e.g. disks { scsi { scsi0 { disk { ... } } } }:\n" +
+                Arguments([("storage", Quote(storage))]);
+        }
+
+        return snippets;
+    }
+
+    /// <summary>A node, to place a VM on it.</summary>
+    public static Dictionary<string, string> ProxmoxNode(string node)
+    {
+        if (string.IsNullOrWhiteSpace(node))
+            return [];
+
+        return new()
+        {
+            [Bpg] = "# In a proxmox_virtual_environment_vm or proxmox_virtual_environment_container resource:\n" +
+                Arguments([("node_name", Quote(node))]),
+            [Telmate] = "# In a proxmox_vm_qemu resource:\n" + Arguments([("target_node", Quote(node))])
+        };
+    }
+
+    /// <summary>
+    /// An ISO by its volid, "local:iso/alpine.iso", which both providers take as is.
+    /// Telmate's goes in ide2, where Proxmox puts a VM's CD-ROM.
+    /// </summary>
+    public static Dictionary<string, string> ProxmoxIso(string volId)
+    {
+        if (string.IsNullOrWhiteSpace(volId))
+            return [];
+
+        return new()
+        {
+            [Bpg] = "# In a proxmox_virtual_environment_vm resource:\n" + Block("cdrom", [("file_id", Quote(volId))]),
+            [Telmate] = "# In the disks block of a proxmox_vm_qemu resource (Telmate/proxmox 3.x):\n" +
+                Nest("ide", Nest("ide2", Block("cdrom", [("iso", Quote(volId))])))
+        };
     }
 
     [GeneratedRegex(@"^(ide|sata|scsi|virtio)(\d+)$")]
@@ -372,6 +545,9 @@ public static partial class TerraformSnippets
 
     private static string Block(string type, IReadOnlyList<(string Key, string Value)> arguments) =>
         $"{type} {{\n{Indent(Arguments(arguments))}}}\n";
+
+    /// <summary>A block holding only <paramref name="body"/>, itself a block.</summary>
+    private static string Nest(string type, string body) => $"{type} {{\n{Indent(body)}}}\n";
 
     private static string Indent(string text) =>
         string.Concat(text.Split('\n').SkipLast(1).Select(x => x.Length == 0 ? "\n" : $"  {x}\n"));

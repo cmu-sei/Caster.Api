@@ -430,7 +430,8 @@ public class ProxmoxInventoryClient(
                     Id = x.Node,
                     Name = x.Node,
                     Path = x.Node,
-                    Properties = properties
+                    Properties = properties,
+                    Terraform = TerraformSnippets.ProxmoxNode(x.Node)
                 };
             });
 
@@ -461,7 +462,8 @@ public class ProxmoxInventoryClient(
                     Id = x.Storage,
                     Name = x.Storage,
                     Path = x.Storage,
-                    Properties = properties
+                    Properties = properties,
+                    Terraform = TerraformSnippets.ProxmoxStorage(x.Storage, x.Content)
                 };
             })
             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
@@ -561,7 +563,8 @@ public class ProxmoxInventoryClient(
                         Name = item.VolId,
                         // Already fully qualified as storage:iso/filename.
                         Path = item.VolId,
-                        Properties = properties
+                        Properties = properties,
+                        Terraform = TerraformSnippets.ProxmoxIso(item.VolId)
                     };
                 }
             }
@@ -694,7 +697,8 @@ public class ProxmoxInventoryClient(
                     Id = iface.Iface,
                     Name = iface.Iface,
                     Path = iface.Iface,
-                    Properties = properties
+                    Properties = properties,
+                    Terraform = TerraformSnippets.ProxmoxNetwork(iface.Iface)
                 };
             }
         }
@@ -749,7 +753,9 @@ public class ProxmoxInventoryClient(
                     Id = vnet.Vnet,
                     Name = vnet.Vnet,
                     Path = vnet.Vnet,
-                    Properties = []
+                    Properties = [],
+                    // A vnet is attached by its name, as a bridge is.
+                    Terraform = TerraformSnippets.ProxmoxNetwork(vnet.Vnet)
                 };
 
                 entries[vnet.Vnet] = entry;

@@ -125,7 +125,7 @@ public class InventorySnapshot
 
     /// <summary>
     /// The machines VMs run on: Proxmox nodes or vSphere hosts, with how loaded
-    /// each one is, for capacity. Not referenced from Terraform.
+    /// each one is, for capacity, and for placing a VM on one.
     /// </summary>
     public InventoryCategoryResult Hosts { get; set; } = InventoryCategoryResult.Unavailable(InventoryMessages.NotLoaded);
 

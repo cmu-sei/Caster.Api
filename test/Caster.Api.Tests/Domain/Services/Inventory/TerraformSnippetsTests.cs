@@ -9,8 +9,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 {
     /// <summary>
     /// The snippets were checked with terraform validate against hashicorp/vsphere 2.12,
-    /// bpg/proxmox 0.118 and Telmate/proxmox 3.0.2-rc10, and the Proxmox ones applied on
-    /// the dev Proxmox. These pin their shape so they stay that way.
+    /// bpg/proxmox 0.118 and Telmate/proxmox 3.0.2-rc10, and the Proxmox template ones
+    /// applied on the dev Proxmox. These pin their shape so they stay that way.
     /// </summary>
     [Trait("Category", "Unit")]
     [Trait("Category", "Inventory")]
@@ -58,6 +58,242 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Contains("  type       = \"ovf\"\n", snippet);
             Assert.Contains("  library_id = data.vsphere_content_library.ubuntu_2404_library.id\n", snippet);
             Assert.Contains("template_uuid = data.vsphere_content_library_item.ubuntu_2404.id", snippet);
+        }
+
+        [Fact]
+        public void A_Vsphere_Network_Is_Found_By_Name_In_Its_Datacenter()
+        {
+            Assert.Equal("""
+                data "vsphere_datacenter" "vm_network_datacenter" {
+                  name = "DC1"
+                }
+
+                data "vsphere_network" "vm_network" {
+                  name          = "VM Network"
+                  datacenter_id = data.vsphere_datacenter.vm_network_datacenter.id
+                }
+
+                # In a vsphere_virtual_machine resource:
+                #   network_interface {
+                #     network_id = data.vsphere_network.vm_network.id
+                #   }
+
+                """, TerraformSnippets.VsphereNetwork("VM Network", "DC1")[TerraformSnippets.Vsphere]);
+        }
+
+        [Fact]
+        public void A_Vsphere_Network_Without_A_Datacenter_Leaves_The_Datacenter_Out()
+        {
+            var snippet = TerraformSnippets.VsphereNetwork("vlan-200", null)[TerraformSnippets.Vsphere];
+
+            Assert.DoesNotContain("datacenter", snippet);
+            Assert.StartsWith("data \"vsphere_network\" \"vlan_200\" {\n  name = \"vlan-200\"\n}\n", snippet);
+        }
+
+        [Fact]
+        public void A_Vsphere_Datastore_Is_Found_By_Name_In_Its_Datacenter()
+        {
+            Assert.Equal("""
+                data "vsphere_datacenter" "nfs_fast_datacenter" {
+                  name = "DC1"
+                }
+
+                data "vsphere_datastore" "nfs_fast" {
+                  name          = "nfs-fast"
+                  datacenter_id = data.vsphere_datacenter.nfs_fast_datacenter.id
+                }
+
+                # In a vsphere_virtual_machine resource:
+                #   datastore_id = data.vsphere_datastore.nfs_fast.id
+
+                """, TerraformSnippets.VsphereDatastore("nfs-fast", "DC1")[TerraformSnippets.Vsphere]);
+        }
+
+        [Fact]
+        public void A_Vsphere_Datastore_Without_A_Datacenter_Leaves_The_Datacenter_Out()
+        {
+            var snippet = TerraformSnippets.VsphereDatastore("nfs-fast", " ")[TerraformSnippets.Vsphere];
+
+            Assert.DoesNotContain("datacenter", snippet);
+            Assert.StartsWith("data \"vsphere_datastore\" \"nfs_fast\" {\n  name = \"nfs-fast\"\n}\n", snippet);
+        }
+
+        [Fact]
+        public void A_Vsphere_Host_Gives_Its_Id_And_Resource_Pool()
+        {
+            Assert.Equal("""
+                data "vsphere_datacenter" "esx1_test_datacenter" {
+                  name = "DC1"
+                }
+
+                data "vsphere_host" "esx1_test" {
+                  name          = "esx1.test"
+                  datacenter_id = data.vsphere_datacenter.esx1_test_datacenter.id
+                }
+
+                # In a vsphere_virtual_machine resource:
+                #   resource_pool_id = data.vsphere_host.esx1_test.resource_pool_id
+                #   host_system_id   = data.vsphere_host.esx1_test.id
+
+                """, TerraformSnippets.VsphereHost("esx1.test", "DC1")[TerraformSnippets.Vsphere]);
+        }
+
+        [Fact]
+        public void A_Vsphere_Host_Without_A_Datacenter_Has_No_Snippet()
+        {
+            // vsphere_host requires datacenter_id.
+            Assert.Empty(TerraformSnippets.VsphereHost("esx1.test", null));
+            Assert.Empty(TerraformSnippets.VsphereHost(null, "DC1"));
+        }
+
+        [Fact]
+        public void A_Vsphere_ISO_Is_Its_Datastore_And_Its_Path_On_It()
+        {
+            Assert.Equal("""
+                data "vsphere_datacenter" "iso_alpine_iso_datacenter" {
+                  name = "DC1"
+                }
+
+                data "vsphere_datastore" "iso_alpine_iso_datastore" {
+                  name          = "nfs-fast"
+                  datacenter_id = data.vsphere_datacenter.iso_alpine_iso_datacenter.id
+                }
+
+                # In a vsphere_virtual_machine resource:
+                #   cdrom {
+                #     datastore_id = data.vsphere_datastore.iso_alpine_iso_datastore.id
+                #     path         = "iso/alpine.iso"
+                #   }
+
+                """, TerraformSnippets.VsphereIso("iso/alpine.iso", "nfs-fast", "DC1")[TerraformSnippets.Vsphere]);
+        }
+
+        [Fact]
+        public void A_Vsphere_ISO_Without_A_Datacenter_Leaves_The_Datacenter_Out_And_Without_A_Datastore_Has_No_Snippet()
+        {
+            var snippet = TerraformSnippets.VsphereIso("kali.iso", "nfs-fast", null)[TerraformSnippets.Vsphere];
+
+            Assert.DoesNotContain("datacenter", snippet);
+            Assert.StartsWith("data \"vsphere_datastore\" \"kali_iso_datastore\" {\n  name = \"nfs-fast\"\n}\n", snippet);
+
+            Assert.Empty(TerraformSnippets.VsphereIso("kali.iso", null, "DC1"));
+            Assert.Empty(TerraformSnippets.VsphereIso("", "nfs-fast", "DC1"));
+        }
+
+        [Fact]
+        public void A_Proxmox_Bridge_Is_A_bpg_Network_Device()
+        {
+            Assert.Equal("""
+                # In a proxmox_virtual_environment_vm resource:
+                network_device {
+                  bridge = "vmbr0"
+                }
+
+                """, TerraformSnippets.ProxmoxNetwork("vmbr0")[TerraformSnippets.Bpg]);
+        }
+
+        [Fact]
+        public void A_Proxmox_Bridge_Is_A_Telmate_Network_Block()
+        {
+            Assert.Equal("""
+                # In a proxmox_vm_qemu resource (Telmate/proxmox 3.x):
+                network {
+                  id     = 0
+                  model  = "virtio"
+                  bridge = "vmbr0"
+                }
+
+                """, TerraformSnippets.ProxmoxNetwork("vmbr0")[TerraformSnippets.Telmate]);
+        }
+
+        [Fact]
+        public void A_Proxmox_Storage_For_Disk_Images_Is_A_Disk_Datastore()
+        {
+            var snippets = TerraformSnippets.ProxmoxStorage("local-lvm", "rootdir,images");
+
+            Assert.Equal("""
+                # In a disk block of a proxmox_virtual_environment_vm or proxmox_virtual_environment_container resource:
+                datastore_id = "local-lvm"
+
+                """, snippets[TerraformSnippets.Bpg]);
+            Assert.Equal("""
+                # In a disk block of a proxmox_vm_qemu resource (Telmate/proxmox 3.x),
+                # e.g. disks { scsi { scsi0 { disk { ... } } } }:
+                storage = "local-lvm"
+
+                """, snippets[TerraformSnippets.Telmate]);
+        }
+
+        [Fact]
+        public void A_Proxmox_Storage_Only_For_Containers_Has_Only_A_bpg_Container_Snippet()
+        {
+            var snippets = TerraformSnippets.ProxmoxStorage("ct-store", "rootdir");
+
+            Assert.Equal([TerraformSnippets.Bpg], snippets.Keys);
+            Assert.StartsWith("# In a disk block of a proxmox_virtual_environment_container resource:\n", snippets[TerraformSnippets.Bpg]);
+        }
+
+        [Theory]
+        [InlineData("local", "vztmpl,backup,iso,snippets")]
+        [InlineData("local-lvm", null)]
+        [InlineData(null, "images")]
+        public void A_Proxmox_Storage_That_Cannot_Hold_A_Disk_Has_No_Snippet(string storage, string content)
+        {
+            Assert.Empty(TerraformSnippets.ProxmoxStorage(storage, content));
+        }
+
+        [Fact]
+        public void A_Proxmox_Node_Places_A_VM_On_It()
+        {
+            var snippets = TerraformSnippets.ProxmoxNode("pve");
+
+            Assert.Equal("""
+                # In a proxmox_virtual_environment_vm or proxmox_virtual_environment_container resource:
+                node_name = "pve"
+
+                """, snippets[TerraformSnippets.Bpg]);
+            Assert.Equal("""
+                # In a proxmox_vm_qemu resource:
+                target_node = "pve"
+
+                """, snippets[TerraformSnippets.Telmate]);
+        }
+
+        [Fact]
+        public void A_Proxmox_ISO_Is_A_bpg_CDROM_File()
+        {
+            Assert.Equal("""
+                # In a proxmox_virtual_environment_vm resource:
+                cdrom {
+                  file_id = "local:iso/alpine.iso"
+                }
+
+                """, TerraformSnippets.ProxmoxIso("local:iso/alpine.iso")[TerraformSnippets.Bpg]);
+        }
+
+        [Fact]
+        public void A_Proxmox_ISO_Is_A_Telmate_CDROM_In_ide2()
+        {
+            // The same shape A_Template_That_Boots_An_ISO_Keeps_Its_CDROM pins inside disks.
+            Assert.Equal("""
+                # In the disks block of a proxmox_vm_qemu resource (Telmate/proxmox 3.x):
+                ide {
+                  ide2 {
+                    cdrom {
+                      iso = "local:iso/alpine.iso"
+                    }
+                  }
+                }
+
+                """, TerraformSnippets.ProxmoxIso("local:iso/alpine.iso")[TerraformSnippets.Telmate]);
+        }
+
+        [Fact]
+        public void Proxmox_Objects_Without_A_Name_Have_No_Snippet()
+        {
+            Assert.Empty(TerraformSnippets.ProxmoxNetwork(" "));
+            Assert.Empty(TerraformSnippets.ProxmoxNode(null));
+            Assert.Empty(TerraformSnippets.ProxmoxIso(""));
         }
 
         private static readonly Dictionary<string, string> AlpineConfig = new()
