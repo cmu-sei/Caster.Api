@@ -133,13 +133,13 @@ public class AiInventory
     public static AiInventory None(string reason) => new([], new AiInventoryGrounding { Checked = false, Reason = reason });
 
     /// <summary>
-    /// The inventory a draft is grounded in for the caller. The inventory routes need ViewHosts, so a
+    /// The inventory a draft is grounded in for the caller. The inventory routes need ViewInfrastructure, so a
     /// caller without it gets none, rather than its names by way of the model.
     /// </summary>
     public static async Task<AiInventory> ForCaller(ICasterAuthorizationService authorizationService, IInventoryService service, IReadOnlyList<string> hypervisors, CancellationToken cancellationToken)
     {
-        if (!await authorizationService.Authorize([SystemPermission.ViewHosts], cancellationToken))
-            return None("Not checked against the infrastructure inventory: listing it needs the ViewHosts permission.");
+        if (!await authorizationService.Authorize([SystemPermission.ViewInfrastructure], cancellationToken))
+            return None("Not checked against the infrastructure inventory: listing it needs the ViewInfrastructure permission.");
         return Load(service, hypervisors);
     }
 
