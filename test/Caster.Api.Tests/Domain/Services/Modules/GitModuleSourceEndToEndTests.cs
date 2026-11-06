@@ -54,7 +54,7 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             Monitor(), new RecordingLogger<GitCommandRunner>()));
 
         private GitModuleRepositoryProvider Provider(IGitCommandRunner git) =>
-            new(Db, git, new LockService(), new RecordingLogger<GitModuleRepositoryProvider>());
+            new(Db, git, new LockService(), new ModuleSourceReadCache(), Monitor(), new RecordingLogger<GitModuleRepositoryProvider>());
 
         private static IOptionsMonitor<TerraformOptions> Monitor()
         {
@@ -189,6 +189,76 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         }
 
         [Fact]
+        public async Task ARepositoryWithNoCommits_IsEmptyNotAFailure()
+        {
+            var bare = Path.Combine(_scratch, "seeded.git");
+            RunGitOrThrow(_scratch, "init", "-q", "--bare", bare);
+
+            var source = Source();
+            source.Url = "file:///" + bare.Replace('\\', '/').TrimStart('/');
+
+            var result = await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(ModuleSourceState.Empty, result.State);
+            Assert.Equal(GitModuleRepositoryProvider.NoModulesMessage, result.Message);
+        }
+
+        [Fact]
+        public async Task AnUntaggedRepositoryWithModules_IsAWarning()
+        {
+            var work = Path.Combine(_scratch, "untagged");
+            var directory = Path.Combine(work, "network-segment");
+            Directory.CreateDirectory(directory);
+            File.Copy(
+                Path.Combine(CatalogData, "network-segment", "variables.tf.json"),
+                Path.Combine(directory, "variables.tf.json"));
+
+            RunGitOrThrow(work, "init", "-q", "-b", "main");
+            RunGitOrThrow(work, "config", "user.name", "Caster Test");
+            RunGitOrThrow(work, "config", "user.email", "test@localhost");
+            RunGitOrThrow(work, "config", "commit.gpgsign", "false");
+            RunGitOrThrow(work, "add", "-A");
+            RunGitOrThrow(work, "commit", "-q", "-m", "first module");
+
+            var bare = Path.Combine(_scratch, "untagged.git");
+            RunGitOrThrow(_scratch, "clone", "--bare", "-q", work, bare);
+
+            var source = Source();
+            source.Url = "file:///" + bare.Replace('\\', '/').TrimStart('/');
+
+            var result = await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(ModuleSourceState.Warning, result.State);
+            Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
+        }
+
+        [Fact]
+        public async Task AnUntaggedRepositoryWhoseHeadNamesAMissingBranch_IsAWarning()
+        {
+            var work = Path.Combine(_scratch, "dangling");
+            Directory.CreateDirectory(work);
+            File.WriteAllText(Path.Combine(work, "README.md"), "seeded\n");
+            RunGitOrThrow(work, "init", "-q", "-b", "main");
+            RunGitOrThrow(work, "config", "user.name", "Caster Test");
+            RunGitOrThrow(work, "config", "user.email", "test@localhost");
+            RunGitOrThrow(work, "config", "commit.gpgsign", "false");
+            RunGitOrThrow(work, "add", "-A");
+            RunGitOrThrow(work, "commit", "-q", "-m", "seed");
+
+            var bare = Path.Combine(_scratch, "dangling.git");
+            RunGitOrThrow(_scratch, "clone", "--bare", "-q", work, bare);
+            RunGitOrThrow(bare, "symbolic-ref", "HEAD", "refs/heads/gone");
+
+            var source = Source();
+            source.Url = "file:///" + bare.Replace('\\', '/').TrimStart('/');
+
+            var result = await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(ModuleSourceState.Warning, result.State);
+            Assert.Equal(GitModuleRepositoryProvider.DefaultBranchUnreadableMessage, result.Message);
+        }
+
+        [Fact]
         public async Task MissingRemote_FailsWithAReadableMessageAndNoHang()
         {
             var source = Source();
@@ -197,7 +267,7 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             var exception = await Assert.ThrowsAsync<GitCommandException>(() =>
                 Sut.SyncModulesAsync(source, false, Ct));
 
-            Assert.Contains("Could not list tags for", exception.Message);
+            Assert.Contains("Could not read refs for", exception.Message);
         }
 
         #endregion
@@ -218,17 +288,56 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             Assert.Equal(expected, GitCommandRunner.Redact(input));
         }
 
+        [Theory]
+        [InlineData("https://oauth2:abc/SECRET@gitlab.example.com/group/repo.git")]
+        [InlineData("u:p@SECRET@gitlab.example.com:group/repo.git")]
+        [InlineData("oauth2:SECRET@gitlab.example.com:group/repo.git")]
+        [InlineData("https://user:p#SECRET@gitlab.example.com/group/repo.git")]
+        public void Redact_RemovesTheSourceUrlWhole(string url)
+        {
+            var text = $"fatal: unable to access '{url}': Could not resolve host; also {url}";
+
+            var redacted = GitCommandRunner.Redact(text, url);
+
+            Assert.DoesNotContain("SECRET", redacted);
+            Assert.Contains(GitCommandRunner.UrlPlaceholder, redacted);
+        }
+
+        [Fact]
+        public void Redact_MasksUserinfoHoldingSlashesInAnyOtherUrl()
+        {
+            var redacted = GitCommandRunner.Redact("see https://oauth2:abc/SECRET@gitlab.example.com/x.git");
+
+            Assert.DoesNotContain("SECRET", redacted);
+            Assert.Contains("https://***@gitlab.example.com/x.git", redacted);
+        }
+
+        /// <summary>The runner itself, given a url refusal would have stopped: git's own error never echoes it.</summary>
+        [Theory]
+        [InlineData("https://oauth2:abc/SECRET@127.0.0.1:1/nope.git")]
+        [InlineData("https://u:p@SECRET@127.0.0.1:1/nope.git")]
+        public async Task TheRunnersErrorNeverEchoesTheUrl(string url)
+        {
+            var runner = new GitCommandRunner(Monitor(), new RecordingLogger<GitCommandRunner>());
+
+            var exception = await Assert.ThrowsAsync<GitCommandException>(() => runner.ListRemoteRefsAsync(url, Ct));
+
+            Assert.DoesNotContain("SECRET", exception.Message);
+            Assert.Contains("Could not read refs for <source url>", exception.Message);
+        }
+
         [Fact]
         public async Task AFailureAgainstACredentialBearingUrlNeverEchoesTheCredential()
         {
             var source = Source();
             source.Url = "https://git-access-token:supersecret@127.0.0.1:1/nope.git";
 
-            var exception = await Assert.ThrowsAsync<GitCommandException>(() =>
+            // Refused before git runs, so nothing can echo it.
+            var exception = await Assert.ThrowsAsync<ModuleSourceRefusedException>(() =>
                 Sut.SyncModulesAsync(source, false, Ct));
 
             Assert.DoesNotContain("supersecret", exception.Message);
-            Assert.Contains("***@", exception.Message);
+            Assert.Equal(ModuleSourceUrl.CredentialsMessage, exception.Message);
         }
 
         #endregion
@@ -347,12 +456,18 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         {
             private readonly GitCommandRunner _inner = new(Monitor(), new RecordingLogger<GitCommandRunner>());
 
-            public Task<System.Collections.Generic.IReadOnlyList<string>> ListRemoteTagsAsync(
+            public Task<System.Collections.Generic.IReadOnlyList<string>> ListRemoteRefsAsync(
                 string requestedUrl, CancellationToken cancellationToken) =>
-                _inner.ListRemoteTagsAsync(url, cancellationToken);
+                _inner.ListRemoteRefsAsync(url, cancellationToken);
 
             public Task CloneTagAsync(string requestedUrl, string tag, string destinationPath, CancellationToken cancellationToken) =>
                 _inner.CloneTagAsync(url, "refs/tags/no-such-tag", destinationPath, cancellationToken);
+
+            public Task<bool> HasBranchesAsync(string requestedUrl, CancellationToken cancellationToken) =>
+                _inner.HasBranchesAsync(url, cancellationToken);
+
+            public Task CloneDefaultBranchAsync(string requestedUrl, string destinationPath, CancellationToken cancellationToken) =>
+                _inner.CloneDefaultBranchAsync(url, destinationPath, cancellationToken);
 
             public Task<DateTime?> GetHeadCommitDateAsync(string repositoryPath, CancellationToken cancellationToken) =>
                 _inner.GetHeadCommitDateAsync(repositoryPath, cancellationToken);

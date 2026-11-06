@@ -241,6 +241,7 @@ namespace Caster.Api.Infrastructure.Extensions
         {
             services.AddSingleton<IGitCommandRunner, GitCommandRunner>();
             services.AddSingleton<ModuleSourceStatusStore>();
+            services.AddSingleton<ModuleSourceReadCache>();
 
             services.AddScoped<IModuleRepositoryProvider, GitlabModuleRepositoryProvider>();
             services.AddScoped<IModuleRepositoryProvider, GitModuleRepositoryProvider>();

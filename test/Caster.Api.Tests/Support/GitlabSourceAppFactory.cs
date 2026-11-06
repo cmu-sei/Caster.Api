@@ -21,8 +21,15 @@ public sealed class GitlabSourceAppFactory : CasterAppFactory
     /// <summary>The GitLab group the source lists, as <c>Terraform:GitlabGroupId</c>.</summary>
     public const int GroupId = 6;
 
+    /// <summary>A <c>Terraform:GitlabToken</c> no response may ever contain.</summary>
+    public const string Token = "gitlab-test-token-never-returned";
+
     protected override IDictionary<string, string> Configuration =>
-        new Dictionary<string, string>(TestConfiguration.Values) { ["Terraform:GitlabGroupId"] = GroupId.ToString() };
+        new Dictionary<string, string>(TestConfiguration.Values)
+        {
+            ["Terraform:GitlabGroupId"] = GroupId.ToString(),
+            ["Terraform:GitlabToken"] = Token,
+        };
 
     protected override ITestDatabaseSession<CasterContext> HostDatabase() => DatabaseFixture.GitlabSourceHostDatabase();
 

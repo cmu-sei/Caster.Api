@@ -446,6 +446,10 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
+                    b.Property<DateTime?>("MissingSince")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("missing_since");
+
                     b.Property<string>("Name")
                         .HasColumnType("text")
                         .HasColumnName("name");
@@ -454,7 +458,13 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("path");
 
+                    b.Property<string>("SourceName")
+                        .HasColumnType("text")
+                        .HasColumnName("source_name");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("SourceName");
 
                     b.ToTable("modules");
                 });

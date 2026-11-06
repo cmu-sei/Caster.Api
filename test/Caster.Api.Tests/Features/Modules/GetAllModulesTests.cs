@@ -43,6 +43,21 @@ namespace Caster.Api.Tests.Features.Modules
         }
 
         [Fact]
+        public async Task AModuleGoneFromItsSource_IsListedWithMissingSince()
+        {
+            var missingSince = new DateTime(2026, 11, 1, 12, 0, 0, DateTimeKind.Utc);
+            var module = TestData.Module("Network Segment");
+            module.Path = "catalog/network-segment";
+            module.MissingSince = missingSince;
+            await Seed(module);
+
+            var listed = Assert.Single(await Handler().HandleRequest(new GetAll.Query(), Ct));
+
+            Assert.Equal(missingSince, listed.MissingSince);
+            Assert.False(listed.InSource);
+        }
+
+        [Fact]
         public async Task NoSourceConfigured_ServesTheStoredModules()
         {
             await SeedStoredModule();
