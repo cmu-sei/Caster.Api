@@ -18,6 +18,13 @@ public class TerraformOptions
     public int? GitlabGroupId { get; set; }
 
     /// <summary>
+    /// Whether the legacy Gitlab source is in use. Both keys are required: the
+    /// group id names what to list, and the api url is what the "gitlab" http
+    /// client is pointed at, which throws on an empty string.
+    /// </summary>
+    public bool GitlabSourceConfigured => GitlabGroupId.HasValue && !string.IsNullOrWhiteSpace(GitlabApiUrl);
+
+    /// <summary>
     /// Plain git repositories to discover Terraform Modules in, in addition to
     /// the legacy Gitlab group named by <see cref="GitlabApiUrl"/> and
     /// <see cref="GitlabGroupId"/>. The two are independent: configuring either

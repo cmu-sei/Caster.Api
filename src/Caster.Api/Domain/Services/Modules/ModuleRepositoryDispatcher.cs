@@ -64,8 +64,17 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
 
             try
             {
-                await provider.SyncModulesAsync(source, forceUpdate, cancellationToken);
-                _statuses.RecordSuccess(source.Name);
+                // An Empty or Warning result is a successful read, not a
+                // failure: it is recorded for GET api/modules/sources and
+                // does not fail the Module list.
+                var result = await provider.SyncModulesAsync(source, forceUpdate, cancellationToken);
+
+                // Not read (another request held the source's sync lock): its
+                // last status still stands, and that request records its own.
+                if (result.Read)
+                {
+                    _statuses.RecordSuccess(source.Name, result);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -76,9 +85,26 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
                 // Sources are independent, so one broken source must not hide
                 // the others. Whatever synced is already persisted; the caller
                 // is told what did not.
-                _logger.LogError(ex, "Failed to sync Modules from module source {Source}.", source.Name);
-                failures.Add($"module source '{source.Name}': {ex.Message}");
-                _statuses.RecordFailure(source.Name, ex.Message);
+                // Redacted again against this source's url: an exception from
+                // anywhere, not only git, may quote it.
+                var message = GitCommandRunner.Redact(ex.Message, source.Url);
+
+                if (message == ex.Message)
+                {
+                    _logger.LogError(ex, "Failed to sync Modules from module source {Source}.", source.Name);
+                }
+                else
+                {
+                    // The exception itself would log the unredacted message.
+                    _logger.LogError(
+                        "Failed to sync Modules from module source {Source} ({ExceptionType}): {Message}",
+                        source.Name,
+                        ex.GetType().Name,
+                        message);
+                }
+
+                failures.Add($"module source '{source.Name}': {message}");
+                _statuses.RecordFailure(source.Name, message);
             }
         }
 
@@ -129,7 +155,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
         // Both keys are required: the group id names what to list, and the api
         // url is what the "gitlab" http client is pointed at, which throws on
         // an empty string.
-        if (options.GitlabGroupId.HasValue && !string.IsNullOrWhiteSpace(options.GitlabApiUrl))
+        if (options.GitlabSourceConfigured)
         {
             sources.Add(new ModuleSourceOptions
             {
@@ -151,6 +177,18 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
             {
                 _logger.LogWarning(
                     "Ignoring a Terraform:ModuleSources entry with no Name or no Url (Name '{Name}').",
+                    source.Name);
+
+                continue;
+            }
+
+            // Source names are case-insensitive (the sync lock, status, read
+            // cache and stored Module queries all ignore case), so two names that
+            // differ only in case would be one source with two urls.
+            if (sources.Any(x => string.Equals(x.Name, source.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogWarning(
+                    "Ignoring a Terraform:ModuleSources entry named '{Name}': another source has that name, ignoring case.",
                     source.Name);
 
                 continue;

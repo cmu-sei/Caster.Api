@@ -53,8 +53,9 @@ namespace Caster.Api.Tests.Domain.Services.Modules
 
         #region Helpers
 
-        private static GitModuleRepositoryProvider Provider(Caster.Api.Data.CasterContext db, IGitCommandRunner git, ILockService locks = null) =>
-            new(db, git, locks ?? new LockService(), new RecordingLogger<GitModuleRepositoryProvider>());
+        private GitModuleRepositoryProvider Provider(Caster.Api.Data.CasterContext db, IGitCommandRunner git, ILockService locks = null) =>
+            new(db, git, locks ?? new LockService(), new ModuleSourceReadCache(), new RecordingLogger<GitModuleRepositoryProvider>());
+
 
         /// <summary>A repo whose root is one module: network-segment's files at the top level.</summary>
         private string BuildRootLayoutTree()
@@ -73,6 +74,13 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         private string BuildMonorepoTree()
         {
             var tree = Path.Combine(_scratch, "monorepo");
+
+            // Built once per test; a second call hands back the same tree.
+            if (Directory.Exists(tree))
+            {
+                return tree;
+            }
+
             Directory.CreateDirectory(tree);
 
             foreach (var module in new[] { "network-segment", "machine-blank" })
@@ -425,20 +433,40 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         }
 
         [Fact]
-        public async Task SyncModules_NoTags_ThrowsRatherThanRegisteringAnUnusableModule()
+        public async Task SyncModules_NoTagsAndNoModuleRoots_IsEmptyNotAFailure()
         {
-            _git.SourceTree = BuildRootLayoutTree();
+            // A freshly seeded repository: no commits, so nothing on the default branch either.
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
 
-            var exception = await Assert.ThrowsAsync<ModuleSyncException>(() =>
-                Sut.SyncModulesAsync(Source(ModuleSourceLayout.Root), false, Ct));
-
-            Assert.Contains("no git tags", exception.Message);
+            Assert.Equal(ModuleSourceState.Empty, result.State);
+            Assert.Equal("No Modules yet.", result.Message);
             Assert.Equal(0, _git.CloneCallCount);
+            Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
+            Assert.All(_git.DefaultBranchCloneDestinations, x => Assert.False(Directory.Exists(x)));
+        }
+
+        [Fact]
+        public async Task SyncModules_TagsButNoModuleRoots_IsEmptyWithAHowTo()
+        {
+            GivenTags("v0.0.0");
+
+            var tree = Path.Combine(_scratch, "empty");
+            Directory.CreateDirectory(tree);
+            File.WriteAllText(Path.Combine(tree, "README.md"), "nothing here\n");
+            _git.SourceTree = tree;
+
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Equal(ModuleSourceState.Empty, result.State);
+            Assert.Equal(
+                "No Modules yet. Subdirectories layout: add a folder with a variables.tf.json or outputs.tf.json " +
+                "(.tf files aren't read yet), then tag the repository.",
+                result.Message);
             Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
         }
 
         [Fact]
-        public async Task SyncModules_NoModuleRootAnywhere_Throws()
+        public async Task SyncModules_RootLayout_TagsButNoModuleRoot_IsEmptyAndNamesTheRoot()
         {
             GivenTags("v0.1.0");
 
@@ -447,11 +475,245 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             File.WriteAllText(Path.Combine(tree, "README.md"), "nothing here\n");
             _git.SourceTree = tree;
 
-            var exception = await Assert.ThrowsAsync<ModuleSyncException>(() =>
-                Sut.SyncModulesAsync(Source(ModuleSourceLayout.Root), false, Ct));
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Root), false, Ct);
 
-            Assert.Contains("variables.tf.json", exception.Message);
+            Assert.Equal(ModuleSourceState.Empty, result.State);
+            Assert.Equal(
+                "No Modules yet. Root layout: add a variables.tf.json or outputs.tf.json at the repository root " +
+                "(.tf files aren't read yet), then tag the repository.",
+                result.Message);
+        }
+
+        [Fact]
+        public async Task SyncModules_ModuleRootsButNoTags_IsAWarningAndRegistersNothing()
+        {
+            _git.DefaultBranchTree = BuildMonorepoTree();
+
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Equal(ModuleSourceState.Warning, result.State);
+            Assert.Equal(GitModuleRepositoryProvider.NoVersionTagsMessage, result.Message);
+            Assert.Equal(0, _git.CloneCallCount);
+            Assert.Equal(0, _git.HasBranchesCallCount);
             Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
+            Assert.All(_git.DefaultBranchCloneDestinations, x => Assert.False(Directory.Exists(x)));
+        }
+
+        [Fact]
+        public async Task SyncModules_NoTagsAndHeadNamesAMissingBranch_IsAWarningWithoutAClone()
+        {
+            _git.DanglingHead = true;
+
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Equal(ModuleSourceState.Warning, result.State);
+            Assert.Equal(GitModuleRepositoryProvider.DefaultBranchUnreadableMessage, result.Message);
+            Assert.Empty(_git.DefaultBranchCloneDestinations);
+            Assert.Equal(1, _git.HasBranchesCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_EmptyRepositoryThenABranchNotNamedByHead_ShowsOnAForcedSync()
+        {
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            var empty = await Sut.SyncModulesAsync(source, false, Ct);
+
+            // A branch other than the one HEAD names is pushed: still no HEAD,
+            // so the refs look the same and the kept answer stands until forced.
+            _git.DanglingHead = true;
+            var unforced = await Sut.SyncModulesAsync(source, false, Ct);
+            var forced = await Sut.SyncModulesAsync(source, forceUpdate: true, Ct);
+
+            Assert.Equal(ModuleSourceState.Empty, empty.State);
+            Assert.Equal(ModuleSourceState.Empty, unforced.State);
+            Assert.Equal(ModuleSourceState.Warning, forced.State);
+            Assert.Equal(GitModuleRepositoryProvider.DefaultBranchUnreadableMessage, forced.Message);
+        }
+
+        [Fact]
+        public async Task SyncModules_NoHead_ListsBranchesOnlyOnACacheMiss()
+        {
+            var source = Source(ModuleSourceLayout.Subdirectories);
+
+            await Sut.SyncModulesAsync(source, false, Ct);
+            await Sut.SyncModulesAsync(source, false, Ct);
+            await Sut.SyncModulesAsync(source, false, Ct);
+            Assert.Equal(1, _git.HasBranchesCallCount);
+
+            await Sut.SyncModulesAsync(source, forceUpdate: true, Ct);
+            Assert.Equal(2, _git.HasBranchesCallCount);
+
+            // New refs (a first tag) are a miss for everything, but a tagged
+            // source never needs the branch list.
+            GivenTags("v0.0.0");
+            _git.SourceTree = Path.Combine(_scratch, "nothing");
+            Directory.CreateDirectory(_git.SourceTree);
+            await Sut.SyncModulesAsync(source, false, Ct);
+            Assert.Equal(2, _git.HasBranchesCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_RepositoryWithNoCommits_IsEmptyWithoutAClone()
+        {
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Equal(ModuleSourceState.Empty, result.State);
+            Assert.Empty(_git.DefaultBranchCloneDestinations);
+            Assert.Equal(1, _git.HasBranchesCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_UntaggedSourceUnchanged_IsNotClonedAgain()
+        {
+            _git.DefaultBranchTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+
+            var first = await Sut.SyncModulesAsync(source, false, Ct);
+            var second = await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(first, second);
+            Assert.Single(_git.DefaultBranchCloneDestinations);
+            Assert.Equal(2, _git.LsRemoteCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_UntaggedSourceWithANewCommit_IsClonedAgain()
+        {
+            _git.DefaultBranchTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            _git.HeadSha = "4444444444444444444444444444444444444444";
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(2, _git.DefaultBranchCloneDestinations.Count);
+        }
+
+        [Fact]
+        public async Task SyncModules_TaggedSourceWithNoModuleRootsUnchanged_IsNotClonedAgain()
+        {
+            GivenTags("v0.0.0");
+            var tree = Path.Combine(_scratch, "empty");
+            Directory.CreateDirectory(tree);
+            _git.SourceTree = tree;
+            var source = Source(ModuleSourceLayout.Subdirectories);
+
+            await Sut.SyncModulesAsync(source, false, Ct);
+            var second = await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(ModuleSourceState.Empty, second.State);
+            Assert.Equal(1, _git.CloneCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_TaggedSourceWithNoModuleRoots_ForceMovedTag_IsClonedAgain()
+        {
+            GivenTags("v0.0.0");
+            var tree = Path.Combine(_scratch, "empty");
+            Directory.CreateDirectory(tree);
+            _git.SourceTree = tree;
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            _git.LsRemoteLines[0] = "5555555555555555555555555555555555555555\trefs/tags/v0.0.0";
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(2, _git.CloneCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_TaggedSourceWithNoModuleRoots_PushToMain_IsNotClonedAgain()
+        {
+            GivenTags("v0.0.0");
+            _git.HeadSha = "6666666666666666666666666666666666666666";
+            var tree = Path.Combine(_scratch, "empty");
+            Directory.CreateDirectory(tree);
+            _git.SourceTree = tree;
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            _git.HeadSha = "7777777777777777777777777777777777777777";
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(1, _git.CloneCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_EmptySourceForced_IsReadAgain()
+        {
+            GivenTags("v0.0.0");
+            var tree = Path.Combine(_scratch, "empty");
+            Directory.CreateDirectory(tree);
+            _git.SourceTree = tree;
+            var source = Source(ModuleSourceLayout.Subdirectories);
+
+            await Sut.SyncModulesAsync(source, false, Ct);
+            await Sut.SyncModulesAsync(source, forceUpdate: true, Ct);
+
+            Assert.Equal(2, _git.CloneCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_SourceGoesEmpty_KeepsTheModulesAlreadyStored()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            // Every tag deleted, and the default branch emptied.
+            _git.LsRemoteLines.Clear();
+            var result = await Sut.SyncModulesAsync(source, false, Ct);
+
+            // Not "No Modules yet": the stored ones are still listed.
+            Assert.Equal(ModuleSourceState.Warning, result.State);
+            Assert.Equal("No version tags any more; showing the 2 Modules stored from earlier.", result.Message);
+            Assert.Equal(2, await ReadBack(db => db.Modules.CountAsync(Ct)));
+            Assert.Equal(2, await ReadBack(db => db.ModuleVersions.CountAsync(Ct)));
+        }
+
+        [Fact]
+        public async Task SyncModules_TagsNoLongerHoldModules_IsAWarningShowingTheStoredOnes()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            var tree = Path.Combine(_scratch, "emptied");
+            Directory.CreateDirectory(tree);
+            _git.SourceTree = tree;
+            GivenTags("v0.2.0");
+            var result = await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(ModuleSourceState.Warning, result.State);
+            Assert.Equal("Its tags no longer contain Modules; showing the 2 Modules stored from earlier.", result.Message);
+            Assert.Equal(2, await ReadBack(db => db.Modules.CountAsync(Ct)));
+        }
+
+        [Fact]
+        public async Task SyncModules_NormalSync_IsOk()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Equal(ModuleSourceState.Ok, result.State);
+            Assert.Null(result.Message);
+        }
+
+        [Fact]
+        public async Task SyncModules_DefaultBranchCloneFails_IsStillAnError()
+        {
+            _git.HeadSha = "3333333333333333333333333333333333333333";
+            _git.CloneFailure = new GitCommandException("fatal: could not read Username");
+
+            await Assert.ThrowsAsync<GitCommandException>(() =>
+                Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct));
+
+            Assert.Single(_git.DefaultBranchCloneDestinations);
+            Assert.All(_git.DefaultBranchCloneDestinations, x => Assert.False(Directory.Exists(x)));
         }
 
         #endregion
@@ -761,6 +1023,94 @@ namespace Caster.Api.Tests.Domain.Services.Modules
 
         #endregion
 
+        #region Source name case
+
+        [Fact]
+        public async Task SyncModules_StoredModulesAreCountedIgnoringCase()
+        {
+            await SeedModule("Catalog/network-segment");
+            await SeedModule("CATALOG/machine-blank");
+
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Equal("No version tags any more; showing the 2 Modules stored from earlier.", result.Message);
+        }
+
+        [Fact]
+        public async Task SyncModules_CachedEmptyRead_StillCountsStoredModules()
+        {
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            // Stored after the read, as an import by name would.
+            await SeedModule("catalog/network-segment");
+            var result = await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(ModuleSourceState.Warning, result.State);
+            Assert.Equal("No version tags any more; showing the 1 Module stored from earlier.", result.Message);
+        }
+
+        [Fact]
+        public async Task SyncModules_SourceRenamedOnlyInCase_UpdatesItsModulesInPlace()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            source.Name = "Catalog";
+            await Sut.SyncModulesAsync(source, false, Ct);
+            var ids = await ReadBack(db => db.Modules.OrderBy(m => m.Path).Select(m => m.Id).ToListAsync(Ct));
+
+            source.Name = "catalog";
+            await Sut.SyncModulesAsync(source, forceUpdate: true, Ct);
+
+            var modules = await ReadBack(db => db.Modules.OrderBy(m => m.Path).ToListAsync(Ct));
+            Assert.Equal(ids, modules.Select(m => m.Id).ToList());
+            Assert.Equal(["catalog/machine-blank", "catalog/network-segment"], modules.Select(m => m.Path).ToList());
+            Assert.Equal(2, await ReadBack(db => db.ModuleVersions.CountAsync(Ct)));
+        }
+
+        private async Task SeedModule(string path)
+        {
+            var module = TestData.Module(path);
+            module.Path = path;
+            await Seed(module);
+        }
+
+        #endregion
+
+        #region Refused urls
+
+        [Theory]
+        [InlineData("https://git-access-token:SECRET@git.example.com/org/catalog.git", ModuleSourceUrl.CredentialsMessage)]
+        [InlineData("ssh://ghp_SECRET@github.com/org/catalog.git", ModuleSourceUrl.CredentialsMessage)]
+        [InlineData("ghp_SECRET@github.com:org/catalog.git", ModuleSourceUrl.CredentialsMessage)]
+        [InlineData("oauth2:abc/SECRET@gitlab.example.com:group/catalog.git", ModuleSourceUrl.CredentialsMessage)]
+        [InlineData("oauth2:SECRET@gitlab.example.com/group/catalog.git", ModuleSourceUrl.CredentialsMessage)]
+        [InlineData("ftp://git.example.com/org/catalog.git", ModuleSourceUrl.UnusableMessage)]
+        public async Task SyncModules_UrlWithCredentials_IsRefusedBeforeAnyGitCommand(string url, string message)
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            _git.DefaultBranchTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories, url);
+
+            var whole = await Assert.ThrowsAsync<ModuleSourceRefusedException>(() => Sut.SyncModulesAsync(source, false, Ct));
+            var named = await Assert.ThrowsAsync<ModuleSourceRefusedException>(() =>
+                Sut.SyncModuleAsync(source, "network-segment", Ct));
+
+            Assert.Equal(message, whole.Message);
+            Assert.Equal(message, named.Message);
+            Assert.DoesNotContain("SECRET", whole.Message);
+            Assert.Equal(0, _git.LsRemoteCallCount);
+            Assert.Equal(0, _git.CloneCallCount);
+            Assert.Empty(_git.DefaultBranchCloneDestinations);
+            Assert.Equal(0, _git.HasBranchesCallCount);
+            Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
+            Assert.Equal(0, await ReadBack(db => db.ModuleVersions.CountAsync(Ct)));
+        }
+
+        #endregion
+
         #region Single module sync
 
         [Fact]
@@ -799,6 +1149,52 @@ namespace Caster.Api.Tests.Domain.Services.Modules
                 Source(ModuleSourceLayout.Subdirectories),
                 "does-not-exist",
                 Ct));
+        }
+
+        [Fact]
+        public async Task SyncModule_NamedSourceWithNoTags_StillThrows()
+        {
+            _git.DefaultBranchTree = BuildMonorepoTree();
+
+            var exception = await Assert.ThrowsAsync<ModuleSyncException>(() => Sut.SyncModuleAsync(
+                Source(ModuleSourceLayout.Subdirectories),
+                "network-segment",
+                Ct));
+
+            Assert.Contains("no git tags", exception.Message);
+        }
+
+        [Fact]
+        public async Task SyncModule_WholeSourceWithTagsButNoModuleRoots_StillThrows()
+        {
+            // CreateFromRepository with just the source name, as a Root layout source is added.
+            GivenTags("v0.1.0");
+            var tree = Path.Combine(_scratch, "empty");
+            Directory.CreateDirectory(tree);
+            _git.SourceTree = tree;
+
+            var exception = await Assert.ThrowsAsync<ModuleSyncException>(() =>
+                Sut.SyncModuleAsync(Source(ModuleSourceLayout.Root), null, Ct));
+
+            Assert.Contains("variables.tf.json", exception.Message);
+        }
+
+        [Fact]
+        public async Task SyncModules_LockHeldByAnotherRequest_IsNotRead()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var locks = new LockService();
+            using var held = await locks.GetModuleSourceLock("catalog").LockAsync(1000);
+            var sut = new GitModuleRepositoryProvider(Db, _git, locks, new ModuleSourceReadCache(), new RecordingLogger<GitModuleRepositoryProvider>())
+            {
+                SyncLockTimeout = 10,
+            };
+
+            var result = await sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.False(result.Read);
+            Assert.Equal(0, _git.LsRemoteCallCount);
         }
 
         #endregion

@@ -6,12 +6,14 @@ using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using ModuleSourceView = Caster.Api.Features.Modules.ModuleSource;
 
 namespace Caster.Api.Tests.Features.Modules;
@@ -81,6 +83,41 @@ public class ModuleSourceRequestTests(DatabaseFixture fixture, GitlabSourceAppFa
         var source = Assert.Single(await ReadAsync<ModuleSourceView[]>(response));
         Assert.Equal(ModuleRepositoryDispatcher.GitlabSourceName, source.Name);
         Assert.Equal(ModuleSourceProviders.Gitlab, source.Provider);
+    }
+
+    /// <summary>
+    /// The wire shape the UI reads: state as a string, message for every non-Ok state, and error only for
+    /// Error, so a UI that knows only error does not show an Empty or Warning source as a failure.
+    /// </summary>
+    [Theory]
+    [InlineData("Ok", null, null)]
+    [InlineData("Empty", "No Modules yet.", null)]
+    [InlineData("Warning", "Has Modules but no version tags, so none can be used. Tag the repository, e.g. v1.0.0.", null)]
+    [InlineData("Error", "fatal: repository not found", "fatal: repository not found")]
+    public async Task GetSources_reports_each_sources_state_message_and_error(string state, string message, string error)
+    {
+        var statuses = Factory.Services.GetRequiredService<ModuleSourceStatusStore>();
+        if (state == "Error")
+        {
+            statuses.RecordFailure(ModuleRepositoryDispatcher.GitlabSourceName, message);
+        }
+        else
+        {
+            statuses.RecordSuccess(
+                ModuleRepositoryDispatcher.GitlabSourceName,
+                new ModuleSyncResult(Enum.Parse<ModuleSourceState>(state), message));
+        }
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewModules).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/modules/sources", Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        var source = Assert.Single(json.RootElement.EnumerateArray());
+        Assert.Equal(state, source.GetProperty("state").GetString());
+        Assert.Equal(message, source.GetProperty("message").GetString());
+        Assert.Equal(error, source.GetProperty("error").GetString());
+        Assert.Equal(JsonValueKind.String, source.GetProperty("lastAttempt").ValueKind);
     }
 
     [Fact]
