@@ -14,34 +14,32 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         public void SourceNames_IgnoreCase()
         {
             var cache = new ModuleSourceReadCache();
-            cache.RecordEmpty("catalog", "f", EmptyReadOutcome.TaggedNoModuleRoots);
-            cache.RecordHasBranches("catalog", "r", true);
+            cache.RecordEmpty("catalog", "f", EmptyRead.Of(EmptyReadOutcome.TaggedNoModuleRoots));
 
             Assert.True(cache.TryGetEmpty("Catalog", "f", out _));
-            Assert.True(cache.TryGetHasBranches("CATALOG", "r", out var hasBranches));
-            Assert.True(hasBranches);
+            Assert.True(cache.NeedsBackfill("catalog"));
+            cache.MarkBackfilled("catalog");
+            Assert.False(cache.NeedsBackfill("CATALOG"));
         }
 
         [Fact]
         public void ADifferentFingerprint_IsAMiss()
         {
             var cache = new ModuleSourceReadCache();
-            cache.RecordEmpty("catalog", "f", EmptyReadOutcome.TaggedNoModuleRoots);
-            cache.RecordHasBranches("catalog", "r", true);
+            cache.RecordEmpty("catalog", "f", EmptyRead.Of(EmptyReadOutcome.TaggedNoModuleRoots));
 
             Assert.False(cache.TryGetEmpty("catalog", "g", out _));
-            Assert.False(cache.TryGetHasBranches("catalog", "s", out _));
         }
 
         [Fact]
-        public void Forget_DropsTheEmptyRead()
+        public void AReadThatStoredModules_IsNoEmptyHitButIsTheLastRead()
         {
             var cache = new ModuleSourceReadCache();
-            cache.RecordEmpty("catalog", "f", EmptyReadOutcome.TaggedNoModuleRoots);
-
-            cache.Forget("catalog");
+            cache.RecordStored("catalog", "f");
 
             Assert.False(cache.TryGetEmpty("catalog", "f", out _));
+            Assert.True(cache.LastReadWas("catalog", "f"));
+            Assert.False(cache.LastReadWas("catalog", "g"));
         }
     }
 }
