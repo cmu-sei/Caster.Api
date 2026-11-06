@@ -96,6 +96,15 @@ To re-read one Module even when its tags have not changed (for example after a t
 | `Warning` | No tags, and HEAD names a branch that does not exist, so the default branch cannot be searched. | `Couldn't read the repository's default branch to look for Modules.` |
 | `Error` | The source could not be read: listing tags, cloning, authentication, a bad URL, or an unreadable module file. | Same as `error` |
 
+Each source also carries a `url` for linking to it or copying it. Caster shows a source's URL only in these forms, without credentials; otherwise there is no URL (`null`). A refused source (see **Url** above) never has one:
+
+* `https://host[:port]/path` (or `http://`), never with a user name or password, and without the query string or fragment.
+* `ssh://[git@]host[:port]/path`. A user name other than a bare `git` is dropped.
+* `[git@]host:path` (scp style). A user name other than a bare `git` is dropped.
+* A `file://` URL or a local path, as configured, if it contains no `@` and no further `://`.
+
+A URL whose path, query string, or fragment contains an `@` or a `://` is not shown, because that may be the end of a token the URL was mistaken for. For the legacy Gitlab source the `url` is the server's base URL in the first form, such as `https://gitlab.example.com/`, because the API URL and group id name no browsable page; `Terraform:GitlabToken` is never returned.
+
 `Empty` and `Warning` are successful reads: they set `lastSuccess`, leave `error` null, and do not fail the Module list. `error` is set only for `Error`, where it equals `message`; it is deprecated in favor of `state` and `message`. `state` is null until this API instance has read the source; a sync that only waited for another request's sync of the same source does not count, and leaves the last state as it was.
 
 A sync never deletes stored Modules. A Module that disappears from its source, or a source that turns `Empty`, `Warning`, or `Error`, leaves the Modules already stored from it in place.

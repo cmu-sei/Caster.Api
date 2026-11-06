@@ -9,6 +9,7 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Features.Shared;
 using Caster.Api.Infrastructure.Authorization;
+using Caster.Api.Infrastructure.Options;
 using MediatR;
 
 namespace Caster.Api.Features.Modules
@@ -34,6 +35,12 @@ namespace Caster.Api.Features.Modules
                         Name = x.Source.Name,
                         Description = x.Source.Description,
                         Provider = x.Source.Provider,
+                        Url = string.Equals(x.Source.Provider, ModuleSourceProviders.Gitlab, System.StringComparison.OrdinalIgnoreCase)
+                            ? ModuleSourceUrl.GitlabBase(x.Source.Url)
+                            // A refused url is never echoed, even cleaned.
+                            : ModuleSourceUrl.Check(x.Source.Url) == ModuleSourceUrlCheck.Usable
+                                ? ModuleSourceUrl.Sanitize(x.Source.Url)
+                                : null,
                         LastAttempt = x.Status?.LastAttempt,
                         LastSuccess = x.Status?.LastSuccess,
                         State = x.Status?.State,

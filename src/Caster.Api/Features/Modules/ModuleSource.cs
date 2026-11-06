@@ -19,6 +19,13 @@ namespace Caster.Api.Features.Modules
         /// <summary>The kind of repository: git or gitlab.</summary>
         public string Provider { get; set; }
 
+        /// <summary>
+        /// Where the source lives, for linking to or copying: the configured url when it is in one of the
+        /// forms Caster shows (see <c>ModuleSourceUrl</c>), or for the legacy Gitlab source the server's
+        /// base url. Null for a refused or unparseable url; never holds a credential.
+        /// </summary>
+        public string Url { get; set; }
+
         /// <summary>When this API instance last tried to sync the source, or null if it has not yet.</summary>
         public DateTime? LastAttempt { get; set; }
 

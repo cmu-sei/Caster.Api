@@ -144,6 +144,36 @@ namespace Caster.Api.Domain.Services.Modules
             };
         }
 
+        /// <summary>
+        /// The legacy Gitlab source is configured by its api url
+        /// (<c>https://gitlab.example.com/api/v4/</c>) and a group id, which
+        /// together name no browsable page, so this returns the server's base
+        /// url, rebuilt the same way as <see cref="Sanitize"/>, or null. Never
+        /// includes GitlabToken, which is not part of the url.
+        /// </summary>
+        public static string GitlabBase(string apiUrl)
+        {
+            // Refused as a source (see GitlabModuleRepositoryProvider), so not shown either.
+            if (apiUrl?.Contains('@') == true)
+            {
+                return null;
+            }
+
+            // The same checks as any shown url, then cut to scheme and host.
+            var clean = Sanitize(apiUrl);
+            var scheme = clean == null ? null : Scheme().Match(clean);
+
+            if (scheme is not { Success: true } ||
+                scheme.Groups["scheme"].Value is not ("http" or "https"))
+            {
+                return null;
+            }
+
+            var parts = ParseNetwork(clean[scheme.Length..]);
+
+            return parts == null ? null : $"{scheme.Groups["scheme"].Value}://{parts.Value.HostPort}/";
+        }
+
         private static string Network(string scheme, string rest, bool keepGit)
         {
             var parts = ParseNetwork(rest);
