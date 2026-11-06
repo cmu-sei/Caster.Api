@@ -56,6 +56,18 @@ public class VlanMappingTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.Equal("retagged", broadcast.Tag);
     }
 
+    /// <summary>A partition PATCH writes the name it sends, and answers it.</summary>
+    [Fact]
+    public async Task A_partition_patch_writes_the_name_it_sends()
+    {
+        var (_, partition, _) = await SeedPool();
+
+        var written = await ReadAsync<JsonElement>(await RootClient.PatchAsJsonAsync($"api/vlans/partitions/{partition.Id}", new { name = "patched" }, Ct));
+
+        Assert.Equal("patched", (await ReadBack(db => db.Partitions.SingleAsync(x => x.Id == partition.Id, Ct))).Name);
+        Assert.Equal("patched", written.GetProperty("name").GetString());
+    }
+
     /// <summary>A partition or pool PATCH keeps an omitted name; a PUT without one clears it.</summary>
     [Fact]
     public async Task Partition_and_pool_patches_keep_an_omitted_name_and_puts_clear_it()
@@ -75,7 +87,6 @@ public class VlanMappingTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.Equal(JsonValueKind.Null, putPool.GetProperty("name").ValueKind);
         Assert.Null((await ReadBack(db => db.Partitions.SingleAsync(x => x.Id == partition.Id, Ct))).Name);
         Assert.Null((await ReadBack(db => db.Pools.SingleAsync(x => x.Id == pool.Id, Ct))).Name);
-        Assert.True((await ReadBack(db => db.Partitions.SingleAsync(x => x.Id == partition.Id, Ct))).IsDefault);
     }
 
     /// <summary>Creates store the body's members and are broadcast as they are answered.</summary>

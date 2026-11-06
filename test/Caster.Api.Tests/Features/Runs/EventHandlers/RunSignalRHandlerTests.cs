@@ -36,6 +36,30 @@ public class RunSignalRHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(
         Assert.Equal(run.Id, Assert.IsType<RunView>(((object[])sent.GetArguments()[1])[0]).Id);
     }
 
+    /// <summary>The broadcast run carries its plan and apply ids and its creator's and modifier's names, but not the plan and apply.</summary>
+    [Fact]
+    public async Task A_broadcast_run_carries_the_plan_and_apply_ids_but_not_the_plan_and_apply()
+    {
+        var (run, hub, proxy) = await SeedRunAndHub();
+        var creator = TestData.User(name: "Run Creator");
+        var modifier = TestData.User(name: "Run Modifier");
+        await Seed(creator, modifier);
+        run.CreatedById = creator.Id;
+        run.ModifiedById = modifier.Id;
+        var plan = TestData.Plan(run);
+        var apply = TestData.Apply(run);
+        // The run is tracked, so its creator and modifier are saved with the plan and apply.
+        await Seed(plan, apply);
+
+        await new RunCreatedSignalRHandler(Db, hub).Handle(new EntityCreated<Run>(run), Ct);
+
+        var sent = Assert.IsType<RunView>(((object[])Assert.Single(proxy.ReceivedCalls()).GetArguments()[1])[0]);
+        Assert.Equal((plan.Id, apply.Id), (sent.PlanId, sent.ApplyId));
+        Assert.Equal(("Run Creator", "Run Modifier"), (sent.CreatedBy, sent.ModifiedBy));
+        Assert.Null(sent.Plan);
+        Assert.Null(sent.Apply);
+    }
+
     [Fact]
     public async Task A_deleted_run_sends_its_id_to_its_workspace_and_the_workspaces_admin_group()
     {

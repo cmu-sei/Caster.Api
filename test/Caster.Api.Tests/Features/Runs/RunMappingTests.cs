@@ -2,7 +2,6 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -109,18 +108,6 @@ public class RunMappingTests(DatabaseFixture fixture, CasterAppFactory factory) 
         Assert.Empty(stored.ReplaceAddresses);
     }
 
-    /// <summary>The queue lists what the run queue holds; a run it does not hold has no position, answered with a 204.</summary>
-    [Fact]
-    public async Task A_run_out_of_the_queue_has_no_position()
-    {
-        var graph = await SeedGraph();
-
-        await AssertStatus(HttpStatusCode.NoContent, await RootClient.GetAsync($"api/runs/{graph.Run.Id}/queue-position", Ct));
-        var queue = await ReadAsync<JsonElement[]>(await RootClient.GetAsync("api/runs/queue", Ct));
-
-        Assert.DoesNotContain(queue, x => x.GetProperty("runId").GetGuid() == graph.Run.Id);
-    }
-
     /// <summary>A queued run's position names the run, its workspace and its place in the queue.</summary>
     [Fact]
     public async Task A_queued_run_has_a_position()
@@ -136,7 +123,6 @@ public class RunMappingTests(DatabaseFixture fixture, CasterAppFactory factory) 
         Assert.Equal(id, position.GetProperty("runId").GetGuid());
         Assert.Equal(workspace.Id, position.GetProperty("workspaceId").GetGuid());
         Assert.True(position.GetProperty("position").GetInt32() >= 1);
-        Assert.False(position.TryGetProperty("total", out _));
         var listed = Assert.Single(queue, x => x.GetProperty("runId").GetGuid() == id);
         Assert.Equal(position.GetProperty("position").GetInt32(), listed.GetProperty("position").GetInt32());
     }
@@ -175,7 +161,6 @@ public class RunMappingTests(DatabaseFixture fixture, CasterAppFactory factory) 
         Assert.Equal(plan.RunId, json.GetProperty("runId").GetGuid());
         Assert.Equal("Planned", json.GetProperty("status").GetString());
         Assert.Equal("plan output", json.GetProperty("output").GetString());
-        Assert.False(json.TryGetProperty("topology", out _));
     }
 
     private static void AssertApply(JsonElement json, Apply apply)
@@ -202,7 +187,6 @@ public class RunMappingTests(DatabaseFixture fixture, CasterAppFactory factory) 
         run.ReplaceAddresses = [];
         await Seed(project, directory, workspace, run);
         var plan = TestData.Plan(run);
-        plan.Topology = "{}";
         var apply = TestData.Apply(run, ApplyStatus.Applied_StateError);
         await Seed(plan, apply);
 

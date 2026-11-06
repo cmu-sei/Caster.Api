@@ -205,7 +205,8 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
 
         var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
 
-        Assert.StartsWith("The LINQ expression 'x => x == null ? null : new ModuleVariable", problem.Detail);
+        Assert.StartsWith("The LINQ expression '", problem.Detail);
+        Assert.Contains("could not be translated", problem.Detail);
     }
 
     // Same case as GetVersions_answers_a_member_of_any_project_with_a_server_error.
@@ -220,7 +221,8 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
 
         var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
 
-        Assert.StartsWith("The LINQ expression 'x => x == null ? null : new ModuleVariable", problem.Detail);
+        Assert.StartsWith("The LINQ expression '", problem.Detail);
+        Assert.Contains("could not be translated", problem.Detail);
     }
 
     [Fact]

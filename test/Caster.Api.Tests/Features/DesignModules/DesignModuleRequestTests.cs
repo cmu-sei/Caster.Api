@@ -316,6 +316,21 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         Assert.Equal("2.0.0", (await StoredDesignModule(designModule.Id)).ModuleVersion);
     }
 
+    /// <summary>An edit naming another module stores and answers that module.</summary>
+    [Fact]
+    public async Task Edit_naming_another_module_stores_and_answers_it()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+        var other = TestData.Module("other-module");
+        await Seed(other, TestData.ModuleVersion(other, "1.0.0"));
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = other.Id, name = designModule.Name, moduleVersion = "1.0.0", values = NoValues }, Ct);
+
+        Assert.Equal(other.Id, (await ReadAsync<DesignModuleView>(response)).ModuleId);
+        Assert.Equal(other.Id, (await StoredDesignModule(designModule.Id)).ModuleId);
+    }
+
     [Fact]
     public async Task Edit_answers_a_bad_request_for_a_version_the_module_does_not_have()
     {

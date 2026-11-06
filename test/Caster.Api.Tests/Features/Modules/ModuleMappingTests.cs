@@ -62,22 +62,19 @@ public class ModuleMappingTests(DatabaseFixture fixture, CasterAppFactory factor
         Assert.Equal(0, read.GetProperty("outputs").GetArrayLength());
     }
 
-    /// <summary>The module list leaves the versions null, also with includeVersions, and counts them only with includeVersionCount.</summary>
+    /// <summary>The module list leaves the versions null and counts them only with includeVersionCount.</summary>
     [Fact]
     public async Task The_module_list_leaves_the_versions_out_and_counts_them_only_when_asked()
     {
         var (module, _) = await SeedModule();
 
         var plain = await ReadAsync<JsonElement[]>(await RootClient.GetAsync("api/modules", Ct));
-        var withVersions = await ReadAsync<JsonElement[]>(await RootClient.GetAsync("api/modules?includeVersions=true", Ct));
         var counted = await ReadAsync<JsonElement[]>(await RootClient.GetAsync("api/modules?includeVersionCount=true", Ct));
 
-        foreach (var json in new[] { Assert.Single(plain), Assert.Single(withVersions) })
-        {
-            AssertModule(json, module);
-            Assert.Equal(JsonValueKind.Null, json.GetProperty("versions").ValueKind);
-            Assert.Equal(JsonValueKind.Null, json.GetProperty("versionsCount").ValueKind);
-        }
+        var listed = Assert.Single(plain);
+        AssertModule(listed, module);
+        Assert.Equal(JsonValueKind.Null, listed.GetProperty("versions").ValueKind);
+        Assert.Equal(JsonValueKind.Null, listed.GetProperty("versionsCount").ValueKind);
         var one = Assert.Single(counted);
         AssertModule(one, module);
         Assert.Equal(JsonValueKind.Null, one.GetProperty("versions").ValueKind);

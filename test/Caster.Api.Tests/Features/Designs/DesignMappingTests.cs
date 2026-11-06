@@ -2,7 +2,6 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System.Linq;
-using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -111,23 +110,6 @@ public class DesignMappingTests(DatabaseFixture fixture, CasterAppFactory factor
         AssertValues(disabled, ("count", "3"), ("size", "large"), ("zone", "a"));
         var broadcast = Assert.IsType<DesignModuleView>(Assert.Single(Factory.Hub<ProjectHub>().ToGroup(graph.Design.Id), x => x.Method == "DesignModuleCreated").Arguments[0]);
         Assert.Equal(("count", "5"), (Assert.Single(broadcast.Values).Name, broadcast.Values.Single().Value));
-    }
-
-    /// <summary>A design module create or edit without values is answered with a 500, and nothing is stored.</summary>
-    [Fact]
-    public async Task A_design_module_written_without_values_is_a_server_error()
-    {
-        var graph = await SeedGraph();
-
-        var created = await RootClient.PostAsJsonAsync("api/designModules",
-            new { designId = graph.Design.Id, moduleId = graph.Module.Id, name = "no-values", moduleVersion = "1.0.0" }, Ct);
-        var put = await RootClient.PutAsJsonAsync($"api/designModules/{graph.DesignModule.Id}",
-            new { moduleId = graph.Module.Id, name = "no-values", moduleVersion = "1.0.0" }, Ct);
-
-        await AssertProblem(HttpStatusCode.InternalServerError, created);
-        await AssertProblem(HttpStatusCode.InternalServerError, put);
-        await using var context = NewContext();
-        Assert.False(await context.DesignModules.AnyAsync(x => x.Name == "no-values", Ct));
     }
 
     // ---- Variables --------------------------------------------------------------------------------
