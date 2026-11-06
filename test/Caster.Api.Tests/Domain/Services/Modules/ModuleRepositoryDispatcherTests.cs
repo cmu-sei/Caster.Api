@@ -222,9 +222,10 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             await Assert.ThrowsAsync<ModuleSyncException>(() => sut.GetModulesAsync(false, Ct));
 
             var statuses = sut.GetSourceStatuses().ToDictionary(x => x.Source.Name, x => x.Status);
-            Assert.Null(statuses["catalog"].Error);
+            Assert.Equal(ModuleSourceState.Ok, statuses["catalog"].State);
             Assert.NotNull(statuses["catalog"].LastSuccess);
-            Assert.Equal("gitlab is down", statuses[ModuleRepositoryDispatcher.GitlabSourceName].Error);
+            Assert.Equal(ModuleSourceState.Error, statuses[ModuleRepositoryDispatcher.GitlabSourceName].State);
+            Assert.Equal("gitlab is down", statuses[ModuleRepositoryDispatcher.GitlabSourceName].Message);
             Assert.Null(statuses[ModuleRepositoryDispatcher.GitlabSourceName].LastSuccess);
         }
 
@@ -240,7 +241,108 @@ namespace Caster.Api.Tests.Domain.Services.Modules
 
             var status = sut.GetSourceStatuses().Single().Status;
             Assert.Equal(synced, status.LastSuccess);
-            Assert.Equal("fatal: repository not found", status.Error);
+            Assert.Equal(ModuleSourceState.Error, status.State);
+            Assert.Equal("fatal: repository not found", status.Message);
+        }
+
+        [Fact]
+        public async Task GetModules_NormalSync_RecordsOk()
+        {
+            var sut = Build(new TerraformOptions { ModuleSources = [GitSource()] });
+
+            await sut.GetModulesAsync(false, Ct);
+
+            var status = sut.GetSourceStatuses().Single().Status;
+            Assert.Equal(ModuleSourceState.Ok, status.State);
+            Assert.Null(status.Message);
+        }
+
+        [Theory]
+        [InlineData(ModuleSourceState.Empty, "No Modules yet.")]
+        [InlineData(ModuleSourceState.Warning, "Has Modules but no version tags, so none can be used. Tag the repository, e.g. v1.0.0.")]
+        public async Task GetModules_EmptyOrWarningSource_IsASuccessfulReadWithNoError(ModuleSourceState state, string message)
+        {
+            _git.Result = new ModuleSyncResult(state, message);
+            var sut = Build(new TerraformOptions { ModuleSources = [GitSource()] });
+
+            // Does not throw, so the Module list is not failed by it.
+            await sut.GetModulesAsync(false, Ct);
+
+            var status = sut.GetSourceStatuses().Single().Status;
+            Assert.Equal(state, status.State);
+            Assert.Equal(message, status.Message);
+            Assert.NotNull(status.LastSuccess);
+            Assert.Equal(status.LastAttempt, status.LastSuccess);
+        }
+
+        [Fact]
+        public async Task GetModules_SourceNotRead_KeepsItsLastStatus()
+        {
+            _git.Result = ModuleSyncResult.Empty("No Modules yet.");
+            var sut = Build(new TerraformOptions { ModuleSources = [GitSource()] });
+            await sut.GetModulesAsync(false, Ct);
+            var before = sut.GetSourceStatuses().Single().Status;
+
+            _git.Result = ModuleSyncResult.NotRead;
+            await sut.GetModulesAsync(false, Ct);
+
+            Assert.Same(before, sut.GetSourceStatuses().Single().Status);
+        }
+
+        [Fact]
+        public void NotRead_HasNoStateAndCannotBeRecorded()
+        {
+            Assert.Null(ModuleSyncResult.NotRead.State);
+            Assert.False(ModuleSyncResult.NotRead.Read);
+            Assert.Throws<ArgumentException>(() => _statuses.RecordSuccess("catalog", ModuleSyncResult.NotRead));
+        }
+
+        [Fact]
+        public async Task GetModules_FirstSyncNotRead_LeavesTheSourceUnrecorded()
+        {
+            _git.Result = ModuleSyncResult.NotRead;
+            var sut = Build(new TerraformOptions { ModuleSources = [GitSource()] });
+
+            await sut.GetModulesAsync(false, Ct);
+
+            Assert.Null(sut.GetSourceStatuses().Single().Status);
+        }
+
+        [Fact]
+        public async Task GetModules_AFailureQuotingTheSourceUrl_IsRecordedWithoutIt()
+        {
+            var source = GitSource();
+            _git.Failure = new InvalidOperationException($"could not open {source.Url} for reading");
+            var sut = Build(new TerraformOptions { ModuleSources = [source] });
+
+            var exception = await Assert.ThrowsAsync<ModuleSyncException>(() => sut.GetModulesAsync(false, Ct));
+
+            var status = sut.GetSourceStatuses().Single().Status;
+            Assert.Equal("could not open <source url> for reading", status.Message);
+            Assert.DoesNotContain(source.Url, exception.Message);
+        }
+
+        [Fact]
+        public async Task GetModules_Failure_RecordsErrorAndItsMessage()
+        {
+            _git.Failure = new GitCommandException("fatal: repository not found");
+            var sut = Build(new TerraformOptions { ModuleSources = [GitSource()] });
+
+            await Assert.ThrowsAsync<ModuleSyncException>(() => sut.GetModulesAsync(false, Ct));
+
+            var status = sut.GetSourceStatuses().Single().Status;
+            Assert.Equal(ModuleSourceState.Error, status.State);
+            Assert.Equal("fatal: repository not found", status.Message);
+            Assert.Null(status.LastSuccess);
+        }
+
+        [Fact]
+        public async Task GetModule_NamedModuleFailure_StillThrows()
+        {
+            _git.Failure = new ModuleSyncException("Module source 'catalog' has no git tags");
+            var sut = Build(new TerraformOptions { ModuleSources = [GitSource()] });
+
+            await Assert.ThrowsAsync<ModuleSyncException>(() => sut.GetModuleAsync("catalog/network-segment", Ct));
         }
 
         [Fact]
@@ -372,6 +474,16 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         }
 
         [Fact]
+        public void GetSourceStatuses_ASecondSourceNamedTheSameIgnoringCase_IsIgnored()
+        {
+            var sut = Build(new TerraformOptions { ModuleSources = [GitSource("catalog"), GitSource("Catalog")] });
+
+            var (source, _) = Assert.Single(sut.GetSourceStatuses());
+
+            Assert.Equal("catalog", source.Name);
+        }
+
+        [Fact]
         public async Task GetModule_SourceNameMatchingIsCaseInsensitive()
         {
             var sut = Build(new TerraformOptions { ModuleSources = [GitSource()] });
@@ -394,12 +506,15 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             public List<bool> ForceUpdates { get; } = [];
             public List<string> ProviderIds { get; } = [];
 
-            public Task<bool> SyncModulesAsync(ModuleSourceOptions source, bool forceUpdate, CancellationToken cancellationToken)
+            /// <summary>What a sync that does not fail returns.</summary>
+            public ModuleSyncResult Result { get; set; } = ModuleSyncResult.Ok;
+
+            public Task<ModuleSyncResult> SyncModulesAsync(ModuleSourceOptions source, bool forceUpdate, CancellationToken cancellationToken)
             {
                 SyncModulesCount++;
                 ForceUpdates.Add(forceUpdate);
 
-                return Failure == null ? Task.FromResult(true) : Task.FromException<bool>(Failure);
+                return Failure == null ? Task.FromResult(Result) : Task.FromException<ModuleSyncResult>(Failure);
             }
 
             public Task<bool> SyncModuleAsync(ModuleSourceOptions source, string providerId, CancellationToken cancellationToken)

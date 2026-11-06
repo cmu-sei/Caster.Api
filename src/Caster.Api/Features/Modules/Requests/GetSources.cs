@@ -36,7 +36,11 @@ namespace Caster.Api.Features.Modules
                         Provider = x.Source.Provider,
                         LastAttempt = x.Status?.LastAttempt,
                         LastSuccess = x.Status?.LastSuccess,
-                        Error = x.Status?.Error,
+                        State = x.Status?.State,
+                        Message = x.Status?.Message,
+#pragma warning disable CS0618 // Error is kept for UIs that do not read State yet.
+                        Error = x.Status?.State == ModuleSourceState.Error ? x.Status.Message : null,
+#pragma warning restore CS0618
                     })
                     .ToArray());
         }
