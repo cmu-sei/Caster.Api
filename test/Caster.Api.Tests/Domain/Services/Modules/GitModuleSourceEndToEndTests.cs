@@ -54,7 +54,7 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             Monitor(), new RecordingLogger<GitCommandRunner>()));
 
         private GitModuleRepositoryProvider Provider(IGitCommandRunner git) =>
-            new(Db, git, new LockService(), new ModuleSourceReadCache(), new RecordingLogger<GitModuleRepositoryProvider>());
+            new(Db, git, new LockService(), new ModuleSourceReadCache(), Monitor(), new RecordingLogger<GitModuleRepositoryProvider>());
 
         private static IOptionsMonitor<TerraformOptions> Monitor()
         {

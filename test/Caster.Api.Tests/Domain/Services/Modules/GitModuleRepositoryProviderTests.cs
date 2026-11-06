@@ -11,6 +11,8 @@ using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 using Xunit;
 
 namespace Caster.Api.Tests.Domain.Services.Modules
@@ -53,8 +55,18 @@ namespace Caster.Api.Tests.Domain.Services.Modules
 
         #region Helpers
 
+        /// <summary>The Terraform options the provider reads; no Gitlab source unless a test sets one.</summary>
+        private readonly TerraformOptions _terraform = new();
+
+        private static IOptionsMonitor<TerraformOptions> Monitor(TerraformOptions options)
+        {
+            var monitor = Substitute.For<IOptionsMonitor<TerraformOptions>>();
+            monitor.CurrentValue.Returns(options);
+            return monitor;
+        }
+
         private GitModuleRepositoryProvider Provider(Caster.Api.Data.CasterContext db, IGitCommandRunner git, ILockService locks = null) =>
-            new(db, git, locks ?? new LockService(), new ModuleSourceReadCache(), new RecordingLogger<GitModuleRepositoryProvider>());
+            new(db, git, locks ?? new LockService(), new ModuleSourceReadCache(), Monitor(_terraform), new RecordingLogger<GitModuleRepositoryProvider>());
 
 
         /// <summary>A repo whose root is one module: network-segment's files at the top level.</summary>
@@ -1023,31 +1035,352 @@ namespace Caster.Api.Tests.Domain.Services.Modules
 
         #endregion
 
-        #region Source name case
+        #region Not in source any more
 
-        [Fact]
-        public async Task SyncModules_StoredModulesAreCountedIgnoringCase()
+        /// <summary>The monorepo with machine-blank's folder deleted.</summary>
+        private string BuildMonorepoWithoutMachineBlank()
         {
-            await SeedModule("Catalog/network-segment");
-            await SeedModule("CATALOG/machine-blank");
+            var tree = BuildMonorepoTree();
+            var trimmed = Path.Combine(_scratch, "monorepo-trimmed");
 
-            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+            if (!Directory.Exists(trimmed))
+            {
+                foreach (var file in Directory.GetFiles(tree, "*", SearchOption.AllDirectories))
+                {
+                    var target = Path.Combine(trimmed, Path.GetRelativePath(tree, file));
+                    Directory.CreateDirectory(Path.GetDirectoryName(target));
+                    File.Copy(file, target);
+                }
 
-            Assert.Equal("No version tags any more; showing the 2 Modules stored from earlier.", result.Message);
+                Directory.Delete(Path.Combine(trimmed, "machine-blank"), recursive: true);
+            }
+
+            return trimmed;
+        }
+
+        private Task<DateTime?> MissingSince(string path) =>
+            ReadBack(db => db.Modules.Where(m => m.Path == path).Select(m => m.MissingSince).SingleAsync(Ct));
+
+        /// <summary>Syncs both Modules at v0.1.0, then replaces every tag with v0.2.0, which lacks machine-blank.</summary>
+        private async Task<ModuleSourceOptions> SyncThenDropMachineBlank()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            _git.LsRemoteLines.Clear();
+            GivenTags("v0.2.0");
+            _git.SourceTree = BuildMonorepoWithoutMachineBlank();
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            return source;
         }
 
         [Fact]
-        public async Task SyncModules_CachedEmptyRead_StillCountsStoredModules()
+        public async Task SyncModules_AModuleGoneFromTheSource_IsMarkedMissingAndKept()
+        {
+            await SyncThenDropMachineBlank();
+
+            Assert.NotNull(await MissingSince("catalog/machine-blank"));
+            Assert.Null(await MissingSince("catalog/network-segment"));
+            Assert.Equal(2, await ReadBack(db => db.Modules.CountAsync(Ct)));
+        }
+
+        [Fact]
+        public async Task SyncModules_LaterReads_KeepTheFirstMissingTime()
+        {
+            var source = await SyncThenDropMachineBlank();
+            var first = await MissingSince("catalog/machine-blank");
+
+            await Sut.SyncModulesAsync(source, forceUpdate: true, Ct);
+
+            Assert.Equal(first, await MissingSince("catalog/machine-blank"));
+        }
+
+        [Fact]
+        public async Task SyncModules_TheFolderComesBack_ClearsMissingSince()
+        {
+            var source = await SyncThenDropMachineBlank();
+
+            GivenTags("v0.3.0");
+            _git.SourceTreesByTag["v0.3.0"] = BuildMonorepoTree();
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Null(await MissingSince("catalog/machine-blank"));
+        }
+
+        [Fact]
+        public async Task SyncModules_CachedEmptyRead_CountsButDoesNotMark()
         {
             var source = Source(ModuleSourceLayout.Subdirectories);
             await Sut.SyncModulesAsync(source, false, Ct);
 
             // Stored after the read, as an import by name would.
-            await SeedModule("catalog/network-segment");
+            await SeedModule("catalog/network-segment", missingSince: null);
             var result = await Sut.SyncModulesAsync(source, false, Ct);
 
             Assert.Equal(ModuleSourceState.Warning, result.State);
             Assert.Equal("No version tags any more; showing the 1 Module stored from earlier.", result.Message);
+            Assert.Null(await MissingSince("catalog/network-segment"));
+        }
+
+        [Fact]
+        public async Task SyncModules_TheSameTagsPushedAgain_ReadsAgainAndClearsMissingSince()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            _git.LsRemoteLines.Clear();
+            await Sut.SyncModulesAsync(source, false, Ct);
+            Assert.NotNull(await MissingSince("catalog/network-segment"));
+
+            GivenTags("v0.1.0");
+            var result = await Sut.SyncModulesAsync(source, false, Ct);
+
+            // The stored tags match, but Modules are marked and the last read
+            // was of other refs, so the source is read to decide.
+            Assert.Equal(ModuleSourceState.Ok, result.State);
+            Assert.Equal(2, _git.CloneCallCount);
+            Assert.Null(await MissingSince("catalog/network-segment"));
+            Assert.Null(await MissingSince("catalog/machine-blank"));
+        }
+
+        [Fact]
+        public async Task SyncModules_ForceMovedTagDropsAModule_StaysMarkedOnLaterLists()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            // v0.1.0 moved to a commit without machine-blank, and v0.2.0 added.
+            // machine-blank keeps its stored v0.1.0, so the stored union
+            // matches the remote tags from here on.
+            _git.LsRemoteLines.Clear();
+            _git.LsRemoteLines.Add("8888888888888888888888888888888888888888\trefs/tags/v0.1.0");
+            GivenTags("v0.2.0");
+            _git.SourceTree = BuildMonorepoWithoutMachineBlank();
+            await Sut.SyncModulesAsync(source, false, Ct);
+            var marked = await MissingSince("catalog/machine-blank");
+            var clones = _git.CloneCallCount;
+
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.NotNull(marked);
+            Assert.Equal(marked, await MissingSince("catalog/machine-blank"));
+            Assert.Equal(clones, _git.CloneCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_AModuleWhoseOnlyTagWasDeleted_IsMarkedOnceThenNotClonedAgain()
+        {
+            GivenTags("network-segment/v1.0.0", "machine-blank/v1.0.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            _git.LsRemoteLines.Clear();
+            GivenTags("network-segment/v1.0.0");
+            await Sut.SyncModulesAsync(source, false, Ct);
+            var marked = await MissingSince("catalog/machine-blank");
+            var clones = _git.CloneCallCount;
+
+            await Sut.SyncModulesAsync(source, false, Ct);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.NotNull(marked);
+            Assert.Equal(clones, _git.CloneCallCount);
+        }
+
+        [Fact]
+        public async Task SyncModules_MarkedModuleAfterARestart_IsReadOnceToDecide()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+            await SetMissingSince("catalog/machine-blank", DateTime.UtcNow);
+
+            // A new instance has no last read for the source.
+            await using var context = NewContext();
+            var fresh = Provider(context, _git);
+            await fresh.SyncModulesAsync(source, false, Ct);
+            await fresh.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(2, _git.CloneCallCount);
+            Assert.Null(await MissingSince("catalog/machine-blank"));
+        }
+
+        private async Task SetMissingSince(string path, DateTime? value)
+        {
+            await using var context = NewContext();
+            var module = await context.Modules.SingleAsync(m => m.Path == path, Ct);
+            module.MissingSince = value;
+            await context.SaveChangesAsync(Ct);
+        }
+
+        [Fact]
+        public async Task SyncModules_SourceGoesEmpty_MarksEveryStoredModuleMissing()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            _git.LsRemoteLines.Clear();
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.NotNull(await MissingSince("catalog/network-segment"));
+            Assert.NotNull(await MissingSince("catalog/machine-blank"));
+        }
+
+        [Fact]
+        public async Task SyncModules_UntaggedModulesOnTheDefaultBranch_AreNotMissing()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            // Tags deleted, but network-segment is still on main.
+            _git.LsRemoteLines.Clear();
+            _git.DefaultBranchTree = BuildMonorepoWithoutMachineBlank();
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Null(await MissingSince("catalog/network-segment"));
+            Assert.NotNull(await MissingSince("catalog/machine-blank"));
+        }
+
+        [Fact]
+        public async Task SyncModules_Error_LeavesMissingSinceAlone()
+        {
+            var source = await SyncThenDropMachineBlank();
+            var first = await MissingSince("catalog/machine-blank");
+
+            GivenTags("v0.3.0");
+            _git.CloneFailure = new GitCommandException("fatal: could not read Username");
+            await Assert.ThrowsAsync<GitCommandException>(() => Sut.SyncModulesAsync(source, false, Ct));
+
+            Assert.Equal(first, await MissingSince("catalog/machine-blank"));
+            Assert.Null(await MissingSince("catalog/network-segment"));
+        }
+
+        [Fact]
+        public async Task SyncModules_LockTimeout_LeavesMissingSinceAlone()
+        {
+            // Were the source read, machine-blank would be marked missing.
+            await SeedModule("catalog/network-segment", missingSince: null);
+            await SeedModule("catalog/machine-blank", missingSince: null);
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoWithoutMachineBlank();
+            var locks = new LockService();
+            using var held = await locks.GetModuleSourceLock("catalog").LockAsync(1000);
+            var sut = new GitModuleRepositoryProvider(Db, _git, locks, new ModuleSourceReadCache(), Monitor(_terraform), new RecordingLogger<GitModuleRepositoryProvider>())
+            {
+                SyncLockTimeout = 10,
+            };
+
+            await sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Null(await MissingSince("catalog/machine-blank"));
+        }
+
+        [Fact]
+        public async Task SyncModule_NamedModule_OnlyClearsThatModule()
+        {
+            var missing = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
+            await SeedModule("catalog/network-segment", missing);
+            await SeedModule("catalog/gone", missingSince: null);
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+
+            await Sut.SyncModuleAsync(Source(ModuleSourceLayout.Subdirectories), "network-segment", Ct);
+
+            Assert.Null(await MissingSince("catalog/network-segment"));
+            Assert.Null(await MissingSince("catalog/gone"));
+        }
+
+        [Fact]
+        public async Task SyncModules_GitlabShapedModules_AreUntouched()
+        {
+            // A Gitlab Module's Path is its project's path_with_namespace, never a git source's prefix.
+            await SeedModule("terraform-modules/network", missingSince: null, sourceName: null);
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+
+            await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Null(await MissingSince("terraform-modules/network"));
+        }
+
+        [Fact]
+        public async Task SyncModules_StoresTheSourceName()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+
+            await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.All(await ReadBack(db => db.Modules.ToListAsync(Ct)), m => Assert.Equal("catalog", m.SourceName));
+        }
+
+        /// <summary>
+        /// A Gitlab project "catalog/vpc" shares the git source "catalog"'s Path prefix. Only Modules the git
+        /// source stored are its own: the Gitlab one is neither marked, counted, nor given the source's name.
+        /// </summary>
+        [Fact]
+        public async Task SyncModules_GitlabModuleSharingThePrefix_IsNeitherMarkedNorCounted()
+        {
+            GivenGitlab();
+            await SeedModule("catalog/vpc", missingSince: null, sourceName: null, urlLink: "https://gitlab.test/catalog/vpc.git?ref=master");
+
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Equal(ModuleSourceState.Empty, result.State);
+            Assert.Null(await MissingSince("catalog/vpc"));
+            Assert.Null(await ReadBack(db => db.Modules.Where(m => m.Path == "catalog/vpc").Select(m => m.SourceName).SingleAsync(Ct)));
+        }
+
+        /// <summary>
+        /// Upgrading: Modules this source stored before SourceName existed have none. The first sync gives them
+        /// the source by their versions' urls, so they are marked and counted like any other.
+        /// </summary>
+        [Fact]
+        public async Task SyncModules_ModulesStoredBeforeSourceNames_AreGivenTheirSource()
+        {
+            GivenGitlab();
+            var url = Source(ModuleSourceLayout.Subdirectories).Url;
+            await SeedModule("catalog/network-segment", missingSince: null, sourceName: null, urlLink: $"{url}//network-segment");
+            await SeedModule("catalog/vpc", missingSince: null, sourceName: null, urlLink: "https://gitlab.test/catalog/vpc.git?ref=master");
+
+            var result = await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Equal(ModuleSourceState.Warning, result.State);
+            Assert.Equal("No version tags any more; showing the 1 Module stored from earlier.", result.Message);
+            Assert.NotNull(await MissingSince("catalog/network-segment"));
+            Assert.Equal("catalog", await ReadBack(db => db.Modules.Where(m => m.Path == "catalog/network-segment").Select(m => m.SourceName).SingleAsync(Ct)));
+            Assert.Null(await MissingSince("catalog/vpc"));
+        }
+
+        [Fact]
+        public async Task SyncModules_SourceNameMatchingIgnoresCase()
+        {
+            // Stored by the source configured as "catalog", one before SourceName existed;
+            // now configured as "CATALOG".
+            await SeedModule("Catalog/network-segment", missingSince: null, sourceName: "catalog");
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await SeedModule("CATALOG/machine-blank", missingSince: null, sourceName: null, urlLink: $"{source.Url}//machine-blank");
+            source.Name = "CATALOG";
+
+            var result = await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal("No version tags any more; showing the 2 Modules stored from earlier.", result.Message);
+            Assert.NotNull(await MissingSince("Catalog/network-segment"));
+            Assert.NotNull(await MissingSince("CATALOG/machine-blank"));
+            Assert.Equal("catalog", await ReadBack(db => db.Modules.Where(m => m.Path == "CATALOG/machine-blank").Select(m => m.SourceName).SingleAsync(Ct)));
         }
 
         [Fact]
@@ -1069,11 +1402,77 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             Assert.Equal(2, await ReadBack(db => db.ModuleVersions.CountAsync(Ct)));
         }
 
-        private async Task SeedModule(string path)
+        private void GivenGitlab()
+        {
+            _terraform.GitlabApiUrl = "https://gitlab.test/api/v4/";
+            _terraform.GitlabGroupId = 6;
+        }
+
+        private Task<string> StoredSourceName(string path) =>
+            ReadBack(db => db.Modules.Where(m => m.Path == path).Select(m => m.SourceName).SingleAsync(Ct));
+
+        [Fact]
+        public async Task SyncModules_ABackfillThatFails_IsTriedAgain()
+        {
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await SeedModule("catalog/network-segment", missingSince: null, sourceName: null, urlLink: $"{source.Url}//network-segment");
+            using var cancelled = new System.Threading.CancellationTokenSource();
+            await cancelled.CancelAsync();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Sut.SyncModulesAsync(source, false, cancelled.Token));
+            Assert.Null(await StoredSourceName("catalog/network-segment"));
+
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal("catalog", await StoredSourceName("catalog/network-segment"));
+        }
+
+        /// <summary>
+        /// With Gitlab configured, a row under the prefix is claimed only when its versions point into the
+        /// source's current url, or it has none: an older row from a url since changed, and a Gitlab Module, are not.
+        /// </summary>
+        [Fact]
+        public async Task SyncModules_GitlabConfigured_ClaimsOnlyRowsProvablyFromTheSource()
+        {
+            GivenGitlab();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await SeedModule("catalog/network-segment", missingSince: null, sourceName: null, urlLink: $"{source.Url}//network-segment");
+            await SeedModule("catalog/old-url", missingSince: null, sourceName: null, urlLink: "file:///srv/git/old.git//old-url");
+            await SeedModule("catalog/vpc", missingSince: null, sourceName: null, urlLink: "https://gitlab.test/catalog/vpc.git?ref=v1");
+            await SeedModule("catalog/unversioned", missingSince: null, sourceName: null);
+
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal("catalog", await StoredSourceName("catalog/network-segment"));
+            Assert.Equal("catalog", await StoredSourceName("catalog/unversioned"));
+            Assert.Null(await StoredSourceName("catalog/old-url"));
+            Assert.Null(await StoredSourceName("catalog/vpc"));
+        }
+
+        [Fact]
+        public async Task SyncModules_NoGitlab_ClaimsARowFromAUrlSinceChanged()
+        {
+            await SeedModule("catalog/old-url", missingSince: null, sourceName: null, urlLink: "file:///srv/git/old.git//old-url");
+
+            await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Subdirectories), false, Ct);
+
+            Assert.Equal("catalog", await StoredSourceName("catalog/old-url"));
+        }
+
+        private async Task SeedModule(string path, DateTime? missingSince, string sourceName = "catalog", string urlLink = null)
         {
             var module = TestData.Module(path);
             module.Path = path;
+            module.MissingSince = missingSince;
+            module.SourceName = sourceName;
             await Seed(module);
+
+            if (urlLink != null)
+            {
+                var version = TestData.ModuleVersion(module, "v0.1.0");
+                version.UrlLink = urlLink;
+                await Seed(version);
+            }
         }
 
         #endregion
@@ -1186,7 +1585,7 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             _git.SourceTree = BuildMonorepoTree();
             var locks = new LockService();
             using var held = await locks.GetModuleSourceLock("catalog").LockAsync(1000);
-            var sut = new GitModuleRepositoryProvider(Db, _git, locks, new ModuleSourceReadCache(), new RecordingLogger<GitModuleRepositoryProvider>())
+            var sut = new GitModuleRepositoryProvider(Db, _git, locks, new ModuleSourceReadCache(), Monitor(_terraform), new RecordingLogger<GitModuleRepositoryProvider>())
             {
                 SyncLockTimeout = 10,
             };
