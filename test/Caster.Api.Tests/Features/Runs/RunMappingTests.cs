@@ -92,6 +92,23 @@ public class RunMappingTests(DatabaseFixture fixture, CasterAppFactory factory) 
         Assert.Equal(JsonValueKind.Null, json.GetProperty("planId").ValueKind);
     }
 
+    /// <summary>A run created without targets or replace addresses stores and answers empty lists, not nulls.</summary>
+    [Fact]
+    public async Task A_run_created_without_targets_or_replace_addresses_answers_empty_lists()
+    {
+        var graph = await SeedGraph();
+        var workspace = await SeedIdleWorkspace(graph);
+
+        var json = await ReadAsync<JsonElement>(await RootClient.PostAsJsonAsync("api/runs", new { workspaceId = workspace.Id }, Ct));
+
+        Assert.Equal(0, json.GetProperty("targets").GetArrayLength());
+        Assert.Equal(0, json.GetProperty("replaceAddresses").GetArrayLength());
+        var id = json.GetProperty("id").GetGuid();
+        var stored = await ReadBack(db => db.Runs.SingleAsync(x => x.Id == id, Ct));
+        Assert.Empty(stored.Targets);
+        Assert.Empty(stored.ReplaceAddresses);
+    }
+
     /// <summary>The queue lists what the run queue holds; a run it does not hold has no position, answered with a 204.</summary>
     [Fact]
     public async Task A_run_out_of_the_queue_has_no_position()

@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Tests.Support;
+using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Tests.Features.Modules;
 
@@ -38,6 +39,27 @@ public class ModuleMappingTests(DatabaseFixture fixture, CasterAppFactory factor
         var output = Assert.Single(first.GetProperty("outputs").EnumerateArray());
         Assert.Equal(("id", "the id"), (output.GetProperty("name").GetString(), output.GetProperty("description").GetString()));
         Assert.Equal(0, versions[0].GetProperty("variables").GetArrayLength());
+    }
+
+    /// <summary>A version stored without variables or outputs is answered with empty lists, not nulls.</summary>
+    [Fact]
+    public async Task A_version_stored_without_variables_or_outputs_answers_empty_lists()
+    {
+        var module = TestData.Module();
+        var version = TestData.ModuleVersion(module);
+        version.Variables = null;
+        version.Outputs = null;
+        await Seed(module, version);
+        var stored = await ReadBack(db => db.ModuleVersions.SingleAsync(x => x.Id == version.Id, Ct));
+        Assert.Equal((null, null), (stored.Variables, stored.Outputs));
+
+        var json = await ReadAsync<JsonElement>(await RootClient.GetAsync($"api/modules/{module.Id}", Ct));
+
+        var read = Assert.Single(json.GetProperty("versions").EnumerateArray());
+        Assert.Equal(JsonValueKind.Array, read.GetProperty("variables").ValueKind);
+        Assert.Equal(0, read.GetProperty("variables").GetArrayLength());
+        Assert.Equal(JsonValueKind.Array, read.GetProperty("outputs").ValueKind);
+        Assert.Equal(0, read.GetProperty("outputs").GetArrayLength());
     }
 
     /// <summary>The module list leaves the versions null, also with includeVersions, and counts them only with includeVersionCount.</summary>
