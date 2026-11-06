@@ -764,9 +764,8 @@ public class GitModuleRepositoryProvider(
 
     /// <summary>
     /// The stored Modules read from <paramref name="source"/>, by
-    /// <see cref="Module.SourceName"/>, which is stored lowercased because
-    /// every source name comparison ignores case. Path alone cannot tell: a git source "terraform" and a
-    /// Gitlab project "terraform/vpc" share the prefix.
+    /// <see cref="Module.SourceName"/>. Path alone cannot tell: a git source
+    /// "terraform" and a Gitlab project "terraform/vpc" share the prefix.
     /// </summary>
     private IQueryable<Module> SourceModules(ModuleSourceOptions source)
     {
@@ -776,19 +775,12 @@ public class GitModuleRepositoryProvider(
     }
 
     /// <summary>What <see cref="Module.SourceName"/> holds for <paramref name="source"/>.</summary>
-    public static string SourceKey(ModuleSourceOptions source) => FoldCase(source.Name);
-
-    /// <summary>
-    /// The one case folding for source names and the Module Paths built from
-    /// them. Queries compare a folded parameter with a column folded by SQL
-    /// lower(), or with SourceName, which is stored folded.
-    /// </summary>
-    private static string FoldCase(string value) => value.ToLowerInvariant();
+    public static string SourceKey(ModuleSourceOptions source) => source.Name;
 
     /// <summary>
     /// Gives Modules stored before <see cref="Module.SourceName"/> existed
     /// their source. One is this source's if its Path is the source name or
-    /// under it (ignoring case) and any of:
+    /// under it and any of:
     /// <list type="bullet">
     /// <item>every version points into this source's current url - exactly
     /// <c>Url</c> for the Root layout, or <c>Url//subdir</c> - which a Gitlab
@@ -803,19 +795,19 @@ public class GitModuleRepositoryProvider(
     private async Task BackfillSourceNameAsync(ModuleSourceOptions source, CancellationToken cancellationToken)
     {
         var name = source.Name;
-        var lowerName = SourceKey(source);
-        var lowerPrefix = lowerName + "/";
+        var key = SourceKey(source);
+        var prefix = name + "/";
         var url = source.Url;
         var subdirectoryUrl = source.Url.TrimEnd('/') + "//";
         var gitlabConfigured = terraformOptions.CurrentValue?.GitlabSourceConfigured == true;
 
         var updated = await db.Modules
             .Where(m => m.SourceName == null &&
-                        (m.Path.ToLower() == lowerName || m.Path.ToLower().StartsWith(lowerPrefix)) &&
+                        (m.Path == name || m.Path.StartsWith(prefix)) &&
                         (!gitlabConfigured ||
                          !m.Versions.Any() ||
                          m.Versions.All(v => v.UrlLink == url || v.UrlLink.StartsWith(subdirectoryUrl))))
-            .ExecuteUpdateAsync(x => x.SetProperty(m => m.SourceName, lowerName), cancellationToken);
+            .ExecuteUpdateAsync(x => x.SetProperty(m => m.SourceName, key), cancellationToken);
 
         if (updated > 0)
         {
@@ -843,22 +835,14 @@ public class GitModuleRepositoryProvider(
             // with the same key. Attaching a second instance throws once the
             // first is already tracked, which happens whenever one scope syncs
             // the same Module twice.
-            // By Path ignoring case, as source names are compared: a source
-            // renamed only in case updates its Modules instead of storing each
-            // again beside the old one. The exact match wins if both exist.
-            var lowerPath = FoldCase(draft.Path);
             var module = await db.Modules
-                .Where(m => m.Path.ToLower() == lowerPath)
-                .OrderBy(m => m.Path == draft.Path ? 0 : 1)
-                .FirstOrDefaultAsync(cancellationToken);
+                .FirstOrDefaultAsync(m => m.Path == draft.Path, cancellationToken);
 
             if (module == null)
             {
                 module = new Module { Path = draft.Path };
                 db.Modules.Add(module);
             }
-
-            module.Path = draft.Path;
 
             module.Name = draft.Name;
             module.Description = draft.Description;

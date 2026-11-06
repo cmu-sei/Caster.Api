@@ -1366,40 +1366,39 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         }
 
         [Fact]
-        public async Task SyncModules_SourceNameMatchingIgnoresCase()
+        public async Task SyncModules_SourceNameMatchingIsExact()
         {
-            // Stored by the source configured as "catalog", one before SourceName existed;
-            // now configured as "CATALOG".
-            await SeedModule("Catalog/network-segment", missingSince: null, sourceName: "catalog");
+            // Stored by a source configured as "Catalog"; now there is only "catalog".
+            await SeedModule("Catalog/network-segment", missingSince: null, sourceName: "Catalog");
             var source = Source(ModuleSourceLayout.Subdirectories);
             await SeedModule("CATALOG/machine-blank", missingSince: null, sourceName: null, urlLink: $"{source.Url}//machine-blank");
-            source.Name = "CATALOG";
 
-            var result = await Sut.SyncModulesAsync(source, false, Ct);
+            await Sut.SyncModulesAsync(source, false, Ct);
 
-            Assert.Equal("No version tags any more; showing the 2 Modules stored from earlier.", result.Message);
-            Assert.NotNull(await MissingSince("Catalog/network-segment"));
-            Assert.NotNull(await MissingSince("CATALOG/machine-blank"));
-            Assert.Equal("catalog", await ReadBack(db => db.Modules.Where(m => m.Path == "CATALOG/machine-blank").Select(m => m.SourceName).SingleAsync(Ct)));
+            // Neither is this source's, so neither is marked or claimed.
+            Assert.Null(await MissingSince("Catalog/network-segment"));
+            Assert.Null(await MissingSince("CATALOG/machine-blank"));
+            Assert.Null(await ReadBack(db => db.Modules.Where(m => m.Path == "CATALOG/machine-blank").Select(m => m.SourceName).SingleAsync(Ct)));
         }
 
         [Fact]
-        public async Task SyncModules_SourceRenamedOnlyInCase_UpdatesItsModulesInPlace()
+        public async Task SyncModules_NeverTakesOverAModuleWhosePathDiffersOnlyInCase()
         {
+            GivenGitlab();
             GivenTags("v0.1.0");
             _git.SourceTree = BuildMonorepoTree();
+            // A Gitlab project whose path matches one of this source's Modules but for case.
+            await SeedModule("Catalog/network-segment", missingSince: null, sourceName: null, urlLink: "https://gitlab.test/group/catalog.git?ref=v9.0.0");
+            var gitlabId = await ReadBack(db => db.Modules.Where(m => m.Path == "Catalog/network-segment").Select(m => m.Id).SingleAsync(Ct));
             var source = Source(ModuleSourceLayout.Subdirectories);
-            source.Name = "Catalog";
+
             await Sut.SyncModulesAsync(source, false, Ct);
-            var ids = await ReadBack(db => db.Modules.OrderBy(m => m.Path).Select(m => m.Id).ToListAsync(Ct));
 
-            source.Name = "catalog";
-            await Sut.SyncModulesAsync(source, forceUpdate: true, Ct);
-
-            var modules = await ReadBack(db => db.Modules.OrderBy(m => m.Path).ToListAsync(Ct));
-            Assert.Equal(ids, modules.Select(m => m.Id).ToList());
-            Assert.Equal(["catalog/machine-blank", "catalog/network-segment"], modules.Select(m => m.Path).ToList());
-            Assert.Equal(2, await ReadBack(db => db.ModuleVersions.CountAsync(Ct)));
+            var gitlab = await ReadBack(db => db.Modules.Include(m => m.Versions).SingleAsync(m => m.Id == gitlabId, Ct));
+            Assert.Equal("Catalog/network-segment", gitlab.Path);
+            Assert.Null(gitlab.SourceName);
+            Assert.Equal(["https://gitlab.test/group/catalog.git?ref=v9.0.0"], gitlab.Versions.Select(v => v.UrlLink).ToList());
+            Assert.Equal(1, await ReadBack(db => db.Modules.CountAsync(m => m.Path == "catalog/network-segment", Ct)));
         }
 
         private void GivenGitlab()

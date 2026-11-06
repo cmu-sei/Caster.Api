@@ -44,8 +44,8 @@ public sealed record EmptyRead(EmptyReadOutcome Outcome, IReadOnlyCollection<str
 /// </remarks>
 public class ModuleSourceReadCache
 {
-    // Source names are case-insensitive everywhere: here, the sync lock, the
-    // status store, the dispatcher, and the SourceName queries.
+    // Keyed by source name ignoring case, like the sync lock, the status
+    // store and the dispatcher's lookup by name.
     private readonly ConcurrentDictionary<string, (string Fingerprint, EmptyRead Read)> _reads =
         new(StringComparer.OrdinalIgnoreCase);
 
