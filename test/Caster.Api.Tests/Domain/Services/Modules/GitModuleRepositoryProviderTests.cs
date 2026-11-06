@@ -1481,8 +1481,8 @@ namespace Caster.Api.Tests.Domain.Services.Modules
 
         [Theory]
         [InlineData("https://git-access-token:SECRET@git.example.com/org/catalog.git", ModuleSourceUrl.CredentialsMessage)]
-        [InlineData("ssh://ghp_SECRET@github.com/org/catalog.git", ModuleSourceUrl.CredentialsMessage)]
-        [InlineData("ghp_SECRET@github.com:org/catalog.git", ModuleSourceUrl.CredentialsMessage)]
+        [InlineData("https://ghp_SECRET@github.com/org/catalog.git", ModuleSourceUrl.CredentialsMessage)]
+        [InlineData("ssh://git:SECRET@github.com/org/catalog.git", ModuleSourceUrl.CredentialsMessage)]
         [InlineData("oauth2:abc/SECRET@gitlab.example.com:group/catalog.git", ModuleSourceUrl.CredentialsMessage)]
         [InlineData("oauth2:SECRET@gitlab.example.com/group/catalog.git", ModuleSourceUrl.CredentialsMessage)]
         [InlineData("ftp://git.example.com/org/catalog.git", ModuleSourceUrl.UnusableMessage)]

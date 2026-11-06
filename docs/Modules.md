@@ -46,12 +46,13 @@ Terraform__ModuleSources__0__Layout=Subdirectories
 * **Url** (required)
   Clone URL, used verbatim by git and in the generated `source = "git::<Url>?ref=<tag>"`. A source missing `Name` or `Url` is ignored rather than failing startup.
 
-  > **A URL with credentials is refused.** Caster never lists, clones, or stores a source whose `Url` holds a user name (other than a bare `git@` in an ssh or scp-style URL), a password, or a token, and reports it as `Error`: *This source's URL contains credentials. Put them in the git credential store (the chart's gitcredentials) instead.* A URL that is not in one of these forms is refused the same way: *This source's URL isn't a git URL Caster can use.*
+  > **A URL with credentials is refused.** Caster never lists, clones, or stores a source whose `Url` holds a password (`user:secret@`) in any form, or any user name in an `http(s)` URL, where a token often stands in for one. It reports the source as `Error`: *This source's URL contains credentials. Put them in the git credential store (the chart's gitcredentials) instead.* A user name alone is fine in an ssh or scp-style URL (`deploy@git.example.com:org/repo.git`), and local paths, `file://` and `git://` URLs are used as configured. Any other URL, such as an https URL with a query string, is refused the same way: *This source's URL isn't a git URL Caster can use.* The allowed forms:
 
   * `https://host[:port]/path` (or `http://`), with no user name or password, query string, or fragment.
-  * `ssh://[git@]host[:port]/path`, with no user name other than a bare `git`.
-  * `[git@]host:path` (scp style), with no user name other than a bare `git`.
-  * A `file://` URL or a local path, with no `@` and no further `://`.
+  * `ssh://[user@]host[:port]/path` (also `git+ssh://`), with no password.
+  * `[user@]host:path` (scp style), with no password.
+  * `git://host[:port]/path`, with no user name or password.
+  * A local path, absolute or relative, or a `file:///path` URL. A `file://` URL that names a host may not contain an `@`.
 
   The same applies to a `Terraform:GitlabApiUrl` with a user name or password in it; the Gitlab token belongs in `Terraform:GitlabToken`.
 

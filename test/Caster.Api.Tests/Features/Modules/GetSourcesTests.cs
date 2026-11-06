@@ -35,7 +35,7 @@ namespace Caster.Api.Tests.Features.Modules
 
         [Theory]
         [InlineData(ModuleSourceProviders.Git, "https://oauth2:SECRET@git.example.com/org/catalog.git")]
-        [InlineData(ModuleSourceProviders.Git, "ghp_SECRET@github.com:org/catalog.git")]
+        [InlineData(ModuleSourceProviders.Git, "oauth2:SECRET@github.com:org/catalog.git")]
         [InlineData(ModuleSourceProviders.Gitlab, "https://user:SECRET@gitlab.example.com/api/v4/")]
         public async Task ARefusedSource_HasNoUrlAndItsErrorNamesTheProblem(string provider, string url)
         {
