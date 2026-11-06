@@ -79,28 +79,69 @@ namespace Caster.Api.Tests.Features.Modules
         }
 
         [Theory]
+        // Usable: no secret, or a user name where it names an account.
         [InlineData("https://git.example.com/org/repo.git", ModuleSourceUrlCheck.Usable)]
         [InlineData("HTTPS://git.example.com/org/repo.git", ModuleSourceUrlCheck.Usable)]
+        [InlineData("https://[2001:db8::1]:8443/org/repo.git", ModuleSourceUrlCheck.Usable)]
         [InlineData("ssh://git@git.example.com:2222/org/repo.git", ModuleSourceUrlCheck.Usable)]
+        [InlineData("ssh://deploy@git.example.com/org/repo.git", ModuleSourceUrlCheck.Usable)]
+        [InlineData("git+ssh://deploy@git.example.com/org/repo.git", ModuleSourceUrlCheck.Usable)]
         [InlineData("git@git.example.com:org/repo.git", ModuleSourceUrlCheck.Usable)]
+        [InlineData("deploy@git.example.com:org/repo.git", ModuleSourceUrlCheck.Usable)]
+        [InlineData("git@ssh.dev.azure.com:v3/org/project/repo", ModuleSourceUrlCheck.Usable)]
+        [InlineData("git.example.com:org/repo.git", ModuleSourceUrlCheck.Usable)]
+        [InlineData("git://git.example.com/org/repo.git", ModuleSourceUrlCheck.Usable)]
         [InlineData("file:///srv/git/repo.git", ModuleSourceUrlCheck.Usable)]
         [InlineData("/srv/git/repo.git", ModuleSourceUrlCheck.Usable)]
+        [InlineData("./repos/catalog.git", ModuleSourceUrlCheck.Usable)]
+        [InlineData("repos/catalog.git", ModuleSourceUrlCheck.Usable)]
+        [InlineData("/srv/git/user@host/catalog.git", ModuleSourceUrlCheck.Usable)]
+        // Credentials: a password anywhere, or any user in http(s).
         [InlineData("https://oauth2:SECRET@git.example.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
         [InlineData("https://git@git.example.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("https://ghp_SECRET@github.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("https://org@dev.azure.com/org/project/_git/repo", ModuleSourceUrlCheck.Credentials)]
         [InlineData("https://user:p#ss@git.example.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
-        [InlineData("ssh://ghp_SECRET@github.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("https://user:123?SECRET@git.example.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("https://git.example.com/org/repo.git#x@SECRET", ModuleSourceUrlCheck.Credentials)]
         [InlineData("ssh://git:SECRET@github.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
-        [InlineData("ghp_SECRET@github.com:org/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("ssh://u:a/SECRET@github.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("git://user:SECRET@git.example.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("git://SECRET@git.example.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
         [InlineData("oauth2:abc/def@gitlab.example.com/group/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("oauth2:SECRET@gitlab.example.com:group/repo.git", ModuleSourceUrlCheck.Credentials)]
         [InlineData("u:p@ss@gitlab.example.com:group/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("file://user:SECRET@host/srv/git/repo.git", ModuleSourceUrlCheck.Credentials)]
+        [InlineData("ftp://user:SECRET@git.example.com/org/repo.git", ModuleSourceUrlCheck.Credentials)]
+        // Unusable.
         [InlineData("https://git.example.com/org/repo.git?private_token=x", ModuleSourceUrlCheck.Unusable)]
         [InlineData("git@git.example.com:org/repo.git?private_token=x", ModuleSourceUrlCheck.Unusable)]
+        [InlineData("https://git.example.com:SECRET/org/repo.git", ModuleSourceUrlCheck.Unusable)]
         [InlineData("ftp://git.example.com/org/repo.git", ModuleSourceUrlCheck.Unusable)]
         [InlineData("not a url", ModuleSourceUrlCheck.Unusable)]
         [InlineData("", ModuleSourceUrlCheck.Unusable)]
-        public void Check_RefusesAnythingCleaningWouldChange(string url, ModuleSourceUrlCheck expected)
+        public void Check_RefusesPasswordsAndHttpUsers(string url, ModuleSourceUrlCheck expected)
         {
             Assert.Equal(expected, ModuleSourceUrl.Check(url));
+        }
+
+        /// <summary>Whatever Check lets through is never shown with a password, whatever Sanitize does with it.</summary>
+        [Theory]
+        [MemberData(nameof(CredentialShapedSecrets))]
+        public void Check_NeverPassesAPasswordSplicedIntoTheUserOrPassword(string secret)
+        {
+            foreach (var configured in new[]
+            {
+                $"https://user:{secret}git.example.com/repo.git",
+                $"https://{secret}git.example.com/repo.git",
+                $"ssh://git:{secret}git.example.com/repo.git",
+                $"git://u:{secret}git.example.com/repo.git",
+                $"user:{secret}git.example.com:org/repo.git",
+                $"file://user:{secret}host/srv/repo.git",
+            })
+            {
+                Assert.NotEqual(ModuleSourceUrlCheck.Usable, ModuleSourceUrl.Check(configured));
+            }
         }
 
         [Theory]

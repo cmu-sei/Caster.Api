@@ -51,12 +51,23 @@ namespace Caster.Api.Domain.Services.Modules
         public const string UnusableMessage = "This source's URL isn't a git URL Caster can use.";
 
         /// <summary>
-        /// Whether a configured source url may be used at all. Only a url that
-        /// <see cref="Sanitize"/> returns unchanged is: anything it would have
-        /// to clean is refused rather than used, because a url is cloned,
-        /// stored in every version's UrlLink, and echoed in git's errors. A
-        /// refused url with an <c>@</c> beyond a bare <c>git@</c> is taken to
-        /// carry credentials; any other is unusable.
+        /// Whether a configured source url may be used at all. A url is cloned,
+        /// stored in every version's UrlLink, and echoed in git's errors, so a
+        /// secret in it would leak. Refused as <see cref="ModuleSourceUrlCheck.Credentials"/>:
+        /// <list type="bullet">
+        /// <item>a password (<c>user:secret@</c>) in any form;</item>
+        /// <item>any user name in an http(s) url, where a token often stands in
+        /// for one (<c>https://ghp_...@host/</c>);</item>
+        /// <item>an <c>@</c> after an http(s) or ssh url's host, which may end a
+        /// credential the parse took for the host.</item>
+        /// </list>
+        /// A user name with no password is allowed in ssh and scp-style urls
+        /// (<c>deploy@host:repo.git</c>), where it names an account, not a
+        /// secret. Local paths, relative or not, and <c>file://</c> and
+        /// <c>git://</c> urls are allowed; git sends no credentials for them.
+        /// A query or fragment in a network url, a scheme git does not clone
+        /// from here, or a url that does not parse is
+        /// <see cref="ModuleSourceUrlCheck.Unusable"/>.
         /// </summary>
         public static ModuleSourceUrlCheck Check(string url)
         {
@@ -65,29 +76,102 @@ namespace Caster.Api.Domain.Services.Modules
                 return ModuleSourceUrlCheck.Unusable;
             }
 
-            var trimmed = url.Trim();
-            var clean = Sanitize(trimmed);
+            url = url.Trim();
 
-            // Lowercasing the scheme is the one change cleaning may make to a
-            // usable url.
-            var schemeLength = SchemeLength(trimmed);
-            var normalized = trimmed[..schemeLength].ToLowerInvariant() + trimmed[schemeLength..];
-
-            if (clean == normalized)
+            if (HasWhitespaceOrControl(url))
             {
-                return ModuleSourceUrlCheck.Usable;
+                return ModuleSourceUrlCheck.Unusable;
             }
 
-            // Only ssh and scp-style urls may carry a bare git user; in any
-            // other a user name is userinfo like the rest.
-            var scheme = Scheme().Match(trimmed);
-            var withoutGitUser = !scheme.Success
-                ? StripLeadingGitUser(trimmed)
-                : scheme.Groups["scheme"].Value.Equals("ssh", StringComparison.OrdinalIgnoreCase)
-                    ? StripLeadingGitUser(trimmed[scheme.Length..])
-                    : trimmed[scheme.Length..];
+            var scheme = Scheme().Match(url);
 
-            return withoutGitUser.Contains('@') ? ModuleSourceUrlCheck.Credentials : ModuleSourceUrlCheck.Unusable;
+            if (!scheme.Success)
+            {
+                return IsLocalPath(url) || !url.Contains(':') ? ModuleSourceUrlCheck.Usable : CheckScp(url);
+            }
+
+            var rest = url[scheme.Length..];
+
+            return scheme.Groups["scheme"].Value.ToLowerInvariant() switch
+            {
+                "http" or "https" => CheckNetwork(rest, userAllowed: false),
+                "ssh" or "git+ssh" or "ssh+git" => CheckNetwork(rest, userAllowed: true),
+                "git" => CheckNetwork(rest, userAllowed: false),
+                "file" => CheckFile(rest),
+                _ => HasPassword(rest[..AuthorityEnd(rest)]) ? ModuleSourceUrlCheck.Credentials : ModuleSourceUrlCheck.Unusable,
+            };
+        }
+
+        /// <summary>A network url's part after <c>scheme://</c>: userinfo, host, path.</summary>
+        private static ModuleSourceUrlCheck CheckNetwork(string rest, bool userAllowed)
+        {
+            var authorityEnd = AuthorityEnd(rest);
+            var authority = rest[..authorityEnd];
+            var remainder = rest[authorityEnd..];
+            var at = authority.LastIndexOf('@');
+
+            if (remainder.Contains('@'))
+            {
+                return ModuleSourceUrlCheck.Credentials;
+            }
+
+            if (at >= 0 && (!userAllowed || HasPassword(authority)))
+            {
+                return ModuleSourceUrlCheck.Credentials;
+            }
+
+            if (remainder.IndexOfAny(['?', '#']) >= 0 || remainder.Contains("://", StringComparison.Ordinal))
+            {
+                return ModuleSourceUrlCheck.Unusable;
+            }
+
+            return HostPort().IsMatch(at < 0 ? authority : authority[(at + 1)..])
+                ? ModuleSourceUrlCheck.Usable
+                : ModuleSourceUrlCheck.Unusable;
+        }
+
+        /// <summary>
+        /// A <c>file://</c> url: allowed with an empty host (<c>file:///srv/...</c>),
+        /// whatever its path holds. With a host, any <c>@</c> is refused, since
+        /// it may end a password the authority split at a <c>/</c>, <c>?</c> or <c>#</c>.
+        /// </summary>
+        private static ModuleSourceUrlCheck CheckFile(string rest) =>
+            AuthorityEnd(rest) > 0 && rest.Contains('@') ? ModuleSourceUrlCheck.Credentials : ModuleSourceUrlCheck.Usable;
+
+        /// <summary>scp-style <c>[user@]host:path</c>: a user is allowed, a password is not.</summary>
+        private static ModuleSourceUrlCheck CheckScp(string url)
+        {
+            var at = url.LastIndexOf('@');
+
+            if (at >= 0 && url[..at].Contains(':'))
+            {
+                return ModuleSourceUrlCheck.Credentials;
+            }
+
+            var address = at < 0 ? url : url[(at + 1)..];
+
+            if (address.IndexOfAny(['?', '#']) >= 0)
+            {
+                return ModuleSourceUrlCheck.Unusable;
+            }
+
+            return ScpAddress().IsMatch(address) && !address.Contains("://", StringComparison.Ordinal)
+                ? ModuleSourceUrlCheck.Usable
+                : ModuleSourceUrlCheck.Unusable;
+        }
+
+        /// <summary>Where a url's authority ends, after <c>scheme://</c>: the first <c>/</c>, <c>?</c> or <c>#</c>.</summary>
+        private static int AuthorityEnd(string rest)
+        {
+            var end = rest.IndexOfAny(['/', '?', '#']);
+            return end < 0 ? rest.Length : end;
+        }
+
+        /// <summary>Whether an authority's userinfo, up to its last <c>@</c>, holds a <c>:</c>.</summary>
+        private static bool HasPassword(string authority)
+        {
+            var at = authority.LastIndexOf('@');
+            return at >= 0 && authority[..at].Contains(':');
         }
 
         /// <summary>
@@ -105,11 +189,6 @@ namespace Caster.Api.Domain.Services.Modules
                     throw new ModuleSourceRefusedException(UnusableMessage);
             }
         }
-
-        private static int SchemeLength(string url) => Scheme().Match(url) is { Success: true } m ? m.Length : 0;
-
-        private static string StripLeadingGitUser(string value) =>
-            value.StartsWith(KeptUserName + "@", StringComparison.Ordinal) ? value[(KeptUserName.Length + 1)..] : value;
 
         /// <summary>A safe-to-show form of <paramref name="url"/>, or null if it is not in an allowed form.</summary>
         public static string Sanitize(string url)
