@@ -357,6 +357,27 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         Assert.Equal(designModule.Name, (await StoredDesignModule(designModule.Id)).Name);
     }
 
+    /// <summary>An edit of a module stored without a value list stores and answers an empty one.</summary>
+    [Fact]
+    public async Task Edit_of_a_module_stored_without_a_value_list_stores_an_empty_one()
+    {
+        var (_, design) = await SeedDesign();
+        var designModule = TestData.DesignModule(design, await SeedModule());
+        designModule.Values = null;
+        await Seed(designModule);
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = designModule.ModuleId, name = "renamed", moduleVersion = "1.0.0", values = NoValues }, Ct);
+
+        var json = await ReadAsync<JsonElement>(response);
+        Assert.Equal(JsonValueKind.Array, json.GetProperty("values").ValueKind);
+        Assert.Equal(0, json.GetProperty("values").GetArrayLength());
+        var stored = await StoredDesignModule(designModule.Id);
+        Assert.Equal("renamed", stored.Name);
+        Assert.NotNull(stored.Values);
+        Assert.Empty(stored.Values);
+    }
+
     /// <summary>An edit that sends no values keeps the stored ones, and the required variable stays set.</summary>
     [Fact]
     public async Task Edit_without_values_keeps_the_stored_value_of_a_required_variable()

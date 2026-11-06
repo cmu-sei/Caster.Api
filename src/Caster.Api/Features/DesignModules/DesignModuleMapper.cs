@@ -37,11 +37,15 @@ public static partial class DesignModuleMapper
     [MapProperty(nameof(Create.Command.Values), nameof(Domain.Models.DesignModule.Values), Use = nameof(ToDomainValues))]
     public static partial Domain.Models.DesignModule ToEntity(this Create.Command source);
 
-    /// <summary>The PUT update. The values are added to, updated in or removed from the stored ones, not replaced.</summary>
+    /// <summary>
+    /// The PUT update. The values are added to, updated in or removed from the stored ones, not replaced.
+    /// The merged list is written back, an empty one when the module had none stored, as AutoMapper did
+    /// with the null that <see cref="Domain.Models.DesignModule.AddOrUpdateValues"/> returns then.
+    /// </summary>
     public static void ApplyTo(this Edit.Command source, Domain.Models.DesignModule target)
     {
         ApplyMembers(source, target);
-        target.AddOrUpdateValues(ModuleValue.ToDomain(source.Values));
+        target.Values = target.AddOrUpdateValues(ModuleValue.ToDomain(source.Values)) ?? [];
     }
 
     [MapperRequiredMapping(RequiredMappingStrategy.Source)]
