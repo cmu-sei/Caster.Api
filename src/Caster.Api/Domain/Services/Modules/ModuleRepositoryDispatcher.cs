@@ -182,9 +182,9 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
                 continue;
             }
 
-            // Source names are case-insensitive (the sync lock, status, read
-            // cache and stored Module queries all ignore case), so two names that
-            // differ only in case would be one source with two urls.
+            // A source is found by name ignoring case (for a Module Path, and in
+            // the sync lock, status and read cache), so two names that differ
+            // only in case would be one source with two urls.
             if (sources.Any(x => string.Equals(x.Name, source.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 _logger.LogWarning(

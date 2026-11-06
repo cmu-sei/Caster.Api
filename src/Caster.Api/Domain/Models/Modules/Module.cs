@@ -22,10 +22,8 @@ public class Module : IEntity
     public DateTime? DateModified { get; set; }
 
     /// <summary>
-    /// The git module source this Module was read from, lowercased because
-    /// source names are case-insensitive (which also lets the index serve an
-    /// equality match), or null for a Gitlab Module or one stored before
-    /// sources were recorded. Paths alone cannot
+    /// The name of the git module source this Module was read from, or null
+    /// for a Gitlab Module or one stored before sources were recorded. Paths alone cannot
     /// tell: a git source "terraform" and a Gitlab project "terraform/vpc"
     /// share the prefix.
     /// </summary>
