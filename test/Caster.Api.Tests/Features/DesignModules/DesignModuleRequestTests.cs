@@ -378,6 +378,20 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         Assert.Empty(stored.Values);
     }
 
+    /// <summary>An edit body without <c>values</c> is answered with a 500, and nothing is stored.</summary>
+    [Fact]
+    public async Task Edit_without_a_values_member_answers_with_a_server_error()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = designModule.ModuleId, name = "renamed", moduleVersion = "1.0.0" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", problem.Detail);
+        Assert.Equal(designModule.Name, (await StoredDesignModule(designModule.Id)).Name);
+    }
+
     /// <summary>An edit that sends no values keeps the stored ones, and the required variable stays set.</summary>
     [Fact]
     public async Task Edit_without_values_keeps_the_stored_value_of_a_required_variable()
