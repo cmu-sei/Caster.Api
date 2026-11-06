@@ -37,7 +37,7 @@ namespace Caster.Api.Tests.Features.Modules
         [InlineData(ModuleSourceProviders.Git, "https://oauth2:SECRET@git.example.com/org/catalog.git")]
         [InlineData(ModuleSourceProviders.Git, "ghp_SECRET@github.com:org/catalog.git")]
         [InlineData(ModuleSourceProviders.Gitlab, "https://user:SECRET@gitlab.example.com/api/v4/")]
-        public async Task ARefusedSource_ReportsTheProblem(string provider, string url)
+        public async Task ARefusedSource_HasNoUrlAndItsErrorNamesTheProblem(string provider, string url)
         {
             var statuses = new ModuleSourceStatusStore();
             statuses.RecordFailure("catalog", ModuleSourceUrl.CredentialsMessage);
@@ -49,6 +49,7 @@ namespace Caster.Api.Tests.Features.Modules
 
             var source = Assert.Single(await handler.HandleRequest(new GetSources.Query(), TestContext.Current.CancellationToken));
 
+            Assert.Null(source.Url);
             Assert.Equal(ModuleSourceState.Error, source.State);
             Assert.Equal(ModuleSourceUrl.CredentialsMessage, source.Message);
         }

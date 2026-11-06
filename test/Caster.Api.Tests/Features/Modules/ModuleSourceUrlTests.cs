@@ -180,5 +180,18 @@ namespace Caster.Api.Tests.Features.Modules
                 Assert.False(shown.Contains(Secret), $"'{configured}' was shown as '{shown}'.");
             }
         }
+
+        [Theory]
+        [InlineData("https://gitlab.example.com/api/v4/", "https://gitlab.example.com/")]
+        [InlineData("https://gitlab.example.com:8443/api/v4/?private_token=SECRETVALUE", "https://gitlab.example.com:8443/")]
+        [InlineData("https://user:SECRETVALUE@gitlab.example.com:8443/api/v4/", null)]
+        [InlineData("https://user:123?SECRETVALUE@gitlab.example.com/api/v4/", null)]
+        [InlineData("https://user:a/SECRETVALUE@gitlab.example.com/api/v4/", null)]
+        [InlineData("ssh://gitlab.example.com/", null)]
+        [InlineData("not a url", null)]
+        public void GitlabBase_IsAnAllowedServerUrlOrNull(string apiUrl, string expected)
+        {
+            Assert.Equal(expected, ModuleSourceUrl.GitlabBase(apiUrl));
+        }
     }
 }

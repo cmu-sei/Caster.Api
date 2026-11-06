@@ -85,6 +85,20 @@ public class ModuleSourceRequestTests(DatabaseFixture fixture, GitlabSourceAppFa
         Assert.Equal(ModuleSourceProviders.Gitlab, source.Provider);
     }
 
+    [Fact]
+    public async Task GetSources_links_the_gitlab_source_to_its_server_without_the_token()
+    {
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ViewModules).SeedAsync();
+
+        var response = await Client(actor).GetAsync("api/modules/sources", Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        var body = await response.Content.ReadAsStringAsync(Ct);
+        Assert.DoesNotContain(GitlabSourceAppFactory.Token, body);
+        using var json = JsonDocument.Parse(body);
+        Assert.Equal("https://gitlab.test/", Assert.Single(json.RootElement.EnumerateArray()).GetProperty("url").GetString());
+    }
+
     /// <summary>
     /// The wire shape the UI reads: state as a string, message for every non-Ok state, and error only for
     /// Error, so a UI that knows only error does not show an Empty or Warning source as a failure.
