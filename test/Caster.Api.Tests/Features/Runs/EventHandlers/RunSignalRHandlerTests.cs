@@ -27,7 +27,7 @@ public class RunSignalRHandlerTests(DatabaseFixture fixture) : DatabaseTestBase(
     {
         var (run, hub, proxy) = await SeedRunAndHub();
 
-        await new RunCreatedSignalRHandler(Db, TestMapper.Mapper, hub).Handle(new EntityCreated<Run>(run), Ct);
+        await new RunCreatedSignalRHandler(Db, hub).Handle(new EntityCreated<Run>(run), Ct);
 
         hub.Clients.Received(1).Groups(Arg.Is<IReadOnlyList<string>>(x =>
             x.SequenceEqual(new[] { run.WorkspaceId.ToString(), nameof(HubGroups.WorkspacesAdmin) })));

@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
@@ -84,7 +83,6 @@ namespace Caster.Api.Features.Directories
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext,
             IArchiveService archiveService,
             IImportService importService,
@@ -120,7 +118,7 @@ namespace Caster.Api.Features.Directories
                 await dbContext.SaveChangesAsync(cancellationToken);
                 await this.PublishEvents(entries);
 
-                return mapper.Map<ImportDirectoryResult>(importResult);
+                return importResult.ToImportDirectoryResult();
             }
 
             private static List<string> GetWarnings(ArchiveExtractResult extracted, string targetName)

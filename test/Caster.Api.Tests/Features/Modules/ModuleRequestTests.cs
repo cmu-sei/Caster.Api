@@ -205,7 +205,7 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
 
         var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
 
-        Assert.StartsWith("The LINQ expression 'dtoModuleVariable => new ModuleVariable", problem.Detail);
+        Assert.StartsWith("The LINQ expression 'x => x == null ? null : new ModuleVariable", problem.Detail);
     }
 
     // Same case as GetVersions_answers_a_member_of_any_project_with_a_server_error.
@@ -220,7 +220,7 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
 
         var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
 
-        Assert.StartsWith("The LINQ expression 'dtoModuleVariable => new ModuleVariable", problem.Detail);
+        Assert.StartsWith("The LINQ expression 'x => x == null ? null : new ModuleVariable", problem.Detail);
     }
 
     [Fact]
@@ -242,7 +242,7 @@ public class ModuleRequestTests(DatabaseFixture fixture, CasterAppFactory factor
 
         var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
 
-        Assert.Matches(@"^Missing type map configuration or unsupported mapping\.[\s\S]*Modules\.Create\+Command -> Caster\.Api\.Domain\.Models\.Module$", problem.Detail);
+        Assert.Equal("There is no mapping from Caster.Api.Features.Modules.Create+Command to Caster.Api.Domain.Models.Module.", problem.Detail);
         await using var context = NewContext();
         Assert.False(await context.Modules.AnyAsync(x => x.Path == "modules/network", Ct));
     }

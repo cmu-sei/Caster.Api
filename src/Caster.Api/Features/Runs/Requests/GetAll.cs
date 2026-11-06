@@ -5,7 +5,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -32,7 +31,7 @@ namespace Caster.Api.Features.Runs
             public int? Limit { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Run[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Run[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewProjects, SystemPermission.ViewWorkspaces], cancellationToken);
@@ -42,8 +41,7 @@ namespace Caster.Api.Features.Runs
                 var query = dbContext.Runs
                     .OrderByDescending(r => r.CreatedAt)
                     .Limit(request.Limit)
-                    .Expand(mapper.ConfigurationProvider,
-                            includePlan: request.IncludePlan,
+                    .Expand(                            includePlan: request.IncludePlan,
                             includeApply: request.IncludeApply);
 
                 if (request.ActiveOnly)

@@ -3,9 +3,11 @@
 
 using System;
 using Caster.Api.Domain.Models;
-using Caster.Api.Tests.Support;
+using Caster.Api.Features.Directories;
+using Caster.Api.Features.Projects;
 using Directory = Caster.Api.Domain.Models.Directory;
 using File = Caster.Api.Domain.Models.File;
+using Project = Caster.Api.Domain.Models.Project;
 using ImportDirectoryResult = Caster.Api.Features.Directories.Import.ImportDirectoryResult;
 using ImportProjectResult = Caster.Api.Features.Projects.Import.ImportProjectResult;
 
@@ -24,8 +26,8 @@ public class ImportResultMappingTests
             Warnings = ["exported from somewhere else"]
         };
 
-        var projectResult = TestMapper.Mapper.Map<ImportProjectResult>(importResult);
-        var directoryResult = TestMapper.Mapper.Map<ImportDirectoryResult>(importResult);
+        var projectResult = importResult.ToImportProjectResult();
+        var directoryResult = importResult.ToImportDirectoryResult();
 
         Assert.Equal(importResult.SkippedSettings, projectResult.SkippedSettings);
         Assert.Equal(importResult.Warnings, projectResult.Warnings);
@@ -42,8 +44,8 @@ public class ImportResultMappingTests
         directory.ProjectId = project.Id;
         var importResult = new ImportResult { LockedFiles = [new File { Name = "main.tf", Directory = directory }] };
 
-        var projectResult = TestMapper.Mapper.Map<ImportProjectResult>(importResult);
-        var directoryResult = TestMapper.Mapper.Map<ImportDirectoryResult>(importResult);
+        var projectResult = importResult.ToImportProjectResult();
+        var directoryResult = importResult.ToImportDirectoryResult();
 
         Assert.Equal(["dir/main.tf"], projectResult.LockedFiles);
         Assert.Equal(["dir/main.tf"], directoryResult.LockedFiles);
@@ -55,8 +57,8 @@ public class ImportResultMappingTests
     {
         var importResult = new ImportResult { LockedFiles = null, SkippedSettings = null, Warnings = null };
 
-        var projectResult = TestMapper.Mapper.Map<ImportProjectResult>(importResult);
-        var directoryResult = TestMapper.Mapper.Map<ImportDirectoryResult>(importResult);
+        var projectResult = importResult.ToImportProjectResult();
+        var directoryResult = importResult.ToImportDirectoryResult();
 
         foreach (var lists in new[] { (projectResult.LockedFiles, projectResult.SkippedSettings, projectResult.Warnings),
                      (directoryResult.LockedFiles, directoryResult.SkippedSettings, directoryResult.Warnings) })

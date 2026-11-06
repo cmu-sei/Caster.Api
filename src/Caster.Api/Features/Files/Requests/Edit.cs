@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Authorization;
@@ -42,8 +41,7 @@ namespace Caster.Api.Features.Files
             ILockService lockService,
             IGetFileQuery fileQuery,
             ICasterAuthorizationService authorizationService,
-            IIdentityResolver identityResolver,
-            IMapper mapper) : FileCommandHandler<Command, File>(dbContext, lockService, fileQuery, authorizationService)
+            IIdentityResolver identityResolver) : FileCommandHandler<Command, File>(dbContext, lockService, fileQuery, authorizationService)
         {
             private Command _request { get; set; }
 
@@ -58,7 +56,7 @@ namespace Caster.Api.Features.Files
 
             protected override async Task PerformOperation(Domain.Models.File file, CancellationToken cancellationToken)
             {
-                file = mapper.Map(_request, file);
+                _request.ApplyTo(file);
                 file.Save(identityResolver.GetId(), canLock: await CanLock(file.Id, cancellationToken));
             }
         }

@@ -5,7 +5,6 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Caster.Api.Data;
 using Crucible.Common.EntityEvents.Events;
 using Caster.Api.Hubs;
@@ -19,8 +18,7 @@ public class VariableCreatedSignalRHandler : VariableBaseSignalRHandler, INotifi
 {
     public VariableCreatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityCreated<Domain.Models.Variable> notification, CancellationToken cancellationToken)
     {
@@ -32,8 +30,7 @@ public class VariableUpdatedSignalRHandler : VariableBaseSignalRHandler, INotifi
 {
     public VariableUpdatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityUpdated<Domain.Models.Variable> notification, CancellationToken cancellationToken)
     {
@@ -49,8 +46,7 @@ public class VariableDeletedSignalRHandler : VariableBaseSignalRHandler, INotifi
 {
     public VariableDeletedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityDeleted<Domain.Models.Variable> notification, CancellationToken cancellationToken)
     {
@@ -62,16 +58,13 @@ public class VariableDeletedSignalRHandler : VariableBaseSignalRHandler, INotifi
 public class VariableBaseSignalRHandler
 {
     protected readonly IHubContext<ProjectHub> _projectHub;
-    protected readonly IMapper _mapper;
     protected readonly CasterContext _db;
 
     public VariableBaseSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
         CasterContext db)
     {
         _projectHub = projectHub;
-        _mapper = mapper;
         _db = db;
     }
 
@@ -81,7 +74,7 @@ public class VariableBaseSignalRHandler
         string[] modifiedProperties,
         CancellationToken cancellationToken)
     {
-        var variable = _mapper.Map<Variable>(entity);
+        var variable = entity.ToVariable();
         var group = GetGroup(entity);
         await _projectHub.Clients.Group(group).SendAsync(method, variable, modifiedProperties, cancellationToken);
     }

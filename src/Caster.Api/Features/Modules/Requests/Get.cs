@@ -5,7 +5,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
@@ -29,7 +28,7 @@ namespace Caster.Api.Features.Modules
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Module>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Module>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
@@ -54,7 +53,7 @@ namespace Caster.Api.Features.Modules
 
                 module.Versions = ModuleVersionOrder.HighestFirst(module.Versions);
 
-                return mapper.Map<Module>(module);
+                return module.ToModule();
             }
         }
     }

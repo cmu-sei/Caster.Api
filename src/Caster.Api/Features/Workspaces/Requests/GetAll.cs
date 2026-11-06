@@ -4,10 +4,8 @@
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
@@ -22,7 +20,7 @@ namespace Caster.Api.Features.Workspaces
         {
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Workspace[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Workspace[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewProjects], cancellationToken);
@@ -30,7 +28,7 @@ namespace Caster.Api.Features.Workspaces
             public override async Task<Workspace[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 return await dbContext.Workspaces
-                    .ProjectTo<Workspace>(mapper.ConfigurationProvider)
+                    .ProjectToWorkspace()
                     .ToArrayAsync();
             }
         }

@@ -5,7 +5,6 @@ using System;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
-using AutoMapper.Internal;
 using Caster.Api.Data;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Services.Terraform;
@@ -21,7 +20,6 @@ using Caster.Api.Infrastructure.Exceptions.Middleware;
 using Caster.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Extensions;
 using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Infrastructure.Mapping;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
 using FluentValidation;
@@ -132,13 +130,6 @@ namespace Caster.Api
                 });
 
             services.AddSwagger(_authOptions);
-
-            services.AddAutoMapper(cfg =>
-            {
-                cfg.Internal().ForAllPropertyMaps(
-                    pm => pm.SourceType != null && Nullable.GetUnderlyingType(pm.SourceType) == pm.DestinationType,
-                    (pm, c) => c.MapFrom<object, object, object, object>(new IgnoreNullSourceValues(), pm.SourceMember.Name));
-            }, typeof(Startup));
 
             services.AddMediatR(cfg =>
             {

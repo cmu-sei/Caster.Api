@@ -209,7 +209,7 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
 
         var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
 
-        Assert.Matches(@"^Error mapping types\.[\s\S]*DesignModules\.Create\+Command -> Caster\.Api\.Domain\.Models\.DesignModule[\s\S]*Destination Member:\s+Values\s*$", problem.Detail);
+        Assert.Equal("Object reference not set to an instance of an object.", problem.Detail);
         Assert.False(await AnyDesignModule(design.Id));
     }
 

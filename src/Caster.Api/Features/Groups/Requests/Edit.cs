@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using System.Security.Claims;
@@ -33,7 +32,7 @@ namespace Caster.Api.Features.Groups
             public string Name { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Group>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Group>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Group>(request.Id, [SystemPermission.ManageGroups], [GroupPermission.EditGroup], cancellationToken);
@@ -45,9 +44,9 @@ namespace Caster.Api.Features.Groups
                 if (group == null)
                     throw new EntityNotFoundException<Group>();
 
-                mapper.Map(request, group);
+                request.ApplyTo(group);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Group>(group);
+                return group.ToGroup();
             }
         }
     }

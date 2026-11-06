@@ -5,6 +5,7 @@ using System;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Caster.Api.Features.Hosts;
 using Caster.Api.Tests.Support;
 using Microsoft.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
@@ -104,5 +105,5 @@ public class HostMappingTests(DatabaseFixture fixture, CasterAppFactory factory)
         ProjectId = projectId
     };
 
-    private static void ApplyPatch(PartialEditHost command, HostEntity host) => TestMapper.Mapper.Map(command, host);
+    private static void ApplyPatch(PartialEditHost command, HostEntity host) => command.ApplyPatchTo(host);
 }
