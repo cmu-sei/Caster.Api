@@ -126,19 +126,25 @@ public class EnvironmentSetAdminRequestTests(DatabaseFixture fixture, CasterAppF
     }
 
     [Fact]
-    public async Task BatchEdit_that_touches_a_connection_entry_needs_ManageInfrastructure()
+    public async Task BatchEdit_that_changes_a_connection_entry_needs_ManageInfrastructure_but_removing_one_does_not()
     {
         var a = TestData.EnvironmentSet();
         await Seed(a, TestData.ConnectionEntry(a, "PROXMOX_VE_ENDPOINT", TestConfiguration.ProxmoxConnection, ConnectionField.Url));
         var manager = await Actor().WithSystemPermissions(SystemPermission.ManageEnvironmentSets).SeedAsync();
 
-        var response = await Client(manager).PostAsJsonAsync($"{Sets}/batch-edit", new
+        var change = await Client(manager).PostAsJsonAsync($"{Sets}/batch-edit", new
+        {
+            environmentSetIds = new[] { a.Id },
+            changes = new object[] { new { operation = "Update", kind = "EnvironmentVariable", targetName = "PROXMOX_VE_ENDPOINT", valueSource = "Plain", value = "https://elsewhere" } }
+        }, Ct);
+        var remove = await Client(manager).PostAsJsonAsync($"{Sets}/batch-edit", new
         {
             environmentSetIds = new[] { a.Id },
             changes = new object[] { new { operation = "Delete", kind = "EnvironmentVariable", targetName = "PROXMOX_VE_ENDPOINT" } }
         }, Ct);
 
-        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertProblem(HttpStatusCode.Forbidden, change);
+        await AssertStatus(HttpStatusCode.OK, remove);
     }
 
     [Fact]

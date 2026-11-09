@@ -113,8 +113,8 @@ public class BatchEdit
         IEnvironmentSetViews views) : BaseHandler<Command, EnvironmentSet[]>
     {
         /// <summary>
-        /// A change that makes, edits or removes a connection entry also needs
-        /// ManageInfrastructure, as a single entry does.
+        /// A change that makes or edits a connection entry also needs ManageInfrastructure, as a
+        /// single entry does. Removing one doesn't: it hands nothing out.
         /// </summary>
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken)
         {
@@ -126,7 +126,10 @@ public class BatchEdit
 
             if (!connection)
             {
-                var names = request.Changes.Select(x => EntryEntity.GetEffectiveName(x.Kind, x.TargetName)).ToHashSet(StringComparer.Ordinal);
+                var names = request.Changes
+                    .Where(x => x.Operation != EnvironmentSetEntryChangeOperation.Delete)
+                    .Select(x => EntryEntity.GetEffectiveName(x.Kind, x.TargetName))
+                    .ToHashSet(StringComparer.Ordinal);
                 var stored = await dbContext.EnvironmentSetEntries
                     .Where(x => request.EnvironmentSetIds.Contains(x.EnvironmentSetId) && x.ValueSource == EnvironmentSetValueSource.Connection)
                     .Select(x => new { x.Kind, x.TargetName })
