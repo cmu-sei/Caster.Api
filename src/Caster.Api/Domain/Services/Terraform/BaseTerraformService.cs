@@ -207,20 +207,21 @@ public abstract class BaseTerraformService : ITerraformService
 
         var environment = await _environmentBuilder.BuildAsync(
             workspace, BaselineEnvironmentVariables, ReadsVariables(command, resume));
-        var masker = environment.Masker;
 
         // A plan or apply names the sets it used first, so the saved output records them.
         var sourcesLine = !resume && environment.IsValid && command is "plan" or "apply"
             ? environment.DescribeSources()
             : null;
 
+        // The masker is read at each use: a command that reattaches to a running job adds the
+        // values that job was given.
         Action<string> maskedOutputHandler = outputHandler is null
             ? null
-            : line => outputHandler(masker.Apply(line));
+            : line => outputHandler(environment.Masker.Apply(line));
 
         Func<string, Task> maskedFinalizer = finalizer is null
             ? null
-            : output => finalizer(WithSources(sourcesLine, masker.Apply(output)));
+            : output => finalizer(WithSources(sourcesLine, environment.Masker.Apply(output)));
 
         if (sourcesLine is not null)
         {
@@ -231,7 +232,7 @@ public abstract class BaseTerraformService : ITerraformService
 
         if (result is not null)
         {
-            result.Output = WithSources(sourcesLine, masker.Apply(result.Output));
+            result.Output = WithSources(sourcesLine, environment.Masker.Apply(result.Output));
         }
 
         return result;

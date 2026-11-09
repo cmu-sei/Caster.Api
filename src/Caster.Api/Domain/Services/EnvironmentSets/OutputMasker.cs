@@ -55,6 +55,9 @@ public class OutputMasker
 
     public bool IsEmpty => _values.Length == 0;
 
+    /// <summary>This masker's values and <paramref name="more"/>, with the same minimum length.</summary>
+    public OutputMasker With(IEnumerable<string> more) => new(_values.Concat(more ?? []), _minimumLength);
+
     public string Apply(string text)
     {
         if (string.IsNullOrEmpty(text) || _values.Length == 0)

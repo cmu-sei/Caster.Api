@@ -112,6 +112,10 @@ public class KubernetesTerraformService : BaseTerraformService
             var container = job.Spec?.Template?.Spec?.Containers?.SingleOrDefault()
                 ?? throw new InvalidOperationException("Job does not contain exactly one container.");
 
+            // After an API restart the job may carry values the sets no longer give, such as a
+            // credential rotated mid-run. They are literal in the job spec, so they are masked too.
+            environment.Masker = environment.Masker.With(JobSecretValues(container, environment));
+
             var jobArg = container.Args?.FirstOrDefault();
             var expectedArg = argumentList?.FirstOrDefault();
 
@@ -183,6 +187,12 @@ public class KubernetesTerraformService : BaseTerraformService
             ExitCode = exitCode
         };
     }
+
+    /// <summary>The values the job's container was given for the variables that are secrets now.</summary>
+    public static IEnumerable<string> JobSecretValues(V1Container container, TerraformEnvironment environment) =>
+        (container.Env ?? [])
+            .Where(x => x.Name is not null && environment.SecretNames.Contains(x.Name) && !string.IsNullOrEmpty(x.Value))
+            .Select(x => x.Value);
 
     private string GetImage(Workspace workspace)
     {

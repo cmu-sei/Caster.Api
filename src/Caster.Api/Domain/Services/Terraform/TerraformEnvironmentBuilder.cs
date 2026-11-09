@@ -27,7 +27,14 @@ public class TerraformEnvironment
     /// </summary>
     public IReadOnlyList<string> Errors { get; init; } = [];
 
-    public OutputMasker Masker { get; init; } = OutputMasker.None;
+    /// <summary>
+    /// Masks the run's secret values in its output. Settable, so a command that reattaches to a
+    /// run started earlier can add the values that run was given.
+    /// </summary>
+    public OutputMasker Masker { get; set; } = OutputMasker.None;
+
+    /// <summary>The variables whose values are secrets, by name.</summary>
+    public IReadOnlySet<string> SecretNames { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>
     /// The Environment Sets that supplied the run, each with the target names it supplied, in
@@ -94,6 +101,7 @@ public class TerraformEnvironmentBuilder(
 
         var errors = new List<string>();
         var secretValues = new List<string>();
+        var secretNames = new HashSet<string>(StringComparer.Ordinal);
         var supplied = new List<EnvironmentSetSource>();
 
         var sets = await GetEnvironmentSets(workspace.Id, cancellationToken);
@@ -143,6 +151,11 @@ public class TerraformEnvironmentBuilder(
                 if (value.IsSecret)
                 {
                     secretValues.Add(value.Value);
+                    secretNames.Add(name);
+                }
+                else if (entryValues.IsSecret(entry))
+                {
+                    secretNames.Add(name);
                 }
             }
 
@@ -167,6 +180,7 @@ public class TerraformEnvironmentBuilder(
             Variables = variables,
             Errors = errors,
             Masker = new OutputMasker(secretValues, entryValues.MinimumMaskedLength),
+            SecretNames = secretNames,
             Sources = supplied
         };
     }
