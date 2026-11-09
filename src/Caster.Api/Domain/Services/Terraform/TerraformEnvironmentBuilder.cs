@@ -29,8 +29,26 @@ public class TerraformEnvironment
 
     public OutputMasker Masker { get; init; } = OutputMasker.None;
 
+    /// <summary>
+    /// The Environment Sets that supplied the run, each with the target names it supplied, in
+    /// the order applied. Names only, never values or secret sources.
+    /// </summary>
+    public IReadOnlyList<EnvironmentSetSource> Sources { get; init; } = [];
+
     public bool IsValid => Errors.Count == 0;
+
+    /// <summary>
+    /// One line naming the sets and what each supplied, for the start of a plan or apply's
+    /// output, which is saved with the run. Null when no set supplied anything.
+    /// </summary>
+    public string DescribeSources() =>
+        Sources.Count == 0
+            ? null
+            : "Environment Sets: " + string.Join("; ", Sources.Select(x => $"\"{x.SetName}\" ({string.Join(", ", x.TargetNames)})"));
 }
+
+/// <summary>An Environment Set and the target names it supplied to a run.</summary>
+public record EnvironmentSetSource(string SetName, IReadOnlyList<string> TargetNames);
 
 public interface ITerraformEnvironmentBuilder
 {
@@ -43,7 +61,12 @@ public interface ITerraformEnvironmentBuilder
     /// API variables a run needs to work at all (a local process needs PATH and HOME),
     /// passed even when not inherited, unless they match a secret pattern.
     /// </param>
-    Task<TerraformEnvironment> BuildAsync(Workspace workspace, IEnumerable<string> baselineNames, CancellationToken cancellationToken = default);
+    /// <param name="includeTerraformVariables">
+    /// False for commands that don't read the configuration's variables, such as an apply of a
+    /// saved plan, which already holds them, or init and state commands. Their Terraform-variable
+    /// entries are then neither passed nor checked, so one that isn't available doesn't block them.
+    /// </param>
+    Task<TerraformEnvironment> BuildAsync(Workspace workspace, IEnumerable<string> baselineNames, bool includeTerraformVariables = true, CancellationToken cancellationToken = default);
 }
 
 /// <remarks>
@@ -55,12 +78,12 @@ public class TerraformEnvironmentBuilder(
     TerraformOptions options,
     IRegexService regexService,
     IApiEnvironment apiEnvironment,
-    ISecretSource secretSource) : ITerraformEnvironmentBuilder
+    IEntryValues entryValues) : ITerraformEnvironmentBuilder
 {
     private const string InAutomation = "TF_IN_AUTOMATION";
     private const string TerraformWorkspace = "TF_WORKSPACE";
 
-    public async Task<TerraformEnvironment> BuildAsync(Workspace workspace, IEnumerable<string> baselineNames, CancellationToken cancellationToken = default)
+    public async Task<TerraformEnvironment> BuildAsync(Workspace workspace, IEnumerable<string> baselineNames, bool includeTerraformVariables = true, CancellationToken cancellationToken = default)
     {
         var variables = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -71,14 +94,22 @@ public class TerraformEnvironmentBuilder(
 
         var errors = new List<string>();
         var secretValues = new List<string>();
+        var supplied = new List<EnvironmentSetSource>();
 
         var sets = await GetEnvironmentSets(workspace.Id, cancellationToken);
         var sources = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var set in sets)
         {
+            var targets = new List<string>();
+
             foreach (var entry in set.Entries.OrderBy(x => x.Kind).ThenBy(x => x.TargetName, StringComparer.Ordinal))
             {
+                if (!includeTerraformVariables && entry.Kind == EnvironmentSetEntryKind.TerraformVariable)
+                {
+                    continue;
+                }
+
                 var described = $"{EnvironmentSetRules.Describe(entry)} (Environment Set \"{set.Name}\")";
 
                 var nameError = EnvironmentSetRules.GetTargetNameError(entry.Kind, entry.TargetName);
@@ -98,28 +129,26 @@ public class TerraformEnvironmentBuilder(
 
                 sources[name] = set.Name;
 
-                if (entry.ValueSource == EnvironmentSetValueSource.Plain)
+                var value = entryValues.Resolve(entry);
+
+                if (!value.IsAvailable)
                 {
-                    variables[name] = entry.Value ?? string.Empty;
+                    errors.Add($"The {described} can't be used: {value.Unavailable}");
                     continue;
                 }
 
-                if (!secretSource.IsAllowed(entry.SecretName))
+                variables[name] = value.Value;
+                targets.Add(name);
+
+                if (value.IsSecret)
                 {
-                    errors.Add($"The secret for the {described} no longer matches the secret patterns.");
-                    continue;
+                    secretValues.Add(value.Value);
                 }
+            }
 
-                var value = secretSource.GetValue(entry.SecretName);
-
-                if (value is null)
-                {
-                    errors.Add($"The secret for the {described} is not available.");
-                    continue;
-                }
-
-                variables[name] = value;
-                secretValues.Add(value);
+            if (targets.Count > 0)
+            {
+                supplied.Add(new EnvironmentSetSource(set.Name, targets));
             }
         }
 
@@ -137,7 +166,8 @@ public class TerraformEnvironmentBuilder(
         {
             Variables = variables,
             Errors = errors,
-            Masker = new OutputMasker(secretValues)
+            Masker = new OutputMasker(secretValues, entryValues.MinimumMaskedLength),
+            Sources = supplied
         };
     }
 

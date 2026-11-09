@@ -46,14 +46,15 @@ public class EnvironmentSetRequestTests(DatabaseFixture fixture, CasterAppFactor
         Assert.DoesNotContain(secret.Value, body);
     }
 
+    /// <summary>ManageEnvironmentSets implies ViewEnvironmentSets, so a manager can use the screens.</summary>
     [Fact]
-    public async Task GetAll_is_forbidden_for_a_caller_holding_only_ManageEnvironmentSets()
+    public async Task GetAll_lists_the_sets_to_a_caller_holding_only_ManageEnvironmentSets()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageEnvironmentSets).SeedAsync();
 
         var response = await Client(actor).GetAsync(Sets, Ct);
 
-        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertStatus(HttpStatusCode.OK, response);
     }
 
     [Fact]
@@ -91,14 +92,14 @@ public class EnvironmentSetRequestTests(DatabaseFixture fixture, CasterAppFactor
     }
 
     [Fact]
-    public async Task Get_is_forbidden_for_a_caller_holding_only_ManageEnvironmentSets()
+    public async Task Get_returns_the_set_to_a_caller_holding_only_ManageEnvironmentSets()
     {
         var (set, _) = await SeedSet(SecretEnvironmentVariable.Missing());
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageEnvironmentSets).SeedAsync();
 
         var response = await Client(actor).GetAsync($"{Sets}/{set.Id}", Ct);
 
-        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertStatus(HttpStatusCode.OK, response);
     }
 
     [Fact]
@@ -133,13 +134,13 @@ public class EnvironmentSetRequestTests(DatabaseFixture fixture, CasterAppFactor
     }
 
     [Fact]
-    public async Task GetSecrets_is_forbidden_for_a_caller_holding_only_ManageEnvironmentSets()
+    public async Task GetSecrets_answers_a_caller_holding_only_ManageEnvironmentSets()
     {
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageEnvironmentSets).SeedAsync();
 
         var response = await Client(actor).GetAsync($"{Sets}/secrets", Ct);
 
-        await AssertProblem(HttpStatusCode.Forbidden, response);
+        await AssertStatus(HttpStatusCode.OK, response);
     }
 
     // ---- POST, PUT, DELETE api/environment-sets -------------------------------------------------
@@ -268,14 +269,30 @@ public class EnvironmentSetRequestTests(DatabaseFixture fixture, CasterAppFactor
 
         var response = await Client(actor).PostAsJsonAsync(
             $"{Sets}/{set.Id}/entries",
-            new { kind = "TerraformVariable", targetName = "vsphere_password", valueSource = "Secret", secretName = secret.Name },
+            new { kind = "EnvironmentVariable", targetName = "VSPHERE_PASSWORD", valueSource = "Secret", secretName = secret.Name },
             Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
         var stored = await ReadBack(db => db.EnvironmentSetEntries.SingleAsync(x => x.EnvironmentSetId == set.Id, Ct));
-        Assert.Equal(EnvironmentSetEntryKind.TerraformVariable, stored.Kind);
+        Assert.Equal(EnvironmentSetEntryKind.EnvironmentVariable, stored.Kind);
         Assert.Equal(secret.Name, stored.SecretName);
         Assert.Null(stored.Value);
+    }
+
+    /// <summary>Terraform saves variables in plans and state, so a secret can't be one.</summary>
+    [Fact]
+    public async Task CreateEntry_refuses_a_secret_Terraform_variable()
+    {
+        using var secret = new SecretEnvironmentVariable("s3cr3t-token-value");
+        var set = TestData.EnvironmentSet();
+        await Seed(set);
+
+        var response = await RootClient.PostAsJsonAsync(
+            $"{Sets}/{set.Id}/entries",
+            new { kind = "TerraformVariable", targetName = "vsphere_password", valueSource = "Secret", secretName = secret.Name },
+            Ct);
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
     }
 
     [Fact]

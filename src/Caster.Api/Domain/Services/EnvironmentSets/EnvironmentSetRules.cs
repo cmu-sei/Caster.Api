@@ -12,8 +12,11 @@ namespace Caster.Api.Domain.Services.EnvironmentSets;
 /// <summary>The naming rules for Environment Set entries, shared by the API validators and the run-time builder.</summary>
 public static partial class EnvironmentSetRules
 {
-    /// <summary>Secret values shorter than this are not masked in run output: too likely to hit ordinary text.</summary>
-    public const int MinimumMaskedLength = 8;
+    /// <summary>
+    /// The default for <c>Terraform:Secrets:MinimumMaskedLength</c>: secret values shorter than
+    /// this are too likely to match ordinary text to be masked, so runs that would get one fail.
+    /// </summary>
+    public const int DefaultMinimumMaskedLength = 8;
 
     private const string TerraformPrefix = "TF_";
     private const string TerraformTokenPrefix = "TF_TOKEN_";
@@ -22,6 +25,11 @@ public static partial class EnvironmentSetRules
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
     private static partial Regex EnvironmentVariableNameRegex();
+
+    // Git's numbered configuration: a set's GIT_CONFIG_KEY_0 would replace Caster's own (the
+    // module source credential), and another GIT_CONFIG_COUNT would break the numbering.
+    [GeneratedRegex("^GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)$", RegexOptions.IgnoreCase)]
+    private static partial Regex GitConfigRegex();
 
     // Terraform identifiers: letters, digits, underscores and hyphens, not starting with a digit.
     [GeneratedRegex("^[A-Za-z_-][A-Za-z0-9_-]*$")]
@@ -65,6 +73,11 @@ public static partial class EnvironmentSetRules
             !targetName.StartsWith(TerraformTokenPrefix, StringComparison.Ordinal))
         {
             return $"Environment variables starting with {TerraformPrefix} control Terraform itself and cannot be set. {TerraformTokenPrefix}* (private registry credentials) is allowed.";
+        }
+
+        if (GitConfigRegex().IsMatch(targetName))
+        {
+            return "GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n and GIT_CONFIG_VALUE_n cannot be set: they would replace or renumber Caster's own git configuration.";
         }
 
         if (ReservedEnvironmentVariables.Contains(targetName, StringComparer.OrdinalIgnoreCase))

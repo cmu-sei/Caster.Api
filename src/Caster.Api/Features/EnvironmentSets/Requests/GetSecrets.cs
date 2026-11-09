@@ -30,6 +30,7 @@ public class GetSecrets
         ICasterAuthorizationService authorizationService,
         CasterContext dbContext,
         ISecretSource secretSource,
+        IEntryValues entryValues,
         TerraformOptions terraformOptions,
         ITerraformService terraformService) : BaseHandler<Query, EnvironmentSecrets>
     {
@@ -57,7 +58,11 @@ public class GetSecrets
                 // The mode is chosen once, at startup; report the one in use rather than
                 // the current setting, which a configuration reload can change.
                 RunMode = terraformService is KubernetesTerraformService ? TerraformRunMode.Kubernetes : TerraformRunMode.Process,
-                InheritAll = terraformOptions.EnvironmentVariables?.InheritAll == true
+                InheritAll = terraformOptions.EnvironmentVariables?.InheritAll == true,
+                MinimumMaskedLength = entryValues.MinimumMaskedLength,
+                TooShort = secretSource.GetAvailableNames()
+                    .Where(x => secretSource.GetValue(x)?.Length < entryValues.MinimumMaskedLength)
+                    .ToArray()
             };
         }
     }

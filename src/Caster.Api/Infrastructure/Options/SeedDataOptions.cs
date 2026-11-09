@@ -38,6 +38,12 @@ namespace Caster.Api.Infrastructure.Options
         public EnvironmentSetValueSource ValueSource { get; set; }
         public string SecretName { get; set; }
         public string Value { get; set; }
+
+        /// <summary>For a connection entry: the infrastructure connection's Name.</summary>
+        public string ConnectionName { get; set; }
+
+        /// <summary>For a connection entry: what it takes from the connection, e.g. ApiToken.</summary>
+        public ConnectionField? ConnectionField { get; set; }
     }
 
     public class SeedVlans

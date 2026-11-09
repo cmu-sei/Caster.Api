@@ -9,6 +9,7 @@ using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Services.EnvironmentSets;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Tests.Support;
@@ -201,6 +202,130 @@ public class TerraformEnvironmentBuilderTests(DatabaseFixture fixture) : Databas
         Assert.False(environment.Variables.ContainsKey("TF_WORKSPACE"));
     }
 
+    // ---- Connection entries, scope, sources -----------------------------------------------------
+
+    private void AddProxmoxConnection(string token = "caster@pve!ci=0f1e2d3c-secret")
+    {
+        _infrastructure.Connections.Add(new InfrastructureConnectionOptions
+        {
+            Name = "Lab-PVE",
+            Provider = "proxmox",
+            Url = "https://pve.lab:8006",
+            ApiToken = token,
+            InsecureSkipVerify = true
+        });
+    }
+
+    [Fact]
+    public async Task A_connection_entry_reads_its_field_and_masks_a_credential()
+    {
+        AddProxmoxConnection();
+        var workspace = await SeedWorkspace(out var project);
+        var set = TestData.EnvironmentSet("Proxmox");
+        await Seed(
+            set,
+            // names are matched ignoring case, as configuration matches them
+            TestData.ConnectionEntry(set, "PROXMOX_VE_ENDPOINT", "lab-pve", ConnectionField.Url),
+            TestData.ConnectionEntry(set, "PROXMOX_VE_INSECURE", "lab-pve", ConnectionField.Insecure),
+            TestData.ConnectionEntry(set, "PROXMOX_VE_API_TOKEN", "lab-pve", ConnectionField.ApiToken),
+            TestData.ConnectionEntry(set, "PM_API_TOKEN_SECRET", "lab-pve", ConnectionField.ApiTokenSecret),
+            TestData.ProjectEnvironmentSet(project, set));
+
+        var environment = await Build(workspace);
+
+        Assert.True(environment.IsValid, string.Join(" ", environment.Errors));
+        Assert.Equal("https://pve.lab:8006", environment.Variables["PROXMOX_VE_ENDPOINT"]);
+        Assert.Equal("true", environment.Variables["PROXMOX_VE_INSECURE"]);
+        Assert.Equal("caster@pve!ci=0f1e2d3c-secret", environment.Variables["PROXMOX_VE_API_TOKEN"]);
+        Assert.Equal("token *** and secret ***", environment.Masker.Apply("token caster@pve!ci=0f1e2d3c-secret and secret 0f1e2d3c-secret"));
+        Assert.Equal("https://pve.lab:8006", environment.Masker.Apply("https://pve.lab:8006"));
+    }
+
+    [Fact]
+    public async Task A_connection_that_is_not_configured_fails_the_run()
+    {
+        var workspace = await SeedWorkspace(out var project);
+        var set = TestData.EnvironmentSet("Proxmox");
+        await Seed(set, TestData.ConnectionEntry(set, "PROXMOX_VE_API_TOKEN", "gone", ConnectionField.ApiToken), TestData.ProjectEnvironmentSet(project, set));
+
+        var environment = await Build(workspace);
+
+        var error = Assert.Single(environment.Errors);
+        Assert.Contains("PROXMOX_VE_API_TOKEN", error);
+        Assert.Contains("\"gone\" is not configured", error);
+    }
+
+    [Fact]
+    public async Task A_secret_shorter_than_the_minimum_fails_the_run()
+    {
+        AddProxmoxConnection(token: "a@pve!b=c");
+        _options.Secrets.MinimumMaskedLength = 12;
+        var workspace = await SeedWorkspace(out var project);
+        var set = TestData.EnvironmentSet();
+        await Seed(set, TestData.ConnectionEntry(set, "PM_API_TOKEN_SECRET", "lab-pve", ConnectionField.ApiTokenSecret), TestData.ProjectEnvironmentSet(project, set));
+
+        var environment = await Build(workspace);
+
+        Assert.Contains("shorter than 12 characters", Assert.Single(environment.Errors));
+    }
+
+    /// <summary>The API refuses one, but an entry saved before the rule, or seeded, is refused again at run time.</summary>
+    [Fact]
+    public async Task A_secret_Terraform_variable_fails_the_run()
+    {
+        var workspace = await SeedWorkspace(out var project);
+        var set = TestData.EnvironmentSet();
+        await Seed(set, TestData.SecretEntry(set, "vsphere_password", Secret, EnvironmentSetEntryKind.TerraformVariable), TestData.ProjectEnvironmentSet(project, set));
+
+        var environment = await Build(workspace);
+
+        Assert.Contains("can't be a Terraform variable", Assert.Single(environment.Errors));
+        Assert.DoesNotContain(SecretValue, environment.Variables.Values);
+    }
+
+    /// <summary>An apply runs the saved plan, which holds the variables, so they're neither passed nor checked.</summary>
+    [Fact]
+    public async Task Without_Terraform_variables_an_unavailable_one_does_not_block_the_command()
+    {
+        var workspace = await SeedWorkspace(out var project);
+        var set = TestData.EnvironmentSet();
+        await Seed(
+            set,
+            TestData.ConnectionEntry(set, "endpoint", "gone", ConnectionField.Url, EnvironmentSetEntryKind.TerraformVariable),
+            TestData.PlainEntry(set, "region", "\"east\"", EnvironmentSetEntryKind.TerraformVariable),
+            TestData.SecretEntry(set, "TOKEN", Secret),
+            TestData.ProjectEnvironmentSet(project, set));
+
+        var withVariables = await Build(workspace);
+        var withoutVariables = await Build(workspace, includeTerraformVariables: false);
+
+        Assert.False(withVariables.IsValid);
+        Assert.True(withoutVariables.IsValid);
+        Assert.False(withoutVariables.Variables.ContainsKey("TF_VAR_region"));
+        Assert.Equal(SecretValue, withoutVariables.Variables["TOKEN"]);
+    }
+
+    [Fact]
+    public async Task The_sources_name_each_set_and_what_it_supplied_but_no_values()
+    {
+        var workspace = await SeedWorkspace(out var project);
+        var first = TestData.EnvironmentSet("Alpha");
+        var second = TestData.EnvironmentSet("Beta");
+        await Seed(
+            first, second,
+            TestData.SecretEntry(first, "TOKEN", Secret),
+            TestData.PlainEntry(second, "region", "\"east\"", EnvironmentSetEntryKind.TerraformVariable),
+            TestData.ProjectEnvironmentSet(project, first),
+            TestData.ProjectEnvironmentSet(project, second));
+
+        var environment = await Build(workspace);
+
+        var line = environment.DescribeSources();
+        Assert.Equal("Environment Sets: \"Alpha\" (TOKEN); \"Beta\" (TF_VAR_region)", line);
+        Assert.DoesNotContain(SecretValue, line);
+        Assert.DoesNotContain(Secret, line);
+    }
+
     private Task<Workspace> SeedWorkspace(string name = "test-workspace") => SeedWorkspace(out _, name);
 
     private Task<Workspace> SeedWorkspace(out Project project, string name = "test-workspace")
@@ -218,7 +343,13 @@ public class TerraformEnvironmentBuilderTests(DatabaseFixture fixture) : Databas
         return result;
     }
 
-    private async Task<TerraformEnvironment> Build(Workspace workspace, params string[] baseline)
+    /// <summary>The infrastructure connections the builder sees. A test adds to it.</summary>
+    private readonly InfrastructureOptions _infrastructure = new();
+
+    private Task<TerraformEnvironment> Build(Workspace workspace, params string[] baseline) =>
+        Build(workspace, includeTerraformVariables: true, baseline);
+
+    private async Task<TerraformEnvironment> Build(Workspace workspace, bool includeTerraformVariables, params string[] baseline)
     {
         var monitor = Substitute.For<IOptionsMonitor<TerraformOptions>>();
         monitor.CurrentValue.Returns(_options);
@@ -234,9 +365,16 @@ public class TerraformEnvironmentBuilderTests(DatabaseFixture fixture) : Databas
             _options,
             regexService,
             apiEnvironment,
-            new SecretSource(apiEnvironment, regexService));
+            new EntryValues(new SecretSource(apiEnvironment, regexService), new InfrastructureConnectionCatalog(Infrastructure()), _options));
 
-        return await builder.BuildAsync(workspace, baseline, Ct);
+        return await builder.BuildAsync(workspace, baseline, includeTerraformVariables, Ct);
+    }
+
+    private IOptionsMonitor<InfrastructureOptions> Infrastructure()
+    {
+        var monitor = Substitute.For<IOptionsMonitor<InfrastructureOptions>>();
+        monitor.CurrentValue.Returns(_infrastructure);
+        return monitor;
     }
 
     private sealed class FakeApiEnvironment(Dictionary<string, string> variables) : IApiEnvironment

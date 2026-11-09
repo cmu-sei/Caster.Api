@@ -43,7 +43,7 @@ namespace Caster.Api.Tests.Domain.Services.Terraform
 
             var environmentBuilder = Substitute.For<ITerraformEnvironmentBuilder>();
             environmentBuilder
-                .BuildAsync(Arg.Any<Workspace>(), Arg.Any<System.Collections.Generic.IEnumerable<string>>(), Arg.Any<System.Threading.CancellationToken>())
+                .BuildAsync(Arg.Any<Workspace>(), Arg.Any<System.Collections.Generic.IEnumerable<string>>(), Arg.Any<bool>(), Arg.Any<System.Threading.CancellationToken>())
                 .Returns(new TerraformEnvironment());
 
             _sut = new ProcessTerraformService(

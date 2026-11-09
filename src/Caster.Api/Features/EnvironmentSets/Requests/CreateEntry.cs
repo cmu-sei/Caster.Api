@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.EnvironmentSets;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Features.Shared;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
@@ -45,14 +46,26 @@ public class CreateEntry
         /// <summary>For a plain entry: the value. Visible to members of every project the set is assigned to.</summary>
         [DataMember]
         public string Value { get; set; }
+
+        /// <summary>For a connection entry: the infrastructure connection's Name. Needs ManageInfrastructure.</summary>
+        [DataMember]
+        public string ConnectionName { get; set; }
+
+        /// <summary>For a connection entry: what it takes from the connection.</summary>
+        [DataMember]
+        public ConnectionField? ConnectionField { get; set; }
     }
 
-    public class Validator(ISecretSource secretSource) : EnvironmentSetEntryFieldsValidator<Command>(secretSource);
+    public class Validator(ISecretSource secretSource, IInfrastructureConnectionCatalog connections)
+        : EnvironmentSetEntryFieldsValidator<Command>(secretSource, connections);
 
     public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IEnvironmentSetViews views) : BaseHandler<Command, EnvironmentSet>
     {
+        /// <summary>A connection entry hands out a hypervisor's settings, so it also needs ManageInfrastructure.</summary>
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize([SystemPermission.ManageEnvironmentSets], cancellationToken);
+            await authorizationService.Authorize([SystemPermission.ManageEnvironmentSets], cancellationToken) &&
+            (request.ValueSource != EnvironmentSetValueSource.Connection ||
+                await authorizationService.Authorize([SystemPermission.ManageInfrastructure], cancellationToken));
 
         public override async Task<EnvironmentSet> HandleRequest(Command request, CancellationToken cancellationToken)
         {
@@ -83,5 +96,7 @@ internal static class EnvironmentSetEntryExtensions
         entry.ValueSource = fields.ValueSource;
         entry.SecretName = fields.ValueSource == EnvironmentSetValueSource.Secret ? fields.SecretName : null;
         entry.Value = fields.ValueSource == EnvironmentSetValueSource.Plain ? fields.Value : null;
+        entry.ConnectionName = fields.ValueSource == EnvironmentSetValueSource.Connection ? fields.ConnectionName?.Trim() : null;
+        entry.ConnectionField = fields.ValueSource == EnvironmentSetValueSource.Connection ? fields.ConnectionField : null;
     }
 }

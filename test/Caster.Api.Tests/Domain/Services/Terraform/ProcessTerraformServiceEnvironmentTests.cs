@@ -92,7 +92,7 @@ public class ProcessTerraformServiceEnvironmentTests : IDisposable
     public async Task An_incomplete_environment_fails_the_command_without_starting_terraform()
     {
         _builder
-            .BuildAsync(Arg.Any<Workspace>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .BuildAsync(Arg.Any<Workspace>(), Arg.Any<IEnumerable<string>>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(new TerraformEnvironment
             {
                 Variables = new() { ["MARKER"] = _marker },
@@ -118,6 +118,7 @@ public class ProcessTerraformServiceEnvironmentTests : IDisposable
         await _builder.Received(1).BuildAsync(
             _workspace,
             Arg.Is<IEnumerable<string>>(x => new HashSet<string>(x).SetEquals(new[] { "PATH", "HOME" })),
+            Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -126,7 +127,7 @@ public class ProcessTerraformServiceEnvironmentTests : IDisposable
         variables["MARKER"] = _marker;
 
         _builder
-            .BuildAsync(Arg.Any<Workspace>(), Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .BuildAsync(Arg.Any<Workspace>(), Arg.Any<IEnumerable<string>>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(new TerraformEnvironment
             {
                 Variables = variables,

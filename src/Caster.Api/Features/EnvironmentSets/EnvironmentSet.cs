@@ -16,7 +16,7 @@ public class EnvironmentSet
     public string Name { get; set; }
     public string Description { get; set; }
 
-    /// <summary>False if any secret entry's source variable is missing or no longer matches the secret patterns.</summary>
+    /// <summary>False if any entry can't be used by a run: see <see cref="EnvironmentSetEntry.Unavailable"/>.</summary>
     public bool IsComplete { get; set; }
 
     public EnvironmentSetEntry[] Entries { get; set; } = [];
@@ -42,8 +42,20 @@ public class EnvironmentSetEntry
     /// <summary>For a plain entry: the stored value.</summary>
     public string Value { get; set; }
 
-    /// <summary>For a secret: whether its source variable is set and matches the secret patterns. Always true for a plain entry.</summary>
+    /// <summary>For a connection entry: the infrastructure connection, by name.</summary>
+    public string ConnectionName { get; set; }
+
+    /// <summary>For a connection entry: what it takes from the connection.</summary>
+    public ConnectionField? ConnectionField { get; set; }
+
+    /// <summary>Whether the value is a secret: a secret entry, or a connection credential.</summary>
+    public bool IsSecret { get; set; }
+
+    /// <summary>Whether a run can use the entry. Always true for a plain entry.</summary>
     public bool IsAvailable { get; set; }
+
+    /// <summary>Why a run can't use the entry, when it can't. Never a value.</summary>
+    public string Unavailable { get; set; }
 }
 
 public class EnvironmentSetProject
@@ -74,8 +86,16 @@ public class ProjectEnvironmentSetEntry
     public string TargetName { get; set; }
     public EnvironmentSetValueSource ValueSource { get; set; }
 
-    /// <summary>For a plain entry: the stored value. Null for a secret.</summary>
+    /// <summary>For a plain entry: the stored value. Null for a secret or a connection entry.</summary>
     public string Value { get; set; }
+
+    /// <summary>For a connection entry that isn't a credential: the connection, by name, and the field.</summary>
+    public string ConnectionName { get; set; }
+
+    public ConnectionField? ConnectionField { get; set; }
+
+    /// <summary>Whether the value is a secret: a secret entry, or a connection credential.</summary>
+    public bool IsSecret { get; set; }
 
     public bool IsAvailable { get; set; }
 }
@@ -106,4 +126,13 @@ public class EnvironmentSecrets
 
     /// <summary>Whether every non-secret API environment variable reaches every run.</summary>
     public bool InheritAll { get; set; }
+
+    /// <summary>
+    /// The shortest secret value a run may get (<c>Terraform:Secrets:MinimumMaskedLength</c>).
+    /// A run whose secret is shorter fails before Terraform starts.
+    /// </summary>
+    public int MinimumMaskedLength { get; set; }
+
+    /// <summary>Available secret names whose values are shorter than <see cref="MinimumMaskedLength"/>.</summary>
+    public string[] TooShort { get; set; } = [];
 }

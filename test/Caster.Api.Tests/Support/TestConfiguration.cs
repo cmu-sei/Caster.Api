@@ -56,7 +56,31 @@ internal static class TestConfiguration
         ["Terraform:DefaultVersion"] = TerraformVersions[0],
         ["Terraform:RootWorkingDirectory"] = TerraformRootWorkingDirectory,
         ["Terraform:GitlabApiUrl"] = GitlabApiUrl,
+
+        // Two infrastructure connections, so Environment Set entries can name them. Their inventory
+        // stays off: the hosted inventory service is removed, and nothing is ever read from them.
+        ["Infrastructure:Connections:0:Name"] = ProxmoxConnection,
+        ["Infrastructure:Connections:0:Provider"] = "proxmox",
+        ["Infrastructure:Connections:0:Url"] = "https://pve.test:8006",
+        ["Infrastructure:Connections:0:ApiToken"] = ProxmoxApiToken,
+        ["Infrastructure:Connections:0:InsecureSkipVerify"] = "true",
+        ["Infrastructure:Connections:1:Name"] = VsphereConnection,
+        ["Infrastructure:Connections:1:Provider"] = "vsphere",
+        ["Infrastructure:Connections:1:Url"] = "https://vcenter.test",
+        ["Infrastructure:Connections:1:Username"] = "caster@vsphere.local",
+        ["Infrastructure:Connections:1:Password"] = VspherePassword,
+        ["Infrastructure:Connections:1:Datacenters:0"] = "DC1",
     };
+
+    /// <summary>The Proxmox connection in <see cref="Values"/>.</summary>
+    public const string ProxmoxConnection = "lab-pve";
+
+    public const string ProxmoxApiToken = "caster@pve!ci=0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b";
+
+    /// <summary>The vSphere connection in <see cref="Values"/>.</summary>
+    public const string VsphereConnection = "lab-vcenter";
+
+    public const string VspherePassword = "vc-passw0rd-for-tests";
 
     /// <summary>Deletes what <see cref="TerraformBinaryPath"/> and <see cref="TerraformRootWorkingDirectory"/> created.</summary>
     public static void RemoveTerraformDirectories()

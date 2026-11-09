@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Services.EnvironmentSets;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Features.EnvironmentSets;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Tests.Support;
@@ -119,7 +120,7 @@ public class EnvironmentSetSeederTests(DatabaseFixture fixture) : DatabaseTestBa
     public void No_seeds_is_no_error()
     {
         Assert.Empty(Seed());
-        Assert.Empty(EnvironmentSetSeeder.Seed(null, Db, SecretSource(true)));
+        Assert.Empty(EnvironmentSetSeeder.Seed(null, Db, SecretSource(true), Connections()));
     }
 
     private static SeedEnvironmentSet VsphereSet() => new()
@@ -140,7 +141,7 @@ public class EnvironmentSetSeederTests(DatabaseFixture fixture) : DatabaseTestBa
     private List<string> Seed(SeedEnvironmentSet[] seeds, bool available)
     {
         using var context = NewContext();
-        return EnvironmentSetSeeder.Seed(seeds, context, SecretSource(available));
+        return EnvironmentSetSeeder.Seed(seeds, context, SecretSource(available), Connections());
     }
 
     private static ISecretSource SecretSource(bool available)
@@ -151,5 +152,17 @@ public class EnvironmentSetSeederTests(DatabaseFixture fixture) : DatabaseTestBa
         environment.GetVariable(Secret).Returns(available ? "s3cr3t-value" : null);
 
         return new SecretSource(environment, new RegexService(monitor));
+    }
+
+    /// <summary>One Proxmox connection, lab-pve, with an api token.</summary>
+    private static IInfrastructureConnectionCatalog Connections()
+    {
+        var monitor = Substitute.For<IOptionsMonitor<InfrastructureOptions>>();
+        monitor.CurrentValue.Returns(new InfrastructureOptions
+        {
+            Connections = [new InfrastructureConnectionOptions { Name = "lab-pve", Provider = "proxmox", Url = "https://pve.lab:8006", ApiToken = "caster@pve!ci=0123456789abcdef" }]
+        });
+
+        return new InfrastructureConnectionCatalog(monitor);
     }
 }

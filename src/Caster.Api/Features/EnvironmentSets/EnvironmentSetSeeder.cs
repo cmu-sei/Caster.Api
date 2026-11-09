@@ -7,6 +7,7 @@ using System.Linq;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.EnvironmentSets;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Infrastructure.Options;
 using EnvironmentSetEntity = Caster.Api.Domain.Models.EnvironmentSet;
 using EnvironmentSetEntryEntity = Caster.Api.Domain.Models.EnvironmentSetEntry;
@@ -20,7 +21,7 @@ namespace Caster.Api.Features.EnvironmentSets;
 public static class EnvironmentSetSeeder
 {
     /// <returns>Why the seeds could not be applied; empty when they were.</returns>
-    public static List<string> Seed(IEnumerable<SeedEnvironmentSet> seeds, CasterContext context, ISecretSource secretSource)
+    public static List<string> Seed(IEnumerable<SeedEnvironmentSet> seeds, CasterContext context, ISecretSource secretSource, IInfrastructureConnectionCatalog connections)
     {
         var sets = seeds?.Where(x => x is not null).ToList() ?? [];
 
@@ -29,7 +30,7 @@ public static class EnvironmentSetSeeder
             return [];
         }
 
-        var errors = Validate(sets, secretSource);
+        var errors = Validate(sets, secretSource, connections);
 
         if (errors.Count > 0)
         {
@@ -64,10 +65,10 @@ public static class EnvironmentSetSeeder
         return [];
     }
 
-    private static List<string> Validate(List<SeedEnvironmentSet> sets, ISecretSource secretSource)
+    private static List<string> Validate(List<SeedEnvironmentSet> sets, ISecretSource secretSource, IInfrastructureConnectionCatalog connections)
     {
         var errors = new List<string>();
-        var entryValidator = new EnvironmentSetEntryFieldsValidator<SeedEnvironmentSetEntry>(secretSource);
+        var entryValidator = new EnvironmentSetEntryFieldsValidator<SeedEnvironmentSetEntry>(secretSource, connections);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         for (var i = 0; i < sets.Count; i++)

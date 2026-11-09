@@ -25,7 +25,7 @@ public interface IEnvironmentSetViews
     Task<ProjectEnvironmentSet[]> GetProjectSets(Guid projectId, CancellationToken cancellationToken);
 }
 
-public class EnvironmentSetViews(CasterContext dbContext, ISecretSource secretSource) : IEnvironmentSetViews
+public class EnvironmentSetViews(CasterContext dbContext, IEntryValues entryValues) : IEnvironmentSetViews
 {
     public async Task<EnvironmentSet[]> GetSets(Expression<Func<Domain.Models.EnvironmentSet, bool>> filter, CancellationToken cancellationToken)
     {
@@ -63,14 +63,25 @@ public class EnvironmentSetViews(CasterContext dbContext, ISecretSource secretSo
             .Select(set =>
             {
                 var entries = OrderEntries(set.Entries)
-                    .Select(x => new ProjectEnvironmentSetEntry
+                    .Select(x =>
                     {
-                        Id = x.Id,
-                        Kind = x.Kind,
-                        TargetName = x.TargetName,
-                        ValueSource = x.ValueSource,
-                        Value = x.ValueSource == EnvironmentSetValueSource.Plain ? x.Value : null,
-                        IsAvailable = IsAvailable(x)
+                        var secret = entryValues.IsSecret(x);
+                        // Members see which connection a non-secret field comes from, and only
+                        // whether a credential is available.
+                        var connection = x.ValueSource == EnvironmentSetValueSource.Connection && !secret;
+
+                        return new ProjectEnvironmentSetEntry
+                        {
+                            Id = x.Id,
+                            Kind = x.Kind,
+                            TargetName = x.TargetName,
+                            ValueSource = x.ValueSource,
+                            Value = x.ValueSource == EnvironmentSetValueSource.Plain ? x.Value : null,
+                            ConnectionName = connection ? x.ConnectionName : null,
+                            ConnectionField = connection ? x.ConnectionField : null,
+                            IsSecret = secret,
+                            IsAvailable = entryValues.Resolve(x).IsAvailable
+                        };
                     })
                     .ToArray();
 
@@ -90,16 +101,25 @@ public class EnvironmentSetViews(CasterContext dbContext, ISecretSource secretSo
     private EnvironmentSet ToView(Domain.Models.EnvironmentSet set)
     {
         var entries = OrderEntries(set.Entries)
-            .Select(x => new EnvironmentSetEntry
+            .Select(x =>
             {
-                Id = x.Id,
-                EnvironmentSetId = x.EnvironmentSetId,
-                Kind = x.Kind,
-                TargetName = x.TargetName,
-                ValueSource = x.ValueSource,
-                SecretName = x.ValueSource == EnvironmentSetValueSource.Secret ? x.SecretName : null,
-                Value = x.ValueSource == EnvironmentSetValueSource.Plain ? x.Value : null,
-                IsAvailable = IsAvailable(x)
+                var value = entryValues.Resolve(x);
+
+                return new EnvironmentSetEntry
+                {
+                    Id = x.Id,
+                    EnvironmentSetId = x.EnvironmentSetId,
+                    Kind = x.Kind,
+                    TargetName = x.TargetName,
+                    ValueSource = x.ValueSource,
+                    SecretName = x.ValueSource == EnvironmentSetValueSource.Secret ? x.SecretName : null,
+                    Value = x.ValueSource == EnvironmentSetValueSource.Plain ? x.Value : null,
+                    ConnectionName = x.ValueSource == EnvironmentSetValueSource.Connection ? x.ConnectionName : null,
+                    ConnectionField = x.ValueSource == EnvironmentSetValueSource.Connection ? x.ConnectionField : null,
+                    IsSecret = entryValues.IsSecret(x),
+                    IsAvailable = value.IsAvailable,
+                    Unavailable = value.Unavailable
+                };
             })
             .ToArray();
 
@@ -116,9 +136,6 @@ public class EnvironmentSetViews(CasterContext dbContext, ISecretSource secretSo
                 .ToArray()
         };
     }
-
-    private bool IsAvailable(Domain.Models.EnvironmentSetEntry entry) =>
-        entry.ValueSource != EnvironmentSetValueSource.Secret || secretSource.IsAvailable(entry.SecretName);
 
     private static IEnumerable<Domain.Models.EnvironmentSetEntry> OrderEntries(IEnumerable<Domain.Models.EnvironmentSetEntry> entries) =>
         entries.OrderBy(x => x.Kind).ThenBy(x => x.TargetName, StringComparer.Ordinal);

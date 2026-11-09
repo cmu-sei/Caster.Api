@@ -202,8 +202,17 @@ public abstract class BaseTerraformService : ITerraformService
                                               Action<string> outputHandler, bool resume = false,
                                               Func<string, Task> finalizer = null, bool redirectStandardError = true)
     {
-        var environment = await _environmentBuilder.BuildAsync(workspace, BaselineEnvironmentVariables);
+        var arguments = argumentList?.ToArray();
+        var command = arguments?.FirstOrDefault();
+
+        var environment = await _environmentBuilder.BuildAsync(
+            workspace, BaselineEnvironmentVariables, ReadsVariables(command, resume));
         var masker = environment.Masker;
+
+        // A plan or apply names the sets it used first, so the saved output records them.
+        var sourcesLine = !resume && environment.IsValid && command is "plan" or "apply"
+            ? environment.DescribeSources()
+            : null;
 
         Action<string> maskedOutputHandler = outputHandler is null
             ? null
@@ -211,17 +220,33 @@ public abstract class BaseTerraformService : ITerraformService
 
         Func<string, Task> maskedFinalizer = finalizer is null
             ? null
-            : output => finalizer(masker.Apply(output));
+            : output => finalizer(WithSources(sourcesLine, masker.Apply(output)));
 
-        var result = await RunCore(workspace, argumentList, environment, maskedOutputHandler, resume, maskedFinalizer, redirectStandardError);
+        if (sourcesLine is not null)
+        {
+            outputHandler?.Invoke(sourcesLine);
+        }
+
+        var result = await RunCore(workspace, arguments, environment, maskedOutputHandler, resume, maskedFinalizer, redirectStandardError);
 
         if (result is not null)
         {
-            result.Output = masker.Apply(result.Output);
+            result.Output = WithSources(sourcesLine, masker.Apply(result.Output));
         }
 
         return result;
     }
+
+    /// <summary>
+    /// Whether a command reads the configuration's variables, so needs the Terraform-variable
+    /// entries. An apply runs the saved plan, which holds them; init, workspace, show, output
+    /// and state commands don't evaluate them. A resumed command is treated as reading them.
+    /// </summary>
+    public static bool ReadsVariables(string command, bool resume) =>
+        resume || command is "plan" or "import" or "refresh" or null;
+
+    private static string WithSources(string sourcesLine, string output) =>
+        sourcesLine is null ? output : $"{sourcesLine}{Environment.NewLine}{output}";
 
     /// <summary>
     /// The result of a command that cannot start because its environment is incomplete

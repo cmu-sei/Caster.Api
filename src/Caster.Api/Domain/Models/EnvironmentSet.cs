@@ -48,7 +48,55 @@ public enum EnvironmentSetValueSource
     /// The value is read at run time from the API environment variable named
     /// <see cref="EnvironmentSetEntry.SecretName"/>, which must match a secret pattern.
     /// </summary>
-    Secret
+    Secret,
+
+    /// <summary>
+    /// The value is read at run time from the infrastructure connection named
+    /// <see cref="EnvironmentSetEntry.ConnectionName"/>: its <see cref="EnvironmentSetEntry.ConnectionField"/>.
+    /// </summary>
+    Connection
+}
+
+/// <summary>
+/// What a <see cref="EnvironmentSetValueSource.Connection"/> entry takes from its connection.
+/// A fixed list, worked out from Caster's connection settings, not from any Terraform provider.
+/// </summary>
+public enum ConnectionField
+{
+    /// <summary>The connection's Url, as configured.</summary>
+    Url,
+
+    /// <summary>The host, and the port when the Url names one, without scheme or path.</summary>
+    Host,
+
+    /// <summary>Proxmox: the Url with /api2/json, which the Telmate provider takes.</summary>
+    ApiUrl,
+
+    /// <summary>"true" or "false", from InsecureSkipVerify.</summary>
+    Insecure,
+
+    Username,
+
+    /// <summary>Secret.</summary>
+    Password,
+
+    /// <summary>Proxmox, secret: the whole user@realm!id=secret token.</summary>
+    ApiToken,
+
+    /// <summary>Proxmox, secret: the token before its first '=', user@realm!id.</summary>
+    ApiTokenId,
+
+    /// <summary>Proxmox, secret: the token after its first '='.</summary>
+    ApiTokenSecret,
+
+    /// <summary>The datastore or storage of the connection's only IsoLocations entry.</summary>
+    IsoStorage,
+
+    /// <summary>vSphere: the folder of the connection's only IsoLocations entry, empty for none.</summary>
+    IsoFolder,
+
+    /// <summary>vSphere: the connection's only Datacenters entry.</summary>
+    Datacenter
 }
 
 public class EnvironmentSetEntry : IEntity
@@ -74,6 +122,15 @@ public class EnvironmentSetEntry : IEntity
 
     /// <summary>For <see cref="EnvironmentSetValueSource.Plain"/>: the stored value.</summary>
     public string Value { get; set; }
+
+    /// <summary>
+    /// For <see cref="EnvironmentSetValueSource.Connection"/>: the infrastructure connection's Name,
+    /// as spelled in configuration when the entry was saved. Matched ignoring case.
+    /// </summary>
+    public string ConnectionName { get; set; }
+
+    /// <summary>For <see cref="EnvironmentSetValueSource.Connection"/>: what the entry takes from the connection.</summary>
+    public ConnectionField? ConnectionField { get; set; }
 
     /// <summary>The environment variable name this entry sets in the run.</summary>
     [NotMapped]

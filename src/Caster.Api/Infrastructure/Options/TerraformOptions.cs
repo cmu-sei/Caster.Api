@@ -128,6 +128,14 @@ public class SecretOptions
     /// because the configuration binder appends to an array that already holds values.
     /// </summary>
     public string[] Patterns { get; set; } = [];
+
+    /// <summary>
+    /// The shortest secret value Caster will pass to a run. Output is masked by replacing
+    /// every occurrence of a secret, so a short one ("1", "true", "lab") would also replace
+    /// ordinary text, and corrupt the JSON Caster reads from Terraform. A run whose secret is
+    /// shorter fails before Terraform starts. Lowering this risks that corruption.
+    /// </summary>
+    public int MinimumMaskedLength { get; set; } = Caster.Api.Domain.Services.EnvironmentSets.EnvironmentSetRules.DefaultMinimumMaskedLength;
 }
 
 public class ConfigMap

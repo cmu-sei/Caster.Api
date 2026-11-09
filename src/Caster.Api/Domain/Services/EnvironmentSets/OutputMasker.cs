@@ -20,8 +20,16 @@ public class OutputMasker
 
     private readonly string[] _values;
 
-    public OutputMasker(IEnumerable<string> secretValues)
+    private readonly int _minimumLength;
+
+    /// <param name="secretValues">The values to mask.</param>
+    /// <param name="minimumLength">
+    /// Values, and lines of multi-line values, shorter than this are not masked: they would hit
+    /// ordinary text. A run is refused a secret this short, so only lines of one are skipped.
+    /// </param>
+    public OutputMasker(IEnumerable<string> secretValues, int minimumLength = EnvironmentSetRules.DefaultMinimumMaskedLength)
     {
+        _minimumLength = Math.Max(1, minimumLength);
         var values = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var value in secretValues ?? [])
@@ -62,9 +70,9 @@ public class OutputMasker
         return text;
     }
 
-    private static void Add(HashSet<string> values, string value)
+    private void Add(HashSet<string> values, string value)
     {
-        if (value.Trim().Length >= EnvironmentSetRules.MinimumMaskedLength)
+        if (value.Trim().Length >= _minimumLength)
         {
             values.Add(value);
         }

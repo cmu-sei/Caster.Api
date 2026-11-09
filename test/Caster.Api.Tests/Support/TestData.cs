@@ -322,6 +322,24 @@ public static class TestData
         };
 
     /// <summary>The assignment of <paramref name="set"/> to <paramref name="project"/>.</summary>
+    /// <summary>A connection entry of <paramref name="set"/>.</summary>
+    public static EnvironmentSetEntry ConnectionEntry(
+        EnvironmentSet set,
+        string targetName,
+        string connectionName,
+        ConnectionField field,
+        EnvironmentSetEntryKind kind = EnvironmentSetEntryKind.EnvironmentVariable) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            EnvironmentSetId = set.Id,
+            Kind = kind,
+            TargetName = targetName,
+            ValueSource = EnvironmentSetValueSource.Connection,
+            ConnectionName = connectionName,
+            ConnectionField = field
+        };
+
     public static ProjectEnvironmentSet ProjectEnvironmentSet(Project project, EnvironmentSet set) =>
         new()
         {
