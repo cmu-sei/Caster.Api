@@ -214,6 +214,12 @@ public class InventoryService : BackgroundService, IInventoryService
 
         target.Wake();
 
+        // A caller that has already gone gets an answer straight away. The refresh it
+        // asked for still runs; only the wait is skipped, so a refresh that happens to
+        // finish first can't make an abandoned request look completed.
+        if (cancellationToken.IsCancellationRequested)
+            return false;
+
         // The provider call runs on the background service with the host's
         // stopping token. The request's token only bounds how long we wait here,
         // so a disconnected http caller never cancels the refresh itself.
