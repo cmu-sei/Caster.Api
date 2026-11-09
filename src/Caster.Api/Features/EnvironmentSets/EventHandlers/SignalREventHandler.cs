@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services.ProjectGroups;
 using Caster.Api.Hubs;
 using Crucible.Common.EntityEvents.Events;
 using MediatR;
@@ -103,11 +104,12 @@ public class EnvironmentSetSignalRHandler(CasterContext db, IEnvironmentSetViews
         }
     }
 
+    /// <summary>Every project the set reaches, directly or through a group.</summary>
     private async Task<List<Guid>> AssignedProjects(Guid setId, CancellationToken cancellationToken) =>
-        await db.ProjectEnvironmentSets
-            .AsNoTracking()
+        await db.EffectiveSetAssignments()
             .Where(x => x.EnvironmentSetId == setId)
             .Select(x => x.ProjectId)
+            .Distinct()
             .ToListAsync(cancellationToken);
 }
 

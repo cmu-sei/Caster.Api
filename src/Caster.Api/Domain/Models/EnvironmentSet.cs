@@ -28,6 +28,8 @@ public class EnvironmentSet : IEntity
     public virtual ICollection<EnvironmentSetEntry> Entries { get; set; } = new List<EnvironmentSetEntry>();
 
     public virtual ICollection<ProjectEnvironmentSet> Projects { get; set; } = new List<ProjectEnvironmentSet>();
+
+    public virtual ICollection<ProjectGroupEnvironmentSet> ProjectGroups { get; set; } = new List<ProjectGroupEnvironmentSet>();
 }
 
 public enum EnvironmentSetEntryKind

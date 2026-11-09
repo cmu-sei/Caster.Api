@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services.ProjectGroups;
 using Caster.Api.Domain.Events;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
@@ -120,9 +121,9 @@ namespace Caster.Api.Features.Runs.EventHandlers
                     }
                     else
                     {
-                        // select a host. multiply by 1.0 to cast as double
-                        host = await _db.Hosts
-                            .Where(h => h.ProjectId == projectId && h.Enabled && !h.Development)
+                        // select a host from the project's own and its group's. multiply by 1.0 to cast as double
+                        host = await _db.ProjectHosts(projectId)
+                            .Where(h => h.Enabled && !h.Development)
                             .OrderBy(h => (h.Machines.Count * 1.0 / h.MaximumMachines * 1.0) * 100.0).FirstOrDefaultAsync();
                     }
 

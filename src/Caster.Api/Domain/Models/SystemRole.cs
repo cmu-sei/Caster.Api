@@ -52,7 +52,8 @@ public enum SystemPermission
     ViewInfrastructure,
     ViewEnvironmentSets,
     ManageEnvironmentSets,
-    ManageInfrastructure
+    ManageInfrastructure,
+    ManageProjectGroups
 }
 
 /// <summary>

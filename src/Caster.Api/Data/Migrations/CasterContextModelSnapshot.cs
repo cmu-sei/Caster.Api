@@ -459,15 +459,24 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
+                    b.Property<Guid?>("ProjectGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_group_id");
+
                     b.Property<Guid?>("ProjectId")
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProjectGroupId");
+
                     b.HasIndex("ProjectId");
 
-                    b.ToTable("hosts");
+                    b.ToTable("hosts", t =>
+                        {
+                            t.HasCheckConstraint("CK_hosts_one_owner", "project_id IS NULL OR project_group_id IS NULL");
+                        });
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.HostMachine", b =>
@@ -671,9 +680,15 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("partition_id");
 
+                    b.Property<Guid?>("ProjectGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_group_id");
+
                     b.HasKey("Id");
 
                     b.HasIndex("PartitionId");
+
+                    b.HasIndex("ProjectGroupId");
 
                     b.ToTable("projects");
                 });
@@ -702,6 +717,138 @@ namespace Caster.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("project_environment_sets");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<Guid?>("PartitionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("partition_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.HasIndex("PartitionId");
+
+                    b.ToTable("project_groups");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectGroupEnvironmentSet", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<Guid>("EnvironmentSetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("environment_set_id");
+
+                    b.Property<Guid>("ProjectGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_group_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentSetId");
+
+                    b.HasIndex("ProjectGroupId", "EnvironmentSetId")
+                        .IsUnique();
+
+                    b.ToTable("project_group_environment_sets");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectGroupInventoryConnection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("ConnectionName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("connection_name");
+
+                    b.Property<string>("NormalizedConnectionName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("normalized_connection_name");
+
+                    b.Property<Guid>("ProjectGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_group_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedConnectionName");
+
+                    b.HasIndex("ProjectGroupId", "NormalizedConnectionName")
+                        .IsUnique();
+
+                    b.ToTable("project_group_inventory_connections");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectGroupMembership", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<Guid>("ProjectGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_group_id");
+
+                    b.Property<Guid>("RoleId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("f870d8ee-7332-4f7f-8ee0-63bd07cfd7e4"))
+                        .HasColumnName("role_id");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("RoleId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ProjectGroupId", "UserId", "GroupId")
+                        .IsUnique();
+
+                    b.ToTable("project_group_memberships", t =>
+                        {
+                            t.HasCheckConstraint("CK_project_group_memberships_user_or_group", "(user_id IS NULL) <> (group_id IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.ProjectInventoryConnection", b =>
@@ -1276,11 +1423,18 @@ namespace Caster.Api.Data.Migrations
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Host", b =>
                 {
+                    b.HasOne("Caster.Api.Domain.Models.ProjectGroup", "ProjectGroup")
+                        .WithMany("Hosts")
+                        .HasForeignKey("ProjectGroupId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Caster.Api.Domain.Models.Project", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId");
 
                     b.Navigation("Project");
+
+                    b.Navigation("ProjectGroup");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.HostMachine", b =>
@@ -1341,7 +1495,14 @@ namespace Caster.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("PartitionId");
 
+                    b.HasOne("Caster.Api.Domain.Models.ProjectGroup", "ProjectGroup")
+                        .WithMany("Projects")
+                        .HasForeignKey("ProjectGroupId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Partition");
+
+                    b.Navigation("ProjectGroup");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.ProjectEnvironmentSet", b =>
@@ -1361,6 +1522,79 @@ namespace Caster.Api.Data.Migrations
                     b.Navigation("EnvironmentSet");
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectGroup", b =>
+                {
+                    b.HasOne("Caster.Api.Domain.Models.Partition", "Partition")
+                        .WithMany()
+                        .HasForeignKey("PartitionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Partition");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectGroupEnvironmentSet", b =>
+                {
+                    b.HasOne("Caster.Api.Domain.Models.EnvironmentSet", "EnvironmentSet")
+                        .WithMany("ProjectGroups")
+                        .HasForeignKey("EnvironmentSetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Caster.Api.Domain.Models.ProjectGroup", "ProjectGroup")
+                        .WithMany("EnvironmentSets")
+                        .HasForeignKey("ProjectGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EnvironmentSet");
+
+                    b.Navigation("ProjectGroup");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectGroupInventoryConnection", b =>
+                {
+                    b.HasOne("Caster.Api.Domain.Models.ProjectGroup", "ProjectGroup")
+                        .WithMany("InventoryConnections")
+                        .HasForeignKey("ProjectGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ProjectGroup");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectGroupMembership", b =>
+                {
+                    b.HasOne("Caster.Api.Domain.Models.Group", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Caster.Api.Domain.Models.ProjectGroup", "ProjectGroup")
+                        .WithMany("Memberships")
+                        .HasForeignKey("ProjectGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Caster.Api.Domain.Models.ProjectRole", "Role")
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Caster.Api.Domain.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Group");
+
+                    b.Navigation("ProjectGroup");
+
+                    b.Navigation("Role");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.ProjectInventoryConnection", b =>
@@ -1500,6 +1734,8 @@ namespace Caster.Api.Data.Migrations
                 {
                     b.Navigation("Entries");
 
+                    b.Navigation("ProjectGroups");
+
                     b.Navigation("Projects");
                 });
 
@@ -1546,6 +1782,19 @@ namespace Caster.Api.Data.Migrations
                     b.Navigation("InventoryConnections");
 
                     b.Navigation("Memberships");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectGroup", b =>
+                {
+                    b.Navigation("EnvironmentSets");
+
+                    b.Navigation("Hosts");
+
+                    b.Navigation("InventoryConnections");
+
+                    b.Navigation("Memberships");
+
+                    b.Navigation("Projects");
                 });
 
             modelBuilder.Entity("Caster.Api.Domain.Models.Run", b =>

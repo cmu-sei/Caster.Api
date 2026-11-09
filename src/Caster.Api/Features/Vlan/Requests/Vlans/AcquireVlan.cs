@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using MediatR;
 using AutoMapper;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services.ProjectGroups;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Services;
@@ -75,10 +76,12 @@ public class AcquireVlan
             }
             else if (command.ProjectId.HasValue)
             {
-                partitionId = await dbContext.Projects
-                    .Where(x => x.Id == command.ProjectId.Value)
-                    .Select(x => x.PartitionId)
-                    .FirstOrDefaultAsync(cancellationToken);
+                // The project's own partition, then its group's, then the default.
+                partitionId = await dbContext.ProjectPartitionId(command.ProjectId.Value, cancellationToken)
+                    ?? await dbContext.Partitions
+                        .Where(x => x.IsDefault)
+                        .Select(x => (Guid?)x.Id)
+                        .FirstOrDefaultAsync(cancellationToken);
             }
             else
             {

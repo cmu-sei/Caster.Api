@@ -23,6 +23,10 @@ namespace Caster.Api.Domain.Models
         public virtual ICollection<Directory> Directories { get; set; } = new List<Directory>();
 
         public Guid? PartitionId { get; set; }
+
+        /// <summary>The project group the project is in, if any; at most one.</summary>
+        public Guid? ProjectGroupId { get; set; }
+        public virtual ProjectGroup ProjectGroup { get; set; }
         public virtual Partition Partition { get; set; }
 
         public virtual ICollection<ProjectMembership> Memberships { get; set; } = new List<ProjectMembership>();
