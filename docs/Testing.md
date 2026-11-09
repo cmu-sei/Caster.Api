@@ -15,19 +15,28 @@ Docker must be running for every test that takes a database. The suite starts an
 A single class or test can be run with a filter (the leading dot keeps `RunRequestTests` from also matching other classes that end the same way):
 
 ```bash
-dotnet test test/Caster.Api.Tests --filter "FullyQualifiedName~.WorkspaceRequestTests"
-dotnet test test/Caster.Api.Tests --filter "FullyQualifiedName~.WorkspaceRequestTests.Get_returns_the_workspace_to_a_member_holding_ViewProject"
+dotnet test test/Caster.Api.Tests --filter-class "*.WorkspaceRequestTests"
+dotnet test test/Caster.Api.Tests --filter-method "*.WorkspaceRequestTests.Get_returns_the_workspace_to_a_member_holding_ViewProject"
 ```
 
-To see which database provider the run used, pass `-- xUnit.DiagnosticMessages=true`; the output then carries `[Caster.Api.Tests] database provider: PostgreSQL (postgres:16-alpine, real migrations)`. Never set `diagnosticMessages` in `xunit.runner.json`: the run then hangs after the last test.
+The suite runs on Microsoft.Testing.Platform (`"test": { "runner": "Microsoft.Testing.Platform" }` in `global.json`), which xunit.v3 4 requires on the .NET 10 SDK, so test options are xUnit's own (`--filter-class`, `--filter-method`, `--xunit-diagnostics`; see `dotnet test test/Caster.Api.Tests --help`) rather than VSTest's `--filter` and `-- xUnit.…` settings.
+
+To see which database provider the run used, run the suite with `dotnet run --project test/Caster.Api.Tests -- --xunit-diagnostics on`; the output then carries `[Caster.Api.Tests] database provider: PostgreSQL (postgres:16-alpine, real migrations)`. The banner is printed with `dotnet run` because `dotnet test` does not forward the test app's diagnostic messages. Never set `diagnosticMessages` in `xunit.runner.json`: the run then hangs after the last test.
 
 # Coverage
 
 ```bash
-dotnet test test/Caster.Api.Tests --collect:"XPlat Code Coverage"
+dotnet test test/Caster.Api.Tests --results-directory TestResults/coverage \
+  --coverlet --coverlet-output-format cobertura \
+  --coverlet-include "[Caster.Api]*" \
+  --coverlet-exclude "[*.Migrations.PostgreSQL]*" --coverlet-exclude "[*.Tests]*" \
+  --coverlet-exclude-by-file "**/.nuget/packages/**/*.cs" --coverlet-exclude-by-file "**/Migrations/**/*.cs" \
+  --coverlet-exclude-by-attribute GeneratedCodeAttribute --coverlet-exclude-by-attribute CompilerGeneratedAttribute \
+  --coverlet-exclude-by-attribute ExcludeFromCodeCoverageAttribute --coverlet-exclude-by-attribute Obsolete \
+  --coverlet-skip-auto-props
 ```
 
-`coverlet.runsettings` (shared by the standard) is applied automatically through `RunSettingsFilePath` in `Caster.Api.Tests.csproj`, with its collector disabled by default, so a plain run collects nothing and a coverage run cannot lose its exclusions. Caster's migrations live in the API assembly, so they are excluded by the `**/Migrations/**` file filter rather than by assembly. Coverage is a local diagnostic; CI neither collects nor gates on it.
+Coverage comes from `coverlet.MTP`, the Microsoft.Testing.Platform form of coverlet, and is opt-in through `--coverlet`. The include filter keeps the figure to `Caster.Api` (without it coverlet also instruments third-party assemblies that ship sources), and the rest exclude the test assembly, the `Crucible.Common.EntityEvents` content files and generated code. Caster's migrations live in the API assembly, so they are excluded by the `**/Migrations/**` file filter rather than by assembly. On the same code this reports the same figure as the VSTest run did (8,795 of 11,783 lines). Read cobertura totals from the root element's `lines-covered` and `lines-valid`. Coverage is a local diagnostic; CI neither collects nor gates on it.
 
 # Build settings
 
@@ -35,7 +44,8 @@ dotnet test test/Caster.Api.Tests --collect:"XPlat Code Coverage"
 - The root `.editorconfig` raises xUnit1004, so a `[Fact(Skip = ...)]` fails the build.
 - The repository has no root `Directory.Build.props`, so the application project is not built with warnings as errors, as the standard intends, and it reports warnings today: CS0168 (`Domain/Models/Resource.cs`), CS9107 (the SignalR event handlers), CS9113 (unread constructor parameters in Projects/Create, Projects/Delete, Workspaces/Create, Workspaces/Delete, SystemRoles/Delete and Vlan DeletePartition), CA2017 and CA2200 (`FileVersionScrubService`, `PlayerSyncService`), and the restore warning NU1608 (Microsoft.CodeAnalysis 5.0.0 against Workspaces.MSBuild 4.14.0). The standard's `verify.sh` counts only the test project's own warnings and lists these under its PASS line as `note: application projects warn (not counted)`; the test project builds with no warning. Fixing them is application work.
 - Caster has no central package management, so the test packages carry their versions in `Caster.Api.Tests.csproj`, pinned by the standard (`agent-docs/api-testing/test-packages.props`; `sync.sh` checks them). Implicit usings and nullable reference types are off, as in `Caster.Api`.
-- The suite runs in the VSTest mode of `dotnet test`; see the standard's README for why not Microsoft.Testing.Platform.
+- The suite runs on Microsoft.Testing.Platform: `global.json` selects it for `dotnet test`, and `UseMicrosoftTestingPlatformRunner` in the project file builds the test app for it. Coverage comes from `coverlet.MTP`; `xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk` are not referenced (both VSTest only).
+- CI is the shared `dotnet-test.yaml` workflow in cmu-sei/Crucible-Github-Actions, called from `.github/workflows/build-and-test.yml`; it reads the runner from `global.json`.
 
 # How the harness works
 
@@ -86,7 +96,7 @@ Hubs and handlers the recorder cannot observe are driven directly: `Hubs/Project
 
 Variable request tests also read saved rows through `GetWorkspaceFiles`, checking the generated design filename and Terraform declaration content. System-role and group-membership request tests cover numeric enum inputs as well as named values. Directory create tests send client-chosen identifiers and read the stored row through a cold context. Background-worker tests run the real queue dispatch and MediatR handler against their own PostgreSQL database; Player sync startup and shutdown run in a child process that the parent always terminates and joins, keeping its removal worker out of the suite process. Child failure messages and output are retained for diagnostics.
 
-The Player sync child runner disables color so ANSI reset sequences cannot prefix its exact completion marker. The child writes and flushes that marker only after its assertions finish, then exits explicitly to stop its isolated threads. The parent decides from the marker, not the runner's shutdown or exit code, with a cancellable two-minute deadline for child startup and scheduling. It always terminates any child still alive and joins the process and both output readers. To exercise the GitHub runner environment on a two-core Linux host, run `taskset -c 0,1 env -u NO_COLOR dotnet test test/Caster.Api.Tests --filter 'FullyQualifiedName~.PlayerSyncServiceTests'`.
+The Player sync child runs the test assembly as a Microsoft.Testing.Platform app filtered to one method (`--filter-method`), and disables color (`--ansi off`) so ANSI reset sequences cannot prefix its exact completion marker. The child writes and flushes that marker only after its assertions finish, then exits explicitly to stop its isolated threads. The parent decides from the marker, not the runner's shutdown or exit code (a child that prints the platform's `Test run summary:` line instead failed or matched no test), with a cancellable two-minute deadline for child startup and scheduling. It always terminates any child still alive and joins the process and both output readers. To exercise the GitHub runner environment on a two-core Linux host, run `taskset -c 0,1 env -u NO_COLOR dotnet test test/Caster.Api.Tests --filter-class '*.PlayerSyncServiceTests'`.
 
 The removal-worker probe exempts the startup thread only for its first synchronous scope lookup. Later scopes are removal work even when an async continuation resumes on that same pool thread; their signals, not thread identity or sleeps, establish the before-stop and after-stop observations.
 
@@ -122,4 +132,4 @@ The project mirrors `src/Caster.Api`:
 
 # Continuous integration
 
-`.github/workflows/build-and-test.yml` (the standard's workflow) restores, builds and runs `dotnet test test/Caster.Api.Tests` on pull requests and pushes to `main`, then greps the log for the PostgreSQL provider banner and uploads the TRX results. Check the setup with `agent-docs/api-testing/verify.sh --app caster.api <repo>` and `sync.sh --check <repo>`. `verify.sh` includes the gates check (`check-repo.js gates`), whose allow-list for this app is `agent-docs/api-test-gaps/caster.api.txt`, outside the repo.
+`.github/workflows/build-and-test.yml` calls the shared `dotnet-test.yaml`, which restores, builds and runs the suite (with `dotnet run --project test/Caster.Api.Tests`, so the banner reaches the log) on pull requests and pushes to `main`, then greps the log for the PostgreSQL provider banner and uploads the TRX results. Check the setup with `agent-docs/api-testing/verify.sh --app caster.api <repo>` and `sync.sh --check <repo>`. `verify.sh` includes the gates check (`check-repo.js gates`), whose allow-list for this app is `agent-docs/api-test-gaps/caster.api.txt`, outside the repo.
