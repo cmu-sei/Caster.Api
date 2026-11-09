@@ -13,6 +13,7 @@ using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Tests.Support;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -324,6 +325,36 @@ public class TerraformEnvironmentBuilderTests(DatabaseFixture fixture) : Databas
         Assert.Equal("Environment Sets: \"Alpha\" (TOKEN); \"Beta\" (TF_VAR_region)", line);
         Assert.DoesNotContain(SecretValue, line);
         Assert.DoesNotContain(Secret, line);
+    }
+
+    /// <summary>A set assigned both directly and through the group reaches the run once.</summary>
+    [Fact]
+    public async Task A_groups_sets_reach_its_projects_runs_once()
+    {
+        var workspace = await SeedWorkspace(out var project);
+        var group = new ProjectGroup { Id = Guid.NewGuid(), Name = $"group-{Guid.NewGuid():N}" };
+        var shared = TestData.EnvironmentSet("Shared");
+        var groupOnly = TestData.EnvironmentSet("GroupOnly");
+        await Seed(
+            group, shared, groupOnly,
+            TestData.PlainEntry(shared, "REGION", "east"),
+            TestData.PlainEntry(groupOnly, "ZONE", "a"),
+            TestData.ProjectEnvironmentSet(project, shared),
+            new ProjectGroupEnvironmentSet { Id = Guid.NewGuid(), ProjectGroupId = group.Id, EnvironmentSetId = shared.Id },
+            new ProjectGroupEnvironmentSet { Id = Guid.NewGuid(), ProjectGroupId = group.Id, EnvironmentSetId = groupOnly.Id });
+        await ReadBack(async db =>
+        {
+            var stored = await db.Projects.SingleAsync(x => x.Id == project.Id, Ct);
+            stored.ProjectGroupId = group.Id;
+            await db.SaveChangesAsync(Ct);
+            return true;
+        });
+
+        var environment = await Build(workspace);
+
+        Assert.True(environment.IsValid, string.Join(" ", environment.Errors));
+        Assert.Equal("east", environment.Variables["REGION"]);
+        Assert.Equal("a", environment.Variables["ZONE"]);
     }
 
     private Task<Workspace> SeedWorkspace(string name = "test-workspace") => SeedWorkspace(out _, name);

@@ -72,6 +72,7 @@ A value the list doesn't cover can be a Plain entry. Connections are referred to
 * Environment variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Terraform variable names follow Terraform's identifier rules: letters, digits, `_` and `-`, not starting with a digit.
 * Environment variables starting with `TF_` are refused, because they control Terraform itself (`TF_CLI_ARGS*`, `TF_DATA_DIR`, `TF_WORKSPACE`, ...). `TF_TOKEN_*` (private registry credentials) is allowed. Use the Terraform variable kind instead of `TF_VAR_*`.
 * `HOME` and `PATH` are refused.
+* A project gets its own sets and its [project group](ProjectGroups.md)'s; a set given both ways reaches it once.
 * A target name can come from only one set on a project. Assigning a set is refused if one of its target names already comes from another set on the project, and editing a set is refused if the change would cause that on any project it is assigned to.
 * A secret's source name is checked against the patterns when the entry is saved, when the set is assigned, and again at every run, as the patterns can change.
 * **A secret can't be a Terraform variable**: neither a Secret entry nor a connection credential. Terraform saves variable values in saved plans and state, so provider credentials go in the provider's environment variables, which every preset uses. This is checked on save, in copies and multi-edits, when seeding, and again at run time.

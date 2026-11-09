@@ -63,6 +63,7 @@ A connection's inventory reaches a project's Infrastructure panel only when the 
 * `api/projects/{id}/inventory/...` serves the same lists as `api/inventory/...`, for the project's connections only. A request that names no connection reads the project's first assigned connection, in configuration order, with inventory enabled. A project with none gets an empty result with no connection, never another connection's data.
 * An assignment names the connection as configuration spelled it. A connection that leaves configuration, or is renamed, stays assigned and shows as missing.
 * Assigning a connection gives its inventory, not its credentials. Runs get credentials only from [Environment Sets](EnvironmentSets.md), whose connection entries name a connection on their own.
+* A project also sees its [project group](ProjectGroups.md)'s connections.
 * Assignments are not exported.
 
 ## Paths
