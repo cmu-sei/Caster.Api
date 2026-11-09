@@ -169,6 +169,8 @@ Environment variables are injected into either:
 
   As an environment variable: `Terraform__EnvironmentVariables__Direct__SSL_CERT_DIR`. Values defined here override any inherited variables with the same name.
 
+Variables under `Infrastructure__` (the inventory's connections, including their credentials) are never inherited, whatever `InheritAll` and `Inherit` say.
+
 ### Git Credentials for Module Sources
 
 `terraform init` fetches every Module from its `git::` address (see [Modules](Modules.md)), so a Run needs credentials for private module hosts, in addition to those Caster.Api uses for discovery.
