@@ -124,6 +124,54 @@ public class EnvironmentSetsController(IMediator mediator) : ControllerBase
     }
 
     /// <summary>
+    /// Copy an Environment Set with every entry. Secret entries copy the secret's name, never a
+    /// value; the copy is assigned to no project
+    /// </summary>
+    [HttpPost("environment-sets/{id:guid}/copy")]
+    [ProducesResponseType(typeof(EnvironmentSet), (int)HttpStatusCode.OK)]
+    [SwaggerOperation(OperationId = "CopyEnvironmentSet")]
+    public async Task<IActionResult> Copy([FromRoute] Guid id, [FromBody] Copy.Command command)
+    {
+        command ??= new Copy.Command();
+        command.Id = id;
+        return Ok(await mediator.Send(command));
+    }
+
+    /// <summary>
+    /// Change entries of several Environment Sets at once, checked and saved together
+    /// </summary>
+    [HttpPost("environment-sets/batch-edit")]
+    [ProducesResponseType(typeof(IEnumerable<EnvironmentSet>), (int)HttpStatusCode.OK)]
+    [SwaggerOperation(OperationId = "BatchEditEnvironmentSets")]
+    public async Task<IActionResult> BatchEdit([FromBody] BatchEdit.Command command)
+    {
+        return Ok(await mediator.Send(command));
+    }
+
+    /// <summary>
+    /// Get the infrastructure connections' fields and provider presets, for connection entries.
+    /// Names and availability only, never values
+    /// </summary>
+    [HttpGet("environment-sets/connections")]
+    [ProducesResponseType(typeof(IEnumerable<EnvironmentSetConnection>), (int)HttpStatusCode.OK)]
+    [SwaggerOperation(OperationId = "GetEnvironmentSetConnections")]
+    public async Task<IActionResult> GetConnections()
+    {
+        return Ok(await mediator.Send(new GetConnections.Query()));
+    }
+
+    /// <summary>
+    /// Create an Environment Set holding a provider preset's entries for an infrastructure connection
+    /// </summary>
+    [HttpPost("environment-sets/from-connection")]
+    [ProducesResponseType(typeof(EnvironmentSet), (int)HttpStatusCode.OK)]
+    [SwaggerOperation(OperationId = "CreateEnvironmentSetFromConnection")]
+    public async Task<IActionResult> CreateFromConnection([FromBody] CreateFromConnection.Command command)
+    {
+        return Ok(await mediator.Send(command));
+    }
+
+    /// <summary>
     /// Get the Environment Sets assigned to a Project, without secret source names or values
     /// </summary>
     [HttpGet("projects/{projectId:guid}/environment-sets")]

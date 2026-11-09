@@ -50,7 +50,10 @@ public class Assign
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize([SystemPermission.ManageEnvironmentSets], cancellationToken);
 
-        public override async Task<ProjectEnvironmentSet[]> HandleRequest(Command request, CancellationToken cancellationToken)
+        public override Task<ProjectEnvironmentSet[]> HandleRequest(Command request, CancellationToken cancellationToken) =>
+            dbContext.WithEnvironmentSetLock(() => Handle(request, cancellationToken), cancellationToken);
+
+        private async Task<ProjectEnvironmentSet[]> Handle(Command request, CancellationToken cancellationToken)
         {
             var set = await dbContext.EnvironmentSets
                 .AsNoTracking()

@@ -67,7 +67,10 @@ public class CreateEntry
             (request.ValueSource != EnvironmentSetValueSource.Connection ||
                 await authorizationService.Authorize([SystemPermission.ManageInfrastructure], cancellationToken));
 
-        public override async Task<EnvironmentSet> HandleRequest(Command request, CancellationToken cancellationToken)
+        public override Task<EnvironmentSet> HandleRequest(Command request, CancellationToken cancellationToken) =>
+            dbContext.WithEnvironmentSetLock(() => Handle(request, cancellationToken), cancellationToken);
+
+        private async Task<EnvironmentSet> Handle(Command request, CancellationToken cancellationToken)
         {
             var set = await dbContext.EnvironmentSets
                 .Include(x => x.Entries)
