@@ -32,8 +32,11 @@ public class TerraformEnvironmentBuilderTests(DatabaseFixture fixture) : Databas
         ["HOME"] = "/home/caster",
         ["ConnectionStrings__PostgreSQL"] = "Host=db;Password=api-password",
         ["VSPHERE_SERVER"] = "vcenter.local",
-        [Secret] = SecretValue
+        [Secret] = SecretValue,
+        [ConnectionPassword] = "hypervisor-password"
     };
+
+    private const string ConnectionPassword = "Infrastructure__Connections__0__Password";
 
     private readonly TerraformOptions _options = new()
     {
@@ -66,6 +69,32 @@ public class TerraformEnvironmentBuilderTests(DatabaseFixture fixture) : Databas
 
         Assert.Equal("vcenter.local", environment.Variables["VSPHERE_SERVER"]);
         Assert.DoesNotContain(SecretValue, environment.Variables.Values);
+    }
+
+    /// <summary>The inventory's connection settings hold hypervisor credentials, which reach runs only through Environment Sets.</summary>
+    [Fact]
+    public async Task Infrastructure_settings_never_reach_a_run_through_Inherit_or_InheritAll()
+    {
+        _options.EnvironmentVariables.InheritAll = true;
+        _options.EnvironmentVariables.Inherit = [".*"];
+        var workspace = await SeedWorkspace();
+
+        var environment = await Build(workspace);
+
+        Assert.False(environment.Variables.ContainsKey(ConnectionPassword));
+        Assert.DoesNotContain("hypervisor-password", environment.Variables.Values);
+        Assert.Equal("vcenter.local", environment.Variables["VSPHERE_SERVER"]);
+    }
+
+    [Theory]
+    [InlineData("Infrastructure__Connections__0__Password", true)]
+    [InlineData("INFRASTRUCTURE__CONNECTIONS__0__APITOKEN", true)]
+    [InlineData("infrastructure:Connections:0:Username", true)]
+    [InlineData("InfrastructureConnections", false)]
+    [InlineData("PROXMOX_VE_API_TOKEN", false)]
+    public void IsHeldBack_matches_only_infrastructure_settings(string name, bool heldBack)
+    {
+        Assert.Equal(heldBack, TerraformEnvironmentBuilder.IsHeldBack(name));
     }
 
     [Fact]
