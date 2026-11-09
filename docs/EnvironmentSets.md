@@ -42,6 +42,30 @@ An Environment Set has a name, a description and entries. Each entry has:
 * **Value source**
   * *Secret*: the name of an API environment variable, which must match a secret pattern. Its value is read when each Terraform command starts and is never stored or shown by Caster.
   * *Plain*: a value stored in Caster. Plain values are not secret: members of every project the set is assigned to can read them.
+  * *Connection*: a field of an [infrastructure connection](Inventory.md), read from configuration when each Terraform command starts. The entry names the connection and the field; creating or editing one also needs `ManageInfrastructure`.
+
+### Connection fields
+
+The fields come from Caster's connection settings, not from any Terraform provider, so the same field serves every provider that wants that form. A field is available only when its setting is set, it applies to the connection's provider, and it is unambiguous; otherwise the entry shows as unavailable, with the reason, and runs that use it fail.
+
+| Field | Secret | vSphere | Proxmox |
+|---|---|---|---|
+| `Url` | no | `Url` as configured | `Url` as configured, e.g. `https://pve:8006` |
+| `Host` | no | host, and port if the `Url` names one, without scheme or path | same |
+| `ApiUrl` | no | n/a | `Url` + `/api2/json`, never doubled |
+| `Insecure` | no | `true`/`false` from `InsecureSkipVerify` | same |
+| `Username` | no | `Username` | `Username` (`user@realm`) |
+| `Password` | yes | `Password` | `Password` |
+| `ApiToken` | yes | n/a | the whole `user@realm!id=secret` |
+| `ApiTokenId` | yes | n/a | the token before its first `=` |
+| `ApiTokenSecret` | yes | n/a | the token after its first `=` |
+| `IsoStorage` | no | the datastore of the only `IsoLocations` entry | the storage of the only `IsoLocations` entry |
+| `IsoFolder` | no | the folder of the only `IsoLocations` entry, empty for none | n/a |
+| `Datacenter` | no | the only `Datacenters` entry | n/a |
+
+A value the list doesn't cover can be a Plain entry. Connections are referred to by name, so renaming one makes its entries unavailable until they are pointed at the new name.
+
+**Create set from connection** (`POST api/environment-sets/from-connection`) makes a set holding a provider's environment variables for one connection: `bpg/proxmox` (`PROXMOX_VE_*`), `Telmate/proxmox` (`PM_*`) and `hashicorp/vsphere` (`VSPHERE_*`). The Proxmox presets use the token when the connection has one, and its username and password otherwise.
 
 ### Rules
 
@@ -50,6 +74,14 @@ An Environment Set has a name, a description and entries. Each entry has:
 * `HOME` and `PATH` are refused.
 * A target name can come from only one set on a project. Assigning a set is refused if one of its target names already comes from another set on the project, and editing a set is refused if the change would cause that on any project it is assigned to.
 * A secret's source name is checked against the patterns when the entry is saved, when the set is assigned, and again at every run, as the patterns can change.
+* **A secret can't be a Terraform variable**: neither a Secret entry nor a connection credential. Terraform saves variable values in saved plans and state, so provider credentials go in the provider's environment variables, which every preset uses. This is checked on save, in copies and multi-edits, when seeding, and again at run time.
+* `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n` and `GIT_CONFIG_VALUE_n` are refused: a set's `GIT_CONFIG_KEY_0` would replace Caster's own git configuration for module sources, and another count would break its numbering.
+
+### Copying and editing several sets
+
+* **Copy** (`POST api/environment-sets/{id}/copy`) makes "*name* (copy)" with every entry. Secret entries copy the secret's name, never a value. The copy is assigned to no project. Copying a set with connection entries also needs `ManageInfrastructure`.
+* **Multi-edit** (`POST api/environment-sets/batch-edit`) changes the same entry, by kind and target name, in several sets at once: update it where it exists, add it where it doesn't, or delete it. Everything is checked against the whole final state, every set on every project the edited sets reach, and saved together or not at all.
+* Entry edits, assignments and multi-edits take one PostgreSQL advisory lock around reading, checking and saving, so two API instances can't each pass a check the other's change breaks.
 
 ### Seeding sets
 
@@ -105,18 +137,22 @@ For every Terraform command (init, plan, apply, import, refresh, taint, untaint,
 
 Sets apply to every workspace in the project, including those Alloy creates.
 
-* **Missing secrets fail the run.** If a secret's source variable is missing, or no longer matches the patterns, the command fails before Terraform starts, with a message naming the target and the set (never the source name). Continuing would let providers fall back to other ambient credentials.
-* **Masking.** Secret values of 8 characters or more are replaced with `***` in run output before it is saved or streamed to the UI, line by line for multi-line values. This catches accidental echoes (a provider error quoting a credential, debug logging); it does not stop a configuration that sets out to reveal a value, for example encoded or split.
-* **Applies use current values.** An apply uses the set values as they are when the apply runs, even if the set changed after the plan.
+* **Missing values fail the run.** If a secret's source variable is missing or no longer matches the patterns, or a connection or its field isn't available, the command fails before Terraform starts, with a message naming the target and the set (never a secret's source name). Continuing would let providers fall back to other ambient credentials.
+* **Masking.** Secret values (Secret entries and connection credentials) are replaced with `***` in run output before it is saved or streamed to the UI, each separately, line by line for multi-line values. This catches accidental echoes (a provider error quoting a credential, debug logging); it does not stop a configuration that sets out to reveal a value, for example encoded or split.
+* **Short secrets fail the run.** Masking replaces every occurrence of a value, so a short one (`1`, `true`, `lab`) would also replace ordinary text and corrupt the JSON Caster reads from Terraform's output. A secret shorter than `Terraform:Secrets:MinimumMaskedLength` (default 8) fails the run, and the admin pages warn about it. Lowering the minimum risks that corruption.
+* **Which commands get which entries.** A plan, import or refresh gets every entry. An apply runs the saved plan, which already holds the Terraform variables, so it gets the environment-variable entries only, read again when the apply starts; an unavailable Terraform-variable source doesn't block it. Init, show, output and state commands get the environment-variable entries only.
+* **The run names its sets.** A plan or apply's output starts with one line naming the sets it used and the target names each supplied, never values or secret source names. Run output is saved, so this is the record of what a run was given.
+* **Kubernetes job mode, after an API restart.** The API reattaches to a job that is still running, and masks the values the job's spec carries as well as today's, so a credential rotated mid-run is still masked.
 * **Kubernetes job mode.** Values are plain environment variables in the Job spec for now, readable by anyone who can read Jobs or Pods in the jobs namespace. Keep that namespace admin-only.
 
 ## Permissions
 
 | Permission | Allows |
 |---|---|
-| `ViewEnvironmentSets` | See every set: names, entries, plain values and secret source names (never secret values), the projects each set is assigned to, the available secret names and the run mode. |
-| `ManageEnvironmentSets` | Create, edit and delete sets and entries, and assign sets to projects. Picking a project to assign to also needs `ViewProjects`. |
-| Project `ViewProject` (or system `ViewProjects`) | See the project's sets: names, descriptions, target names, plain values, and whether each secret is available. Never secret source names or values. |
+| `ViewEnvironmentSets` | See every set: names, entries, plain values, secret source names and connection names (never secret values), the projects each set is assigned to, the available secret names and the run mode. |
+| `ManageEnvironmentSets` | Everything `ViewEnvironmentSets` allows. Create, edit, copy, multi-edit and delete sets and entries, list the connections' fields and presets (never values), and assign sets to projects. Picking a project to assign to also needs `ViewProjects`. |
+| `ManageEnvironmentSets` + `ManageInfrastructure` | Create or edit connection entries, copy a set that has them, and create a set from a connection's preset. |
+| Project `ViewProject` (or system `ViewProjects`) | See the project's sets: names, descriptions, target names, plain values, which connection a non-secret field comes from, and whether each secret is available. Never secret source names or values. |
 
 No one can see secret values through Caster. The seeded Observer role gets `ViewEnvironmentSets` with every other `View` permission.
 
@@ -127,9 +163,9 @@ Environment Sets decide **which project gets which credential**. They do not kee
 * **Project editors can always read their own project's secrets**, through their Terraform: an output, a `local-exec` provisioner, an HTTP data source. Anyone who can edit a project (holders of project `EditProject`, project `ManageProject` who can add editors, and system `EditProjects`) can reach the secrets of the sets assigned to it. Assign a set only to projects whose editors may hold its credentials.
 * **Process mode gives no isolation between projects.** Terraform runs as the API's user, and can read the API's own environment (every secret, the API's own credentials) and other workspaces' folders. Policy checks on Terraform configuration (planned) reduce the risk but cannot remove it. Use Kubernetes job mode where projects must be kept apart.
 * **Kubernetes job mode** isolates projects' environments. Until workspace volumes are isolated per job (planned), any job can read other workspaces' state and saved plan files, including the Terraform variable values in plan files, from the shared volume. Keep the jobs namespace admin-only.
-* **Prefer provider environment variables over Terraform variables for credentials.** Terraform variable values can end up in state, outputs and saved plan files, and project members with read-only access can read state. If a Terraform variable is needed, use it only in provider blocks, and declare it `ephemeral = true` on Terraform 1.10 or later. `sensitive = true` does not keep a value out of state.
-* **Kubernetes job mode currently prints Terraform variable values to pod logs**, because `terraform show -json`, which Caster runs after each plan, prints input variable values on stdout. The UI warns about this on secret Terraform variable entries.
-* **Aliased providers** that need a second set of credentials must use Terraform variables, as one environment variable name can hold only one value.
+* **Credentials are provider environment variables.** Terraform variable values end up in state, outputs and saved plan files, which project members with read-only access can read, so a secret can't be a Terraform variable.
+* **Kubernetes job mode currently prints Terraform variable values to pod logs**, because `terraform show -json`, which Caster runs after each plan, prints input variable values on stdout. No secret can be a Terraform variable, so these are plain values.
+* **Aliased providers** that need a second set of credentials can't get them from a set for now, as one environment variable name holds one value and a secret can't be a Terraform variable.
 
 ## Migrating off InheritAll
 
