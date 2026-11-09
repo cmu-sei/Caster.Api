@@ -59,6 +59,45 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
+        public void Project_ReadsADatacentersFolderAndEachPortgroupsSwitch()
+        {
+            var inventory = VimInventorySource.Project(
+            [
+                Object("Datacenter", "datacenter-1", ("name", "DC1"), ("vmFolder", Ref("Folder", "group-v1")), ("parent", Ref("Folder", "group-d1"))),
+                Object("VmwareDistributedVirtualSwitch", "dvs-1", ("name", "DSwitch"), ("config.uplinkPortgroup", new[] { Ref("DistributedVirtualPortgroup", "dvportgroup-9") })),
+                Object("DistributedVirtualPortgroup", "dvportgroup-1", ("name", "vlan-200"), ("config.distributedVirtualSwitch", Ref("VmwareDistributedVirtualSwitch", "dvs-1"))),
+                // the Network spec's half of the same portgroup, without the switch
+                Object("DistributedVirtualPortgroup", "dvportgroup-1", ("name", "vlan-200"), ("parent", Ref("Folder", "group-n1"))),
+                Object("DistributedVirtualPortgroup", "dvportgroup-9", ("name", "DSwitch-Uplinks"), ("config.distributedVirtualSwitch", Ref("VmwareDistributedVirtualSwitch", "dvs-1")))
+            ]);
+
+            Assert.Equal("group-d1", Assert.Single(inventory.Datacenters).Parent);
+            Assert.Equal(new VimSwitch("dvs-1", "DSwitch"), Assert.Single(inventory.Switches));
+
+            var portgroup = inventory.Networks.Single(x => x.Id == "dvportgroup-1");
+            Assert.Equal("dvs-1", portgroup.Switch);
+            Assert.Equal("group-n1", portgroup.Parent);
+            Assert.True(inventory.Networks.Single(x => x.Id == "dvportgroup-9").Uplink);
+        }
+
+        [Fact]
+        public void ChooseDatacenters_MatchesNamesIgnoringCaseAndReportsTheRest()
+        {
+            var (chosen, unknown, names) = VimInventorySource.ChooseDatacenters(
+            [
+                Object("Folder", "group-d1", ("name", "Datacenters")),
+                Object("Datacenter", "datacenter-1", ("name", "DC1")),
+                Object("Datacenter", "datacenter-2", ("name", "DC2")),
+                // the same name in another folder is a second datacenter, and both are read
+                Object("Datacenter", "datacenter-3", ("name", "dc1"))
+            ], ["dc1", "Lab"]);
+
+            Assert.Equal(["datacenter-1", "datacenter-3"], chosen.Select(x => x.Value));
+            Assert.Equal(["Lab"], unknown);
+            Assert.Equal(["DC1", "DC2", "dc1"], names);
+        }
+
+        [Fact]
         public void Project_ReadsAMissingTemplateFlagAsNotATemplate()
         {
             // A VM whose config is not readable (e.g. mid-creation) has no config.template.

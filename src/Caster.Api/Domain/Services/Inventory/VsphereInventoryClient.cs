@@ -94,10 +94,14 @@ public class VsphereInventoryClient(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             vimError = Redact($"Could not read vCenter at {options.Url}: {ex.Message}", options);
-            logger.LogError(ex, "Could not read the vCenter inventory at {VsphereUrl} as {VsphereUsername}", options.Url, options.Username);
+            logger.LogError("Could not read the vCenter inventory at {VsphereUrl} as {VsphereUsername}: {Error}",
+                options.Url, options.Username, InventoryRedaction.Describe(ex, options));
         }
 
-        var (contentLibrary, connected) = await ReadContentLibraryAsync(options, cancellationToken);
+        // Content libraries cost a request per item, so they're only read when wanted.
+        var (contentLibrary, connected) = InventoryFilters.IsEnabled(options, InventoryCategory.ContentLibrary)
+            ? await ReadContentLibraryAsync(options, cancellationToken)
+            : (InventoryCategoryResult.NotEnabled(null), false);
 
         // Nothing reached vCenter, so there is no read to keep.
         if (vim == null && !connected)
@@ -120,8 +124,9 @@ public class VsphereInventoryClient(
     #region vim25 categories
 
     /// <summary>
-    /// Each template's path is its folder path below its datacenter's VM folder,
-    /// e.g. "Templates/Linux/ubuntu-22", the relative path Terraform's
+    /// Each template's path is its full inventory path, as govc writes it, e.g.
+    /// "/DC1/vm/Templates/Linux/ubuntu-22". Its snippet uses the path below the
+    /// datacenter's VM folder, "Templates/Linux/ubuntu-22", which Terraform's
     /// vsphere_virtual_machine data source accepts in place of a name. A template
     /// whose folders cannot be followed up to a datacenter keeps its bare name.
     /// </summary>
@@ -129,6 +134,7 @@ public class VsphereInventoryClient(
     {
         var folders = vim.Folders.Where(x => x.Id != null).DistinctBy(x => x.Id).ToDictionary(x => x.Id, StringComparer.Ordinal);
         var datacenters = vim.Datacenters.Where(x => x.VmFolder != null).DistinctBy(x => x.VmFolder).ToDictionary(x => x.VmFolder, StringComparer.Ordinal);
+        var paths = new InventoryPaths(vim);
 
         return InventoryCategoryResult.Ok(vim.Vms
             .Where(x => x.Template && !string.IsNullOrWhiteSpace(x.Name))
@@ -143,15 +149,16 @@ public class VsphereInventoryClient(
                 AddIfPresent(properties, "datacenter", datacenter);
                 AddIfPresent(properties, "folder", folder);
 
-                var path = string.IsNullOrEmpty(folder) ? x.Name : $"{folder}/{x.Name}";
+                var path = paths.Of(x.Name, x.Parent);
 
                 return new InventoryEntry
                 {
                     Id = x.Id,
                     Name = x.Name,
-                    Path = path,
+                    Path = path ?? x.Name,
                     Properties = properties,
-                    Terraform = TerraformSnippets.VsphereTemplate(x.Name, path, datacenter)
+                    Locations = path == null ? [] : [path],
+                    Terraform = TerraformSnippets.VsphereTemplate(x.Name, path, datacenter, paths.OfDatacenterAbove(x.Parent))
                 };
             })
             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
@@ -186,6 +193,90 @@ public class VsphereInventoryClient(
         }
 
         return (null, null);
+    }
+
+    /// <summary>
+    /// Full inventory paths, as govc writes them, e.g. "/DC1/network/Lab/lab-net": every
+    /// name from below the root folder down to the object, which vSphere itself shows
+    /// under the root folder "Datacenters".
+    /// </summary>
+    internal sealed class InventoryPaths
+    {
+        private readonly Dictionary<string, (string Name, string Parent)> _parents;
+        private readonly HashSet<string> _datacenters;
+
+        public InventoryPaths(VimInventory vim)
+        {
+            _parents = vim.Folders.Concat(vim.ComputeResources)
+                .Where(x => x.Id != null)
+                .Select(x => (x.Id, x.Name, x.Parent))
+                .Concat(vim.Datacenters.Where(x => x.Id != null).Select(x => (x.Id, x.Name, x.Parent)))
+                .DistinctBy(x => x.Id)
+                .ToDictionary(x => x.Id, x => (x.Name, x.Parent), StringComparer.Ordinal);
+            _datacenters = vim.Datacenters.Where(x => x.Id != null).Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        }
+
+        /// <summary>
+        /// The path of an object called <paramref name="name"/> whose parent is
+        /// <paramref name="parent"/>, or null when its parents don't reach the root.
+        /// </summary>
+        public string Of(string name, string parent)
+        {
+            var above = OfFolder(parent);
+            return above == null ? null : $"{above}/{name}";
+        }
+
+        /// <summary>The path of the datacenter an object is in, or null.</summary>
+        public string OfDatacenterAbove(string parent)
+        {
+            var current = parent;
+
+            for (var depth = 0; current != null && depth < MaxFolderDepth; depth++)
+            {
+                if (_datacenters.Contains(current))
+                    return OfFolder(current);
+
+                if (!_parents.TryGetValue(current, out var next))
+                    break;
+
+                current = next.Parent;
+            }
+
+            return null;
+        }
+
+        /// <summary>The path of a folder, datacenter or cluster by id; "" for the root folder.</summary>
+        private string OfFolder(string id)
+        {
+            var names = new List<string>();
+            var current = id;
+
+            for (var depth = 0; depth < MaxFolderDepth; depth++)
+            {
+                if (current == null || !_parents.TryGetValue(current, out var node))
+                    return null;
+
+                // The root folder has no parent and isn't part of the path. A datacenter
+                // read without its parent is taken to be directly below it.
+                if (node.Parent == null && !_datacenters.Contains(current))
+                    return Joined(names);
+
+                names.Add(node.Name);
+
+                if (node.Parent == null)
+                    return Joined(names);
+
+                current = node.Parent;
+            }
+
+            return null;
+        }
+
+        private static string Joined(List<string> names)
+        {
+            names.Reverse();
+            return names.Count == 0 ? "" : "/" + string.Join("/", names);
+        }
     }
 
     /// <summary>
@@ -225,6 +316,8 @@ public class VsphereInventoryClient(
     internal static InventoryCategoryResult Networks(VimInventory vim)
     {
         var datacenterOf = DatacenterOf(vim);
+        var paths = new InventoryPaths(vim);
+        var switches = vim.Switches.Where(x => x.Id != null).DistinctBy(x => x.Id).ToDictionary(x => x.Id, x => x.Name, StringComparer.Ordinal);
 
         return InventoryCategoryResult.Ok(vim.Networks
             .Where(x => !x.Uplink && !string.IsNullOrWhiteSpace(x.Name))
@@ -241,12 +334,19 @@ public class VsphereInventoryClient(
                 var datacenter = datacenterOf(x.Parent);
                 AddIfPresent(properties, "datacenter", datacenter);
 
+                // Matched by managed object reference, so switches that share a name stay apart.
+                var switchName = x.Switch == null ? null : switches.GetValueOrDefault(x.Switch);
+                AddIfPresent(properties, "switch", switchName);
+
+                var path = paths.Of(x.Name, x.Parent);
+
                 return new InventoryEntry
                 {
                     Id = x.Id,
                     Name = x.Name,
-                    Path = x.Name,
+                    Path = path ?? x.Name,
                     Properties = properties,
+                    Locations = new[] { path, switchName }.Where(l => l != null).ToArray(),
                     Terraform = TerraformSnippets.VsphereNetwork(x.Name, datacenter)
                 };
             })
@@ -257,6 +357,7 @@ public class VsphereInventoryClient(
     internal static InventoryCategoryResult Datastores(VimInventory vim)
     {
         var datacenterOf = DatacenterOf(vim);
+        var paths = new InventoryPaths(vim);
 
         return InventoryCategoryResult.Ok(vim.Datastores
             .Where(x => !string.IsNullOrWhiteSpace(x.Name))
@@ -271,12 +372,15 @@ public class VsphereInventoryClient(
                 var datacenter = datacenterOf(x.Parent);
                 AddIfPresent(properties, "datacenter", datacenter);
 
+                var path = paths.Of(x.Name, x.Parent);
+
                 return new InventoryEntry
                 {
                     Id = x.Id,
                     Name = x.Name,
-                    Path = x.Name,
+                    Path = path ?? x.Name,
                     Properties = properties,
+                    Locations = path == null ? [] : [path],
                     Terraform = TerraformSnippets.VsphereDatastore(x.Name, datacenter)
                 };
             })
@@ -294,6 +398,7 @@ public class VsphereInventoryClient(
     {
         var vms = vim.Vms.Where(x => !x.Template && x.Host != null).ToLookup(x => x.Host, StringComparer.Ordinal);
         var datacenterOf = DatacenterOf(vim);
+        var paths = new InventoryPaths(vim);
 
         return InventoryCategoryResult.Ok(vim.Hosts
             .Where(x => !string.IsNullOrWhiteSpace(x.Id))
@@ -329,12 +434,15 @@ public class VsphereInventoryClient(
                 AddIfPresent(properties, "datacenter", datacenter);
 
                 var name = string.IsNullOrWhiteSpace(x.Name) ? x.Id : x.Name;
+                var path = paths.Of(name, x.Parent);
+
                 return new InventoryEntry
                 {
                     Id = x.Id,
                     Name = name,
-                    Path = name,
+                    Path = path ?? name,
                     Properties = properties,
+                    Locations = path == null ? [] : [path],
                     // A host without a name cannot be looked up by one.
                     Terraform = string.IsNullOrWhiteSpace(x.Name) ? [] : TerraformSnippets.VsphereHost(x.Name, datacenter)
                 };
@@ -417,7 +525,8 @@ public class VsphereInventoryClient(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "Could not create a vCenter REST session for {VsphereUrl} as {VsphereUsername}", options.Url, options.Username);
+            logger.LogError("Could not create a vCenter REST session for {VsphereUrl} as {VsphereUsername}: {Error}",
+                options.Url, options.Username, InventoryRedaction.Describe(ex, options));
             return (InventoryCategoryResult.Unavailable(
                 Redact($"Could not connect to the vCenter REST api at {options.Url} to read content libraries: {ex.Message}", options)), false);
         }
@@ -473,7 +582,7 @@ public class VsphereInventoryClient(
         catch (Exception ex)
         {
             // Session cleanup is best effort. vCenter expires idle sessions on its own.
-            logger.LogDebug(ex, "Could not delete the vCenter inventory session");
+            logger.LogDebug("Could not delete the vCenter inventory session: {ExceptionType}", ex.GetType().Name);
         }
     }
 
@@ -590,7 +699,8 @@ public class VsphereInventoryClient(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "Exception reading {Description} from {VsphereUrl}", description, options.Url);
+            logger.LogError("Exception reading {Description} from {VsphereUrl}: {Error}",
+                description, options.Url, InventoryRedaction.Describe(ex, options));
             return InventoryCategoryResult.Unavailable(Redact($"Could not read {description} from vCenter: {ex.Message}", options));
         }
     }

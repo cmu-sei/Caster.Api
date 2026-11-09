@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Infrastructure.Options;
+using Crucible.Api.Testing;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -34,13 +35,12 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         private static InfrastructureConnectionOptions Options() => new()
         {
             Name = "lab",
-            Enabled = true,
+            Inventory = { Enabled = true, RefreshMinutes = 30 },
             Provider = "vsphere",
             Url = "https://vcenter.test",
             Username = "caster-ro@vsphere.local",
             Password = Password,
             InsecureSkipVerify = true,
-            RefreshMinutes = 30
         };
 
         /// <summary>
@@ -101,7 +101,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             Assert.True(snapshot.VmTemplates.Available);
             Assert.Equal(
-                ["Templates/Linux/alpine-template", "orphan-template", "Templates/win2019-template"],
+                ["/DC1/vm/Templates/Linux/alpine-template", "orphan-template", "/DC1/vm/Templates/win2019-template"],
                 snapshot.VmTemplates.Entries.Select(x => x.Path));
 
             var template = snapshot.VmTemplates.Entries.Single(x => x.Id == "vm-2");
@@ -520,6 +520,139 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             Assert.True(snapshot.ContentLibrary.Available);
             Assert.Empty(snapshot.ContentLibrary.Entries);
+        }
+
+        #endregion
+
+        #region Paths, datacenters and switches
+
+        [Fact]
+        public async Task GetInventoryAsync_GivesEachObjectItsFullInventoryPath()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            Assert.Equal("/DC1/network/vlan-200", snapshot.Networks.Entries.Single(x => x.Name == "vlan-200").Path);
+            Assert.Equal("/DC1/datastore/nfs-fast", Assert.Single(snapshot.Datastores.Entries).Path);
+            Assert.Equal("/DC1/host/Cluster/esx1.test", snapshot.Hosts.Entries.Single(x => x.Id == "host-1").Path);
+
+            // parents that weren't read leave the bare name
+            Assert.Equal("esx2.test", snapshot.Hosts.Entries.Single(x => x.Id == "host-2").Path);
+            Assert.Equal("VM Network", snapshot.Networks.Entries.Single(x => x.Name == "VM Network").Path);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ADatacenterInAFolderIsInItsPath()
+        {
+            var vim = Vim();
+            vim.Folders.Add(new VimFolder("group-d1", "Datacenters", null));
+            vim.Folders.Add(new VimFolder("group-d2", "Lab", "group-d1"));
+            vim.Datacenters[0] = vim.Datacenters[0] with { Parent = "group-d2" };
+
+            var snapshot = await Read(DefaultResponder(), vim: vim);
+
+            var template = snapshot.VmTemplates.Entries.Single(x => x.Name == "win2019-template");
+            Assert.Equal("/Lab/DC1/vm/Templates/win2019-template", template.Path);
+            Assert.Contains("name          = \"Templates/win2019-template\"", template.Terraform[TerraformSnippets.Vsphere]);
+        }
+
+        /// <summary>
+        /// The same folder in two datacenters: a location names only one, and each
+        /// snippet still finds its template by the path below its own VM folder.
+        /// </summary>
+        [Fact]
+        public async Task GetInventoryAsync_TellsApartIdenticalFoldersInTwoDatacenters()
+        {
+            var vim = Vim();
+            vim.Datacenters.Add(new VimDatacenter("datacenter-2", "DC2", "group-v9"));
+            vim.Folders.Add(new VimFolder("group-v9", "vm", "datacenter-2"));
+            vim.Folders.Add(new VimFolder("group-v8", "Templates", "group-v9"));
+            vim.Vms.Add(new VimVm("vm-9", "win2019-template", true, "poweredOff", 4, 8192, "group-v8", null));
+
+            var options = Options();
+            options.Inventory.Resources.VmTemplates.Locations = ["/DC1/vm/Templates"];
+
+            var read = await Read(DefaultResponder(), vim: vim);
+            var both = read.VmTemplates.Entries.Where(x => x.Name == "win2019-template").ToArray();
+            Assert.Equal(["/DC1/vm/Templates/win2019-template", "/DC2/vm/Templates/win2019-template"], both.Select(x => x.Path));
+            Assert.All(both, x => Assert.Contains("name          = \"Templates/win2019-template\"", x.Terraform[TerraformSnippets.Vsphere]));
+            Assert.Contains("name = \"DC2\"", both[1].Terraform[TerraformSnippets.Vsphere]);
+
+            var filtered = InventoryFilters.Apply(read, options);
+
+            Assert.Equal(
+                ["/DC1/vm/Templates/Linux/alpine-template", "/DC1/vm/Templates/win2019-template"],
+                filtered.VmTemplates.Entries.Select(x => x.Path));
+        }
+
+        /// <summary>
+        /// A portgroup names its switch by reference, so two switches that share a name
+        /// in different datacenters each keep their own portgroups.
+        /// </summary>
+        [Fact]
+        public async Task GetInventoryAsync_GivesEachDistributedPortgroupItsSwitch()
+        {
+            var vim = Vim();
+            vim.Datacenters.Add(new VimDatacenter("datacenter-2", "DC2", "group-v9"));
+            vim.Folders.Add(new VimFolder("group-n2", "network", "datacenter-2"));
+            vim.Switches.AddRange([new VimSwitch("dvs-1", "DSwitch"), new VimSwitch("dvs-2", "DSwitch"), new VimSwitch("dvs-3", "Lab")]);
+            vim.Networks.AddRange([
+                new VimNetwork("dvportgroup-11", "pg-dc1", "DistributedVirtualPortgroup", false, "group-n1", "dvs-1"),
+                new VimNetwork("dvportgroup-21", "pg-dc2", "DistributedVirtualPortgroup", false, "group-n2", "dvs-2"),
+                new VimNetwork("dvportgroup-31", "pg-lab", "DistributedVirtualPortgroup", false, "group-n1", "dvs-3")
+            ]);
+
+            var snapshot = await Read(DefaultResponder(), vim: vim);
+
+            Assert.Equal("DSwitch", snapshot.Networks.Entries.Single(x => x.Name == "pg-dc1").Properties["switch"]);
+            Assert.Equal("DSwitch", snapshot.Networks.Entries.Single(x => x.Name == "pg-dc2").Properties["switch"]);
+            Assert.Equal("Lab", snapshot.Networks.Entries.Single(x => x.Name == "pg-lab").Properties["switch"]);
+            Assert.False(snapshot.Networks.Entries.Single(x => x.Name == "VM Network").Properties.ContainsKey("switch"));
+
+            var options = Options();
+            options.Inventory.Resources.Networks.Locations = ["dswitch"];
+            Assert.Equal(["pg-dc1", "pg-dc2"], InventoryFilters.Apply(snapshot, options).Networks.Entries.Select(x => x.Name));
+
+            // a switch name and a folder together list both
+            snapshot = await Read(DefaultResponder(), vim: vim);
+            options.Inventory.Resources.Networks.Locations = ["Lab", "/DC2/network"];
+            Assert.Equal(["pg-dc2", "pg-lab"], InventoryFilters.Apply(snapshot, options).Networks.Entries.Select(x => x.Name));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_DoesNotReadContentLibrariesThatAreTurnedOff()
+        {
+            var requests = new List<string>();
+            var options = Options();
+            options.Inventory.Resources.ContentLibraries.Enabled = false;
+
+            var snapshot = await Read(request =>
+            {
+                requests.Add(request.RequestUri.AbsolutePath);
+                return DefaultResponder()(request);
+            }, options);
+
+            Assert.Empty(requests);
+            Assert.False(snapshot.ContentLibrary.Enabled);
+            Assert.True(snapshot.VmTemplates.Available);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ASoapFailureIsLoggedRedacted()
+        {
+            var source = Substitute.For<IVimInventorySource>();
+            source.ReadAsync(Arg.Any<InfrastructureConnectionOptions>(), Arg.Any<CancellationToken>())
+                .ThrowsAsync(new InvalidOperationException($"login failed for {Password}"));
+            var logger = new RecordingLogger<VsphereInventoryClient>();
+
+            using var handler = new StubHandler(DefaultResponder());
+            var client = new VsphereInventoryClient(new StubHttpClientFactory(handler), source, logger);
+            var snapshot = await client.GetInventoryAsync(Options(), CancellationToken.None);
+
+            Assert.DoesNotContain(Password, snapshot.VmTemplates.Error);
+            Assert.NotEmpty(logger.Entries);
+            Assert.All(logger.Entries, x => Assert.DoesNotContain(Password, x.Message));
+            Assert.Contains(logger.Entries, x => x.Message.Contains("InvalidOperationException") && x.Message.Contains("***"));
+            Assert.All(logger.Entries, x => Assert.Null(x.Exception));
         }
 
         #endregion

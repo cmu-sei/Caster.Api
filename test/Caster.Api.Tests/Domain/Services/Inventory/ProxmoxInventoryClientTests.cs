@@ -50,6 +50,21 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         """;
 
         /// <summary>
+        /// GET /api2/json/cluster/resources?type=storage: one entry per storage per
+        /// node, "shared" as the integer 0 or 1. "local" is on each node with its own
+        /// numbers; a storage that isn't active on a node has no size there.
+        /// </summary>
+        private const string StorageResourcesBody = """
+        { "data": [
+          { "id": "storage/pve/local", "storage": "local", "node": "pve", "type": "storage", "disk": 30000000000, "maxdisk": 100000000000, "shared": 0, "status": "available" },
+          { "id": "storage/pve2/local", "storage": "local", "node": "pve2", "type": "storage", "disk": 10000000000, "maxdisk": 50000000000, "shared": 0, "status": "available" },
+          { "id": "storage/pve/local-lvm", "storage": "local-lvm", "node": "pve", "type": "storage", "disk": 5000000000, "maxdisk": 400000000000, "shared": 1, "status": "available" },
+          { "id": "storage/pve2/local-lvm", "storage": "local-lvm", "node": "pve2", "type": "storage", "disk": 5000000000, "maxdisk": 400000000000, "shared": 1, "status": "available" },
+          { "id": "storage/pve2/iso-stock", "storage": "iso-stock", "node": "pve2", "type": "storage", "status": "unknown" }
+        ] }
+        """;
+
+        /// <summary>
         /// GET /api2/json/nodes/pve/qemu/105/config, as the dev Proxmox returns it.
         /// The cloud-init password only ever comes back masked.
         /// </summary>
@@ -643,12 +658,118 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         #endregion
 
+        #region Locations, filters and capacity
+
+        [Fact]
+        public async Task GetInventoryAsync_ReadsTheConfigOnlyOfTemplatesThatAreListed()
+        {
+            var requested = new List<string>();
+            var options = Options();
+            options.Inventory.Resources.VmTemplates.Include = "^alpine";
+
+            var snapshot = InventoryFilters.Apply(await Read(Track(requested, DefaultResponder()), options), options);
+
+            Assert.Equal(["alpine-ct-template", "alpine-linux-template"], snapshot.VmTemplates.Entries.Select(x => x.Name));
+            Assert.Contains("/api2/json/nodes/pve/qemu/105/config", requested);
+            Assert.DoesNotContain("/api2/json/nodes/pve/qemu/106/config", requested);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ATemplateIsInItsNodeAndPool()
+        {
+            var options = Options();
+            options.Inventory.Resources.VmTemplates.Locations = ["golden", "PVE2"];
+
+            var snapshot = InventoryFilters.Apply(await Read(Responder(vm: """
+            { "data": [
+              { "id": "qemu/105", "vmid": 105, "name": "in-pool", "node": "pve", "pool": "Golden", "type": "qemu", "template": 1 },
+              { "id": "qemu/106", "vmid": 106, "name": "no-pool", "node": "pve", "type": "qemu", "template": 1 },
+              { "id": "lxc/120", "vmid": 120, "name": "on-pve2", "node": "pve2", "type": "lxc", "template": 1 }
+            ] }
+            """), options), options);
+
+            Assert.Equal(["in-pool", "on-pve2"], snapshot.VmTemplates.Entries.Select(x => x.Name));
+            Assert.Equal("Golden", snapshot.VmTemplates.Entries[0].Properties["pool"]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ABridgeIsOnItsNodesAndAVnetInItsZone()
+        {
+            var options = Options();
+            options.Inventory.Resources.Networks.Locations = ["evpnzone"];
+
+            var snapshot = InventoryFilters.Apply(await Read(Responder(vnets: """
+            { "data": [
+              { "vnet": "vnet-dmz", "type": "vnet", "zone": "evpnzone", "tag": 200 },
+              { "vnet": "vnet-lab", "type": "vnet", "zone": "simple" }
+            ] }
+            """), options), options);
+
+            Assert.Equal(["vnet-dmz"], snapshot.Networks.Entries.Select(x => x.Name));
+
+            options.Inventory.Resources.Networks.Locations = ["pve"];
+            snapshot = InventoryFilters.Apply(await Read(DefaultResponder(), options), options);
+
+            Assert.Contains("vmbr0", snapshot.Networks.Entries.Select(x => x.Name));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_GivesDatastoresTheirCapacity()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            // node-local storage on two nodes is summed
+            var local = snapshot.Datastores.Entries.Single(x => x.Name == "local");
+            Assert.Equal("150000000000", local.Properties["capacity"]);
+            Assert.Equal("110000000000", local.Properties["freeSpace"]);
+            Assert.Equal("false", local.Properties["shared"]);
+            Assert.Equal("pve,pve2", local.Properties["nodes"]);
+
+            // shared storage repeats the same numbers on every node, so it's counted once
+            var shared = snapshot.Datastores.Entries.Single(x => x.Name == "local-lvm");
+            Assert.Equal("400000000000", shared.Properties["capacity"]);
+            Assert.Equal("395000000000", shared.Properties["freeSpace"]);
+            Assert.Equal("true", shared.Properties["shared"]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ListsDatastoresWithoutCapacityWhenItCannotBeRead()
+        {
+            var snapshot = await Read(request => request.RequestUri.PathAndQuery == "/api2/json/cluster/resources?type=storage"
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : DefaultResponder()(request));
+
+            Assert.True(snapshot.Datastores.Available);
+            Assert.All(snapshot.Datastores.Entries, x => Assert.False(x.Properties.ContainsKey("capacity")));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_DoesNotReadKindsThatAreTurnedOff()
+        {
+            var requested = new List<string>();
+            var options = Options();
+            options.Inventory.Resources.VmTemplates.Enabled = false;
+            options.Inventory.Resources.Isos.Enabled = false;
+            options.Inventory.Resources.Networks.Enabled = false;
+            options.Inventory.Resources.Hosts.Enabled = false;
+
+            var snapshot = InventoryFilters.Apply(await Read(Track(requested, DefaultResponder()), options), options);
+
+            Assert.DoesNotContain(requested, x => x.Contains("/qemu/") || x.EndsWith("/network") || x.EndsWith("/content") || x == "/api2/json/nodes");
+            Assert.DoesNotContain("/api2/json/cluster/sdn/vnets", requested);
+            Assert.False(snapshot.VmTemplates.Enabled);
+            Assert.False(snapshot.Hosts.Enabled);
+            Assert.True(snapshot.Datastores.Available);
+        }
+
+        #endregion
+
         #region Independence
 
         [Fact]
         public async Task GetInventoryAsync_VmTemplatesFailIndependently()
         {
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api2/json/cluster/resources"
+            var snapshot = await Read(request => request.RequestUri.PathAndQuery == "/api2/json/cluster/resources?type=vm"
                 ? new HttpResponseMessage(HttpStatusCode.Forbidden)
                 : DefaultResponder()(request));
 
@@ -980,12 +1101,11 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         private static InfrastructureConnectionOptions Options() => new()
         {
-            Enabled = true,
+            Inventory = { Enabled = true, RefreshMinutes = 30 },
             Provider = "proxmox",
             Url = "https://pve.test:8006",
             ApiToken = ApiToken,
             InsecureSkipVerify = true,
-            RefreshMinutes = 30
         };
 
         private static InfrastructureConnectionOptions TicketOptions()
@@ -1049,7 +1169,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var inner = Responder(nodes: LoadedNodesBody);
             var calls = 0;
             // The templates read the VM list first; fail only the hosts' read of it.
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api2/json/cluster/resources" && ++calls == 2
+            var snapshot = await Read(request => request.RequestUri.PathAndQuery == "/api2/json/cluster/resources?type=vm" && ++calls == 2
                 ? new HttpResponseMessage(HttpStatusCode.Forbidden)
                 : inner(request));
 
@@ -1079,10 +1199,16 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             string nodes = null,
             string network = null,
             string isos = null,
-            string vnets = null) =>
+            string vnets = null,
+            string storageResources = null) =>
             request =>
             {
                 var path = request.RequestUri.AbsolutePath;
+
+                if (request.RequestUri.PathAndQuery == "/api2/json/cluster/resources?type=storage")
+                {
+                    return Json(storageResources ?? StorageResourcesBody);
+                }
 
                 if (path.Contains("/storage/") && path.EndsWith("/content"))
                 {

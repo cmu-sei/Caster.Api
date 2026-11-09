@@ -70,6 +70,12 @@ namespace Caster.Api.Features.Inventory
         public bool Applies { get; set; } = true;
 
         /// <summary>
+        /// False when this kind of object is turned off for the connection, so it isn't
+        /// read. A client can leave it out rather than report it as unavailable.
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>
         /// True when the latest read failed and the items are from the last read
         /// that succeeded, at <see cref="LastUpdated"/>. They may be out of date.
         /// </summary>
@@ -100,6 +106,7 @@ namespace Caster.Api.Features.Inventory
                 LastUpdated = result.LastUpdated ?? snapshot.LastUpdated,
                 Available = result.Available,
                 Applies = result.Applies,
+                Enabled = result.Enabled,
                 Stale = result.Stale,
                 Error = result.Error
             };

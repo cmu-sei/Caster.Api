@@ -25,12 +25,15 @@ public static partial class TerraformSnippets
 
     /// <summary>
     /// An inventory template, found by its folder path below the datacenter's VM
-    /// folder. Without a datacenter the provider searches the default one, which
-    /// only works on a vCenter that has a single datacenter.
+    /// folder, worked out from its full inventory path <paramref name="path"/> and
+    /// its datacenter's, <paramref name="datacenterPath"/>. Without a datacenter the
+    /// provider searches the default one, which only works on a vCenter that has a
+    /// single datacenter.
     /// </summary>
-    public static Dictionary<string, string> VsphereTemplate(string name, string path, string datacenter)
+    public static Dictionary<string, string> VsphereTemplate(string name, string path, string datacenter, string datacenterPath)
     {
         var label = Label(name);
+        path = BelowVmFolder(path, datacenterPath) ?? name;
         var builder = new StringBuilder();
 
         if (!string.IsNullOrWhiteSpace(datacenter))
@@ -70,6 +73,23 @@ public static partial class TerraformSnippets
             """);
 
         return new() { [Vsphere] = builder.ToString() };
+    }
+
+    /// <summary>
+    /// "/Folder/DC1/vm/Templates/ubuntu" below "/Folder/DC1" is "Templates/ubuntu", the
+    /// path vsphere_virtual_machine's name takes. Null when the path isn't below the
+    /// datacenter's VM folder.
+    /// </summary>
+    public static string BelowVmFolder(string path, string datacenterPath)
+    {
+        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(datacenterPath))
+            return null;
+
+        var vmFolder = datacenterPath + "/vm/";
+
+        return path.StartsWith(vmFolder, StringComparison.Ordinal) && path.Length > vmFolder.Length
+            ? path[vmFolder.Length..]
+            : null;
     }
 
     /// <summary>

@@ -23,6 +23,9 @@ namespace Caster.Api.Features.Inventory
 
         public string Provider { get; set; }
 
+        /// <summary>
+        /// Whether inventory is enabled for this connection.
+        /// </summary>
         public bool Enabled { get; set; }
 
         /// <summary>
@@ -37,13 +40,27 @@ namespace Caster.Api.Features.Inventory
         /// </summary>
         public DateTime? LastUpdated { get; set; }
 
+        /// <summary>
+        /// The kinds of object this connection reads. The others are turned off in its
+        /// settings, and their endpoints report them as not enabled.
+        /// </summary>
+        public InventoryCategory[] Resources { get; set; } = [];
+
+        /// <summary>
+        /// Why this connection's settings can't be used, in which case it isn't read.
+        /// Null when they can.
+        /// </summary>
+        public string Error { get; set; }
+
         internal static InventoryConnection From(InventoryConnectionInfo info) => new()
         {
             Name = info.Name,
             Provider = info.Provider,
             Enabled = info.Enabled,
             IsDefault = info.IsDefault,
-            LastUpdated = info.LastUpdated
+            LastUpdated = info.LastUpdated,
+            Resources = info.Resources,
+            Error = info.Error
         };
 
         /// <summary>

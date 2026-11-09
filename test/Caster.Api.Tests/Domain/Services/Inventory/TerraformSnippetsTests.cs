@@ -19,7 +19,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         [Fact]
         public void A_Vsphere_Template_Is_Found_By_Its_Path_In_Its_Datacenter()
         {
-            var snippet = TerraformSnippets.VsphereTemplate("alpine-template", "Templates/Linux/alpine-template", "DC1")[TerraformSnippets.Vsphere];
+            var snippet = TerraformSnippets.VsphereTemplate("alpine-template", "/DC1/vm/Templates/Linux/alpine-template", "DC1", "/DC1")[TerraformSnippets.Vsphere];
 
             Assert.Equal("""
                 data "vsphere_datacenter" "alpine_template_datacenter" {
@@ -42,11 +42,32 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         [Fact]
         public void A_Vsphere_Template_Without_A_Datacenter_Leaves_The_Datacenter_Out()
         {
-            var snippet = TerraformSnippets.VsphereTemplate("win2022", "win2022", null)[TerraformSnippets.Vsphere];
+            var snippet = TerraformSnippets.VsphereTemplate("win2022", null, null, null)[TerraformSnippets.Vsphere];
 
             Assert.DoesNotContain("vsphere_datacenter", snippet);
             Assert.DoesNotContain("datacenter_id", snippet);
             Assert.Contains("data \"vsphere_virtual_machine\" \"win2022\" {\n  name = \"win2022\"\n}", snippet);
+        }
+
+        /// <summary>Datacenters can be in folders, and folders can share a name with "vm".</summary>
+        [Theory]
+        [InlineData("/Lab/DC1/vm/Templates/ubuntu", "/Lab/DC1", "Templates/ubuntu")]
+        [InlineData("/DC1/vm/vm/ubuntu", "/DC1", "vm/ubuntu")]
+        [InlineData("/DC1/vm/ubuntu", "/DC1", "ubuntu")]
+        [InlineData("/DC2/vm/ubuntu", "/DC1", null)]
+        [InlineData("/DC1/vm/", "/DC1", null)]
+        [InlineData("/DC1/vm/ubuntu", null, null)]
+        public void A_Vsphere_Template_Path_Is_Taken_Below_Its_Datacenters_Vm_Folder(string path, string datacenterPath, string expected)
+        {
+            Assert.Equal(expected, TerraformSnippets.BelowVmFolder(path, datacenterPath));
+        }
+
+        [Fact]
+        public void A_Vsphere_Template_Whose_Path_Is_Not_Below_Its_Datacenter_Is_Found_By_Name()
+        {
+            var snippet = TerraformSnippets.VsphereTemplate("ubuntu", "/elsewhere/ubuntu", "DC1", "/DC1")[TerraformSnippets.Vsphere];
+
+            Assert.Contains("  name          = \"ubuntu\"\n", snippet);
         }
 
         [Fact]
