@@ -57,8 +57,9 @@ internal static class TestConfiguration
         ["Terraform:RootWorkingDirectory"] = TerraformRootWorkingDirectory,
         ["Terraform:GitlabApiUrl"] = GitlabApiUrl,
 
-        // Two infrastructure connections, so Environment Set entries can name them. Their inventory
-        // stays off: the hosted inventory service is removed, and nothing is ever read from them.
+        // Two infrastructure connections, so Environment Set entries and projects can name them. The
+        // vSphere one has its inventory on, so it can be a project's default; the hosted inventory
+        // service is removed, so nothing is ever read from either.
         ["Infrastructure:Connections:0:Name"] = ProxmoxConnection,
         ["Infrastructure:Connections:0:Provider"] = "proxmox",
         ["Infrastructure:Connections:0:Url"] = "https://pve.test:8006",
@@ -70,6 +71,7 @@ internal static class TestConfiguration
         ["Infrastructure:Connections:1:Username"] = "caster@vsphere.local",
         ["Infrastructure:Connections:1:Password"] = VspherePassword,
         ["Infrastructure:Connections:1:Datacenters:0"] = "DC1",
+        ["Infrastructure:Connections:1:Inventory:Enabled"] = "true",
     };
 
     /// <summary>The Proxmox connection in <see cref="Values"/>.</summary>

@@ -52,6 +52,18 @@ namespace Caster.Api.Features.Inventory
         /// </summary>
         public string Error { get; set; }
 
+        /// <summary>
+        /// Missing when a project's assignment names a connection no longer in configuration;
+        /// such a connection has no provider and is never read.
+        /// </summary>
+        public InventoryConnectionStatus Status { get; set; } = InventoryConnectionStatus.Available;
+
+        /// <summary>
+        /// The projects the connection is assigned to. Listed by GET api/inventory/connections
+        /// only, which needs ViewInfrastructure.
+        /// </summary>
+        public InventoryConnectionProject[] Projects { get; set; } = [];
+
         internal static InventoryConnection From(InventoryConnectionInfo info) => new()
         {
             Name = info.Name,
@@ -74,5 +86,20 @@ namespace Caster.Api.Features.Inventory
 
         internal static EntityNotFoundException<InventoryConnection> NotFound(string connection) =>
             new($"Inventory connection '{connection}' is not configured.");
+    }
+
+    public enum InventoryConnectionStatus
+    {
+        /// <summary>Configured. Its inventory may still be turned off: see Enabled.</summary>
+        Available,
+
+        /// <summary>Assigned to a project but no longer in configuration, e.g. renamed.</summary>
+        Missing
+    }
+
+    public class InventoryConnectionProject
+    {
+        public Guid ProjectId { get; set; }
+        public string Name { get; set; }
     }
 }

@@ -29,6 +29,8 @@ namespace Caster.Api.Domain.Models
 
         public virtual ICollection<ProjectEnvironmentSet> EnvironmentSets { get; set; } = new List<ProjectEnvironmentSet>();
 
+        public virtual ICollection<ProjectInventoryConnection> InventoryConnections { get; set; } = new List<ProjectInventoryConnection>();
+
         public Project() { }
 
         public Project(string name)
