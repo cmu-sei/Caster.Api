@@ -58,7 +58,7 @@ public class VsphereInventoryClient(
     /// <summary>
     /// Each content library item costs a request. Past this the category reports
     /// itself unavailable rather than list some of the templates, since a partial
-    /// list would let a disk manifest call a template missing.
+    /// list would make a template that exists look missing.
     /// </summary>
     internal const int MaxLibraryItems = 2000;
 
@@ -347,8 +347,8 @@ public class VsphereInventoryClient(
     /// An ISO's name is its path on its datastore, e.g. "iso/alpine.iso", which
     /// is what a vsphere_virtual_machine cdrom block's path takes alongside the
     /// datastore; its path is the full datastore path, "[ds] iso/alpine.iso". A
-    /// partial list is not returned, since it would let a disk manifest call an
-    /// ISO missing.
+    /// partial list is not returned, since it would make an ISO that exists look
+    /// missing.
     /// </summary>
     internal static InventoryCategoryResult Isos(VimInventory vim)
     {

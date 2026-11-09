@@ -955,44 +955,6 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
         Assert.Equal([ImportedFileName], await ArchiveHelper.EntryNames(response, Ct));
     }
 
-    /// <summary>A disk manifest describes the hypervisor, so including one needs ViewInfrastructure as well.</summary>
-    [Fact]
-    public async Task Export_with_a_disk_manifest_is_forbidden_without_ViewInfrastructure()
-    {
-        var (project, directory) = await SeedDirectory();
-        await Seed(TestData.File(directory));
-        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
-
-        var response = await Client(actor).GetAsync($"api/directories/{directory.Id}/actions/export?archiveType=zip&includeDiskManifest=true", Ct);
-
-        await AssertProblem(HttpStatusCode.Forbidden, response);
-    }
-
-    [Fact]
-    public async Task GetDiskManifest_is_forbidden_without_ViewInfrastructure()
-    {
-        var (project, directory) = await SeedDirectory();
-        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
-
-        var response = await Client(actor).GetAsync($"api/directories/{directory.Id}/disk-manifest", Ct);
-
-        await AssertProblem(HttpStatusCode.Forbidden, response);
-    }
-
-    [Fact]
-    public async Task GetDiskManifest_returns_the_manifest_to_a_member_holding_ViewInfrastructure()
-    {
-        var (project, directory) = await SeedDirectory();
-        var actor = await Actor()
-            .OnProject(project, [ProjectPermission.ViewProject])
-            .WithSystemPermissions(SystemPermission.ViewInfrastructure)
-            .SeedAsync();
-
-        var response = await Client(actor).GetAsync($"api/directories/{directory.Id}/disk-manifest", Ct);
-
-        await AssertStatus(HttpStatusCode.OK, response);
-    }
-
     [Fact]
     public async Task Export_returns_a_zip_to_a_member_holding_ViewProject()
     {
@@ -1064,21 +1026,6 @@ public class DirectoryRequestTests(DatabaseFixture fixture, CasterAppFactory fac
 
         await AssertStatus(HttpStatusCode.OK, response);
         Assert.Equal(ImportedContent, await StoredContent(directory.Id, ImportedFileName));
-    }
-
-    [Fact]
-    public async Task Import_of_an_archive_with_a_disk_manifest_says_the_disk_list_is_best_effort()
-    {
-        var (_, directory) = await SeedDirectory();
-        var archive = ArchiveHelper.Zip(
-            (ImportedFileName, Encoding.ASCII.GetBytes(ImportedContent)),
-            (ArchiveService.DiskManifestEntryName, Encoding.UTF8.GetBytes("""{ "schemaVersion": 1, "disks": [ { "kind": "VmTemplate", "name": "ubuntu-2404", "referencedBy": ["main.tf"] } ] }""")));
-
-        var response = await RootClient.PostAsync(ImportUrl(directory), archive, Ct);
-
-        var result = await ReadAsync<ImportResultView>(response);
-        Assert.Equal("ubuntu-2404", Assert.Single(result.Disks).Name);
-        Assert.Contains(Caster.Api.Domain.Services.Inventory.DiskManifestMessages.BestEffort, result.Warnings);
     }
 
     [Fact]

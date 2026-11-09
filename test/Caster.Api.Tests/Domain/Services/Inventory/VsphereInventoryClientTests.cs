@@ -280,7 +280,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         [Fact]
         public async Task GetInventoryAsync_AnIncompleteIsoSearchMakesIsosUnavailable()
         {
-            // A partial list would let a disk manifest call an ISO missing.
+            // A partial list would make an ISO that exists look missing.
             var vim = Vim();
             vim.IsoError = "Some ISO locations could not be searched: [slow-ds]: timed out.";
 
