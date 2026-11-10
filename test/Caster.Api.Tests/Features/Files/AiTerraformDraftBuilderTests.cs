@@ -190,6 +190,39 @@ public class AiTerraformDraftBuilderTests
         Assert.Empty(draft.Inventory.Unknown);
     }
 
+    [Theory]
+    [InlineData("resource \"proxmox_virtual_environment_sdn_vnet\" \"range_net\" {\n  id = var.vnet_name\n  zone = \"crucible\"\n}\n")]
+    [InlineData("module \"range_net\" {\n  source = \"git::https://example.com/crucible-modules/proxmox-network?ref=v1\"\n}\n")]
+    public void Review_does_not_check_segment_networks_when_the_draft_creates_networks(string net)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            summary = "s",
+            files = new[] { new { name = "net.tf", content = net } },
+            topology = new
+            {
+                segments = new[] { new { name = "red", role = "Attacker", network = "Created by range_net (vnet in zone crucible)" } },
+                machines = Array.Empty<object>()
+            }
+        });
+
+        var draft = ReviewWithInventory(json);
+
+        Assert.Empty(draft.Inventory.Unknown);
+        Assert.DoesNotContain(draft.Warnings, w => w.Contains("not in the Proxmox inventory"));
+    }
+
+    [Fact]
+    public void Review_still_checks_segment_networks_when_the_draft_creates_none()
+    {
+        var draft = ReviewWithInventory("""
+            {"summary":"s","files":[{"name":"vars.tf","content":"variable \"x\" {}\n"}],
+             "topology":{"segments":[{"name":"dmz","role":"Dmz","network":"nosuchbridge"}],"machines":[]}}
+            """);
+
+        Assert.Equal("nosuchbridge", Assert.Single(draft.Inventory.Unknown).Name);
+    }
+
     [Fact]
     public void Review_returns_the_topology_plan_and_its_problems()
     {

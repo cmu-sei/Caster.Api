@@ -279,6 +279,28 @@ public class AiTopologyTests
         Assert.Contains(uses, u => u.Kind == AiInventoryKind.Network && u.Name == "vnet10" && u.Where == "topology segment a");
     }
 
+    [Fact]
+    public void NameUses_leave_out_segment_networks_when_the_draft_creates_networks()
+    {
+        var plan = new AiTopologyPlan
+        {
+            Segments = [new() { Name = "red", Network = "SDN vnet in zone crucible (created by the proxmox-network module)" }],
+            Machines = [new() { Name = "m", Template = "9000" }]
+        };
+
+        var uses = AiTopology.NameUses(plan, Hypervisors.Proxmox, draftCreatesNetworks: true).ToList();
+
+        Assert.Equal(AiInventoryKind.Template, Assert.Single(uses).Kind);
+    }
+
+    [Fact]
+    public void The_tool_schema_asks_for_a_segment_network_name_only()
+    {
+        var schema = AiTopology.BuildToolSchema().ToJsonString();
+
+        Assert.Contains("Only the name, no description", schema);
+    }
+
     [Theory]
     [InlineData("10.0.0.0/8", true)]
     [InlineData("10.20.0.0/16", true)]

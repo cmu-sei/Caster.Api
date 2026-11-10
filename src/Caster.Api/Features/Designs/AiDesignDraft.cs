@@ -400,13 +400,17 @@ public static class AiDesignDraftBuilder
         if (inventory != null)
         {
             var uses = NameUses(kept.Select(k => (k.Draft.Name, k.Draft.Hypervisor ?? hypervisor, k.Version, (IEnumerable<Domain.Models.ModuleValue>)k.Values)), out var created)
-                .Concat(AiTopology.NameUses(draft.Topology, hypervisor))
+                .Concat(AiTopology.NameUses(draft.Topology, hypervisor, kept.Any(k => CreatesNetworks(k.Version))))
                 .Where(u => u.Kind != AiInventoryKind.Network || !created.Contains(u.Name));
             inventory.Check(uses, draft.Warnings);
             draft.Inventory = inventory.Grounding;
         }
         return draft;
     }
+
+    /// <summary>A module with a network output, such as proxmox-network, creates networks</summary>
+    public static bool CreatesNetworks(ModuleVersion version) =>
+        (version.Outputs ?? []).Any(o => Files.AiTerraformReferences.KindOfVariable(o.Name) == AiInventoryKind.Network);
 
     /// <summary>
     /// The template, network and datastore names the modules' values set as literals. A module
@@ -418,7 +422,7 @@ public static class AiDesignDraftBuilder
         var uses = new List<AiNameUse>();
         foreach (var (name, hypervisor, version, values) in modules)
         {
-            var createsNetworks = (version.Outputs ?? []).Any(o => Files.AiTerraformReferences.KindOfVariable(o.Name) == AiInventoryKind.Network);
+            var createsNetworks = CreatesNetworks(version);
             foreach (var value in values ?? [])
             {
                 var kind = Files.AiTerraformReferences.KindOfVariable(value.Name);

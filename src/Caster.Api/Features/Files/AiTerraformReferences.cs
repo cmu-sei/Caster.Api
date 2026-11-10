@@ -124,6 +124,22 @@ public static class AiTerraformReferences
     }
 
     /// <summary>
+    /// Whether the content creates a network: a network resource, named literally or not, or a module whose
+    /// source is a network module such as proxmox-network.
+    /// </summary>
+    public static bool CreatesNetworks(string content)
+    {
+        return Blocks(Strip(content)).Any(b => b.Keyword == "resource" && NetworkResources.ContainsKey(b.Type))
+            || NetworkModuleSource.IsMatch(content ?? "");
+    }
+
+    // a module source whose last path part names a network, e.g. git::https://host/crucible-modules/proxmox-network?ref=v1;
+    // read unstripped, as stripping comments cuts a URL at its //
+    private static readonly Regex NetworkModuleSource = new(
+        @"^[ \t]*module[ \t]+""[^""]+""[ \t]*\{[^}]*?\bsource[ \t]*=[ \t]*""[^""?]*/[^/""?]*network[^/""?]*(\?[^""]*)?""",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase);
+
+    /// <summary>
     /// The kind of name a variable holds, from its name: template, network or datastore. Null for any other.
     /// </summary>
     public static AiInventoryKind? KindOfVariable(string name)
