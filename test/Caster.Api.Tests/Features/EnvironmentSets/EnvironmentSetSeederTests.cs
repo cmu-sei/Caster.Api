@@ -160,7 +160,7 @@ public class EnvironmentSetSeederTests(DatabaseFixture fixture) : DatabaseTestBa
         var monitor = Substitute.For<IOptionsMonitor<InfrastructureOptions>>();
         monitor.CurrentValue.Returns(new InfrastructureOptions
         {
-            Connections = [new InfrastructureConnectionOptions { Name = "lab-pve", Provider = "proxmox", Url = "https://pve.lab:8006", ApiToken = "caster@pve!ci=0123456789abcdef" }]
+            Connections = [new InfrastructureConnectionOptions { Name = "lab-pve", Provider = "proxmox", Url = "https://pve.lab:8006", ApiToken = "caster@pve!ci=seed-test-token" }]
         });
 
         return new InfrastructureConnectionCatalog(monitor);

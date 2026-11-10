@@ -77,7 +77,8 @@ internal static class TestConfiguration
     /// <summary>The Proxmox connection in <see cref="Values"/>.</summary>
     public const string ProxmoxConnection = "lab-pve";
 
-    public const string ProxmoxApiToken = "caster@pve!ci=0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b";
+    // Not a real token, and not shaped like one: secret scanning matches a token whose secret is a UUID.
+    public const string ProxmoxApiToken = "caster@pve!ci=test-token-not-a-secret";
 
     /// <summary>The vSphere connection in <see cref="Values"/>.</summary>
     public const string VsphereConnection = "lab-vcenter";
