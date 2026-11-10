@@ -160,4 +160,23 @@ public class ProjectInventoryRequestTests(DatabaseFixture fixture, CasterAppFact
 
         Assert.Contains(connections.Single(x => x.Name == TestConfiguration.ProxmoxConnection).Projects, x => x.ProjectId == project.Id);
     }
+
+    [Fact]
+    public async Task The_system_connection_list_names_the_project_groups_each_is_assigned_to()
+    {
+        var group = new ProjectGroup { Id = Guid.NewGuid(), Name = $"Lab {Guid.NewGuid():N}" };
+        await Seed(group, new ProjectGroupInventoryConnection
+        {
+            Id = Guid.NewGuid(),
+            ProjectGroupId = group.Id,
+            ConnectionName = TestConfiguration.ProxmoxConnection,
+            NormalizedConnectionName = ProjectInventoryConnection.Normalize(TestConfiguration.ProxmoxConnection)
+        });
+        var admin = await Actor().WithSystemPermissions(SystemPermission.ViewInfrastructure).SeedAsync();
+
+        var connections = await ReadAsync<InventoryConnection[]>(await Client(admin).GetAsync("api/inventory/connections", Ct));
+
+        var assigned = Assert.Single(connections.Single(x => x.Name == TestConfiguration.ProxmoxConnection).AssignedProjectGroups, x => x.ProjectGroupId == group.Id);
+        Assert.Equal(group.Name, assigned.Name);
+    }
 }

@@ -31,12 +31,17 @@ namespace Caster.Api.Features.Inventory
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewInfrastructure], cancellationToken);
 
-            /// <summary>Each connection with the projects it is assigned to, for the Infrastructure Connections page.</summary>
+            /// <summary>Each connection with the projects and project groups it is assigned to, for the Infrastructure Connections page.</summary>
             public override async Task<InventoryConnection[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 var assignments = (await dbContext.ProjectInventoryConnections
                         .AsNoTracking()
                         .Select(x => new { x.NormalizedConnectionName, x.ProjectId, x.Project.Name })
+                        .ToListAsync(cancellationToken))
+                    .ToLookup(x => x.NormalizedConnectionName);
+                var groupAssignments = (await dbContext.ProjectGroupInventoryConnections
+                        .AsNoTracking()
+                        .Select(x => new { x.NormalizedConnectionName, x.ProjectGroupId, x.ProjectGroup.Name })
                         .ToListAsync(cancellationToken))
                     .ToLookup(x => x.NormalizedConnectionName);
 
@@ -46,6 +51,10 @@ namespace Caster.Api.Features.Inventory
                         var connection = InventoryConnection.From(info);
                         connection.Projects = assignments[ProjectInventoryConnection.Normalize(info.Name)]
                             .Select(x => new InventoryConnectionProject { ProjectId = x.ProjectId, Name = x.Name })
+                            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                            .ToArray();
+                        connection.AssignedProjectGroups = groupAssignments[ProjectInventoryConnection.Normalize(info.Name)]
+                            .Select(x => new InventoryConnectionProjectGroup { ProjectGroupId = x.ProjectGroupId, Name = x.Name })
                             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                             .ToArray();
                         return connection;

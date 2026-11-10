@@ -64,6 +64,12 @@ namespace Caster.Api.Features.Inventory
         /// </summary>
         public InventoryConnectionProject[] Projects { get; set; } = [];
 
+        /// <summary>
+        /// The project groups the connection is assigned to. Listed by GET api/inventory/connections
+        /// only, which needs ViewInfrastructure.
+        /// </summary>
+        public InventoryConnectionProjectGroup[] AssignedProjectGroups { get; set; } = [];
+
         /// <summary>From a project's routes: whether the connection is assigned to the project itself.</summary>
         public bool IsDirect { get; set; }
 
@@ -106,6 +112,12 @@ namespace Caster.Api.Features.Inventory
     public class InventoryConnectionProject
     {
         public Guid ProjectId { get; set; }
+        public string Name { get; set; }
+    }
+
+    public class InventoryConnectionProjectGroup
+    {
+        public Guid ProjectGroupId { get; set; }
         public string Name { get; set; }
     }
 }
