@@ -77,6 +77,12 @@ A value the list doesn't cover can be a Plain entry. Connections are referred to
 * **A secret can't be a Terraform variable**: neither a Secret entry nor a connection credential. Terraform saves variable values in saved plans and state, so provider credentials go in the provider's environment variables, which every preset uses. This is checked on save, in copies and multi-edits, when seeding, and again at run time.
 * `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n` and `GIT_CONFIG_VALUE_n` are refused: a set's `GIT_CONFIG_KEY_0` would replace Caster's own git configuration for module sources, and another count would break its numbering.
 
+### Assigning
+
+* A set is assigned to projects on its page in Administration > Environment Sets, and a project's sets and inventory connections can be added and removed together in the project's Environment dialog.
+* **Assignments** (`POST api/assignments`) adds and removes sets and [inventory connections](Inventory.md) on projects in one request: each change names a project and either a set or a connection. The changes are checked against the final state and saved together, or not at all, so a set can be swapped for one giving the same names. Adding what is already assigned, or removing what isn't, changes nothing. Set changes need `ManageEnvironmentSets`, connection changes `ManageInfrastructure`.
+* `POST` and `DELETE api/projects/{id}/environment-sets/{setId}` assign or remove one set.
+
 ### Copying and editing several sets
 
 * **Copy** (`POST api/environment-sets/{id}/copy`) makes "*name* (copy)" with every entry. Secret entries copy the secret's name, never a value. The copy is assigned to no project. Copying a set with connection entries also needs `ManageInfrastructure`.

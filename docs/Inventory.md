@@ -1,6 +1,6 @@
 # Infrastructure Inventory
 
-Caster can read what is on the hypervisors it deploys to (VM templates, content library items, ISOs, networks, datastores and hosts) and list it in each Project's Infrastructure panel, with Terraform to copy for each object. It reads vSphere (vCenter) and Proxmox VE. The inventory is off by default. `ViewInfrastructure` holders see every connection; a project's members (`ViewProject`) see the connections assigned to their project.
+Caster can read what is on the hypervisors it deploys to (VM templates, content library items, ISOs, networks, datastores and hosts) and list it in each Project's Inventory panel, with Terraform to copy for each object. It reads vSphere (vCenter) and Proxmox VE. The inventory is off by default. `ViewInfrastructure` holders see every connection; a project's members (`ViewProject`) see the connections assigned to their project.
 
 ## Connections
 
@@ -47,7 +47,7 @@ The API never returns a connection's url or credentials. Variables under `Infras
 
 `Inventory:Resources` has a setting for each kind of object: `VmTemplates`, `Isos`, `Networks`, `Datastores`, `ContentLibraries` and `Hosts`. All of them are on by default.
 
-- **Enabled: false** skips reading that kind of object. Its endpoint reports it as not enabled, and the Infrastructure panel leaves it out. Data another kind needs is still read, e.g. datastores for the ISO search.
+- **Enabled: false** skips reading that kind of object. Its endpoint reports it as not enabled, and the Inventory panel leaves it out. Data another kind needs is still read, e.g. datastores for the ISO search.
 - **Locations** lists only objects in those places. Every entry ignores case.
   - vSphere: a full inventory path, in the form `govc` uses, matching that folder and everything below it. `/DC1/vm/Templates` matches `/DC1/vm/Templates/linux/ubuntu`. VM templates take a VM folder, datastores a datastore folder or datastore cluster, and hosts a cluster. Networks take a network folder, or a distributed switch's name to list its port groups.
   - Proxmox: a name. VM templates take a node or resource pool, networks a node (for bridges) or SDN zone (for vnets), datastores a storage, and hosts a node.
@@ -58,7 +58,7 @@ A setting that can't be used, such as an invalid regular expression or a locatio
 
 ## Projects
 
-A connection's inventory reaches a project's Infrastructure panel only when the connection is assigned to the project, under the project's infrastructure settings or `POST api/projects/{id}/inventory/connections/{name}`. Assigning needs `ManageInfrastructure`, not a project permission, so a project's managers can't give themselves a hypervisor.
+A connection's inventory reaches a project's Inventory panel only when the connection is assigned to the project: in Administration > Infrastructure Connections, in the project's Environment dialog, through `POST api/assignments` (several changes at once, see [Environment Sets](EnvironmentSets.md#assigning)) or `POST api/projects/{id}/inventory/connections/{name}`. Assigning needs `ManageInfrastructure`, not a project permission, so a project's managers can't give themselves a hypervisor.
 
 * `api/projects/{id}/inventory/...` serves the same lists as `api/inventory/...`, for the project's connections only. A request that names no connection reads the project's first assigned connection, in configuration order, with inventory enabled. A project with none gets an empty result with no connection, never another connection's data.
 * An assignment names the connection as configuration spelled it. A connection that leaves configuration, or is renamed, stays assigned and shows as missing.
