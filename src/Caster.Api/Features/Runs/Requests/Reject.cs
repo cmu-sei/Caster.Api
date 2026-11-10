@@ -5,7 +5,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
@@ -17,7 +16,6 @@ using Caster.Api.Domain.Services;
 using System.Linq;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Domain.Events;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Features.Shared;
 
 namespace Caster.Api.Features.Runs
@@ -36,7 +34,6 @@ namespace Caster.Api.Features.Runs
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext,
             TerraformOptions terraformOptions,
             ILockService lockService,
@@ -80,7 +77,7 @@ namespace Caster.Api.Features.Runs
                     await mediator.Publish(new RunUpdated(run.Id));
 
                     return await dbContext.Runs
-                        .ProjectTo<Run>(mapper.ConfigurationProvider)
+                        .ProjectToRun()
                         .SingleOrDefaultAsync(x => x.Id == run.Id, cancellationToken);
                 }
             }

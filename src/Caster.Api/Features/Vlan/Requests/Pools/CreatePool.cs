@@ -6,7 +6,6 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using System.Linq;
@@ -37,16 +36,16 @@ namespace Caster.Api.Features.Vlan
             public int[] ReservedVlanIds { get; set; } = [0, 1, 4095];
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Pool>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Pool>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
 
             public override async Task<Pool> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var pool = mapper.Map<Domain.Models.Pool>(request);
+                var pool = request.ToEntity();
                 await dbContext.CreateVlanPool(pool, request.ReservedVlanIds, true, cancellationToken);
-                return mapper.Map<Pool>(pool);
+                return pool.ToPool();
             }
         }
     }

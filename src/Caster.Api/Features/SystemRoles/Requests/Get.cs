@@ -5,9 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
@@ -28,7 +26,7 @@ namespace Caster.Api.Features.SystemRoles
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, SystemRole>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, SystemRole>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([Domain.Models.SystemPermission.ViewRoles], cancellationToken);
@@ -36,7 +34,7 @@ namespace Caster.Api.Features.SystemRoles
             public override async Task<SystemRole> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 var systemRole = await dbContext.SystemRoles
-                    .ProjectTo<SystemRole>(mapper.ConfigurationProvider, dest => dest.Permissions)
+                    .ProjectToSystemRole()
                     .SingleOrDefaultAsync(e => e.Id == request.Id, cancellationToken);
 
                 if (systemRole == null)

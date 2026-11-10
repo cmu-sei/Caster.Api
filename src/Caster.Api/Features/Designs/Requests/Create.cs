@@ -11,7 +11,6 @@ using Caster.Api.Features.Shared;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 
@@ -43,19 +42,19 @@ public class Create
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Design>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Design>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
         public override async Task<Design> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            var design = mapper.Map<Domain.Models.Design>(request);
+            var design = request.ToEntity();
 
             dbContext.Designs.Add(design);
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            return mapper.Map<Design>(design);
+            return design.ToDesign();
         }
     }
 }

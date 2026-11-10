@@ -4,8 +4,6 @@
 
 using System;
 using System.Linq;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Features.Files
@@ -14,7 +12,6 @@ namespace Caster.Api.Features.Files
     {
         public static IQueryable<File> GetAll(
             this IQueryable<Domain.Models.File> query,
-            IConfigurationProvider configurationProvider,
             bool includeDeleted,
             bool includeContent,
             Guid? directoryId = null)
@@ -33,11 +30,11 @@ namespace Caster.Api.Features.Files
 
             if(includeContent)
             {
-                returnQuery = query.ProjectTo<File>(configurationProvider, dest => dest.Content);
+                returnQuery = query.ProjectToFileWithContent();
             }
             else
             {
-                returnQuery = query.ProjectTo<File>(configurationProvider);
+                returnQuery = query.ProjectToFile();
             }
 
             return returnQuery;

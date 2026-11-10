@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.EntityFrameworkCore;
@@ -54,7 +53,7 @@ namespace Caster.Api.Features.Projects
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, ProjectMembership>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, ProjectMembership>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Project>(request.ProjectId, [SystemPermission.ManageProjects], [ProjectPermission.ManageProject], cancellationToken);
@@ -71,7 +70,7 @@ namespace Caster.Api.Features.Projects
                 dbContext.ProjectMemberships.Add(projectMembership);
                 await dbContext.SaveChangesAsync(cancellationToken);
 
-                return mapper.Map<ProjectMembership>(projectMembership);
+                return projectMembership.ToProjectMembership();
             }
         }
     }

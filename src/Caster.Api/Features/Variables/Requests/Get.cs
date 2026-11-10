@@ -14,9 +14,7 @@ using System.Text.Json.Serialization;
 using System.Linq;
 using Caster.Api.Features.Shared;
 using FluentValidation;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Domain.Models;
-using AutoMapper;
 using Caster.Api.Data;
 
 namespace Caster.Api.Features.Variables;
@@ -30,7 +28,7 @@ public class Get
         public Guid Id { get; set; }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Variable>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Variable>
     {
         public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Domain.Models.Variable>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -39,7 +37,7 @@ public class Get
         {
             var variable = await dbContext.Variables
                 .Where(x => x.Id == request.Id)
-                .ProjectTo<Variable>(mapper.ConfigurationProvider)
+                .ProjectToVariable()
                 .SingleOrDefaultAsync(cancellationToken);
 
             if (variable == null)
