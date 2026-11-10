@@ -94,7 +94,20 @@ public static class AiTerraformDraftBuilder
         @"^\s*([A-Za-z0-9_]*(password|secret|token|api_key|access_key|private_key)[A-Za-z0-9_]*)\s*=\s*""(?!\$\{)[^""]{4,}""",
         RegexOptions.Multiline | RegexOptions.IgnoreCase);
 
-    public static string BuildSystemPrompt(IReadOnlyList<AiCatalogModule> catalog, string inventory = null)
+    /// <summary>
+    /// Tells the model which provider settings Caster's runs set in the environment, by name only, so it writes
+    /// provider blocks without them rather than declaring required variables. Empty when there are none.
+    /// </summary>
+    public static string ProviderEnvironmentSection(IReadOnlyList<string> providerVariables)
+    {
+        if (providerVariables == null || providerVariables.Count == 0)
+            return "";
+        return "Provider settings from the run environment: Caster sets these environment variables for every Terraform run, and "
+            + $"the providers read them on their own: {string.Join(", ", providerVariables)}. Leave those settings out of provider "
+            + "blocks (for example provider \"proxmox\" {}) and declare no variables for them; they are not credentials to ask for.\n";
+    }
+
+    public static string BuildSystemPrompt(IReadOnlyList<AiCatalogModule> catalog, string inventory = null, IReadOnlyList<string> providerVariables = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You write Terraform for Caster, the infrastructure tool of the Crucible cyber range.");
@@ -118,6 +131,11 @@ public static class AiTerraformDraftBuilder
         sb.AppendLine("- In the summary, say what you changed and what the designer still has to decide.");
         sb.AppendLine();
         sb.AppendLine(AiTopology.Guidance);
+        if (ProviderEnvironmentSection(providerVariables) is { Length: > 0 } providerSection)
+        {
+            sb.AppendLine();
+            sb.Append(providerSection);
+        }
         if (!string.IsNullOrEmpty(inventory))
         {
             sb.AppendLine();

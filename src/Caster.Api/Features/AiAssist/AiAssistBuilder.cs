@@ -60,6 +60,9 @@ public class AiAssistState
     public string[] Versions { get; init; } = [];
     public string DefaultVersion { get; init; }
 
+    /// <summary>The provider environment variables runs get, by name only</summary>
+    public string[] ProviderVariables { get; init; } = [];
+
     public IEnumerable<AiContextFile> Editable => Files.Where(f => f.Editable);
 
     public static async Task<AiAssistState> LoadAsync(CasterContext db, ITerraformService terraformService, TerraformOptions terraformOptions,
@@ -133,7 +136,8 @@ public class AiAssistState
             WorkspaceId = workspaceId,
             Designs = designs.Select(DescribeDesign).ToList(),
             Versions = terraformService.GetVersions()?.OrderBy(v => v, VersionOrder).ToArray() ?? [],
-            DefaultVersion = terraformOptions.DefaultVersion
+            DefaultVersion = terraformOptions.DefaultVersion,
+            ProviderVariables = Hypervisors.ProviderVariables(terraformOptions)
         };
     }
 
@@ -246,6 +250,7 @@ did not ask about a failure.
         sb.AppendLine($"Directory: {state.DirectoryName}");
         sb.AppendLine($"Terraform versions Caster has: {string.Join(", ", state.Versions.DefaultIfEmpty("none listed"))}." +
             (string.IsNullOrEmpty(state.DefaultVersion) ? "" : $" Default: {state.DefaultVersion}."));
+        sb.Append(AiTerraformDraftBuilder.ProviderEnvironmentSection(state.ProviderVariables));
 
         sb.AppendLine().AppendLine(state.Workspaces.Count == 0 ? "The directory has no workspaces." : "Workspaces:");
         foreach (var workspace in state.Workspaces)

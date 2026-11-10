@@ -74,5 +74,23 @@ namespace Caster.Api.Tests.Domain.Models.Modules
         {
             Assert.Empty(Hypervisors.Configured(null, _ => "set"));
         }
+
+        [Fact]
+        public void ProviderVariables_Names_The_Provider_Variables_Runs_Get_Without_Their_Values()
+        {
+            var options = Options(new()
+            {
+                ["PROXMOX_VE_ENDPOINT"] = "https://pve:8006",
+                ["PROXMOX_VE_API_TOKEN"] = "root@pam!caster=SECRET",
+                ["PROXMOX_VE_INSECURE"] = "true",
+                ["PROXMOX_VE_SSH_PASSWORD"] = "",
+                ["TF_LOG"] = "DEBUG"
+            }, inherit: "^VSPHERE");
+            var environment = new Dictionary<string, string> { ["VSPHERE_USER"] = "caster", ["VSPHERE_PASSWORD"] = "SECRET", ["PROXMOX_VE_USERNAME"] = "root" };
+
+            Assert.Equal(
+                ["PROXMOX_VE_API_TOKEN", "PROXMOX_VE_ENDPOINT", "PROXMOX_VE_INSECURE", "VSPHERE_PASSWORD", "VSPHERE_USER"],
+                Hypervisors.ProviderVariables(options, environment));
+        }
     }
 }
