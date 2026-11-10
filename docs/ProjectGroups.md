@@ -12,6 +12,8 @@ A project group is a set of projects that share memberships, Environment Sets, i
 
 The project's views mark what comes through the group, e.g. "via group Range A".
 
+Admins give a group Environment Sets and connections on the set's or connection's page in Administration, which list projects and project groups, or on the group's own page. `POST api/assignments` takes changes for groups as it does for projects, each naming a `projectGroupId` instead of a `projectId`, and checks the whole request against the final state of every project the groups reach, so a set can be moved from a project to its group in one request.
+
 ## Who can do what
 
 | Operation | Needs |

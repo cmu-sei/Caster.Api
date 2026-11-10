@@ -33,6 +33,12 @@ public class ProposedSetChanges
 
     /// <summary>Projects moving into a group (or out of one, to null).</summary>
     public Dictionary<Guid, Guid?> ProjectGroupChanges { get; } = [];
+
+    /// <summary>Sets being taken off projects, so a set can be swapped for one giving the same names.</summary>
+    public List<(Guid ProjectId, Guid SetId)> ProjectUnassignments { get; } = [];
+
+    /// <summary>Sets being taken off project groups.</summary>
+    public List<(Guid ProjectGroupId, Guid SetId)> GroupUnassignments { get; } = [];
 }
 
 /// <summary>
@@ -130,6 +136,7 @@ public static class EnvironmentSetConflicts
                 .Select(x => x.EnvironmentSetId)
                 .ToListAsync(cancellationToken);
             var finalGroupSets = groupSets
+                .Where(x => !changes.GroupUnassignments.Contains((groupId, x)))
                 .Concat(changes.GroupAssignments.Where(x => x.ProjectGroupId == groupId).Select(x => x.SetId))
                 .Distinct()
                 .ToList();
@@ -191,9 +198,11 @@ public static class EnvironmentSetConflicts
         var finalSets = projects.ToDictionary(
             x => x.Id,
             x => direct.Where(d => d.ProjectId == x.Id).Select(d => d.EnvironmentSetId)
+                .Where(d => !changes.ProjectUnassignments.Contains((x.Id, d)))
                 .Concat(changes.ProjectAssignments.Where(a => a.ProjectId == x.Id).Select(a => a.SetId))
                 .Concat(finalGroup[x.Id] is { } group
                     ? viaGroup.Where(g => g.ProjectGroupId == group).Select(g => g.EnvironmentSetId)
+                        .Where(g => !changes.GroupUnassignments.Contains((group, g)))
                         .Concat(changes.GroupAssignments.Where(a => a.ProjectGroupId == group).Select(a => a.SetId))
                     : [])
                 .Distinct()

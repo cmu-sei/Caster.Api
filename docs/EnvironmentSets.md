@@ -80,8 +80,8 @@ A value the list doesn't cover can be a Plain entry. Connections are referred to
 
 ### Assigning
 
-* A set is assigned to projects on its page in Administration > Environment Sets, and a project's sets and inventory connections can be added and removed together in the project's Environment dialog.
-* **Assignments** (`POST api/assignments`) adds and removes sets and [inventory connections](Inventory.md) on projects in one request: each change names a project and either a set or a connection. The changes are checked against the final state and saved together, or not at all, so a set can be swapped for one giving the same names. Adding what is already assigned, or removing what isn't, changes nothing. Set changes need `ManageEnvironmentSets`, connection changes `ManageInfrastructure`.
+* A set is assigned to projects and [project groups](ProjectGroups.md) on its page in Administration > Environment Sets. A project's sets and inventory connections can be added and removed together in the project's Environment dialog, and a group's on its page.
+* **Assignments** (`POST api/assignments`) adds and removes sets and [inventory connections](Inventory.md) on projects and project groups in one request: each change names a project or a group, and either a set or a connection. The changes are checked against the final state and saved together, or not at all, so a set can be swapped for one giving the same names. Adding what is already assigned, or removing what isn't, changes nothing. Set changes need `ManageEnvironmentSets`, connection changes `ManageInfrastructure`.
 * `POST` and `DELETE api/projects/{id}/environment-sets/{setId}` assign or remove one set.
 
 ### Copying and editing several sets

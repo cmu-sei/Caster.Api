@@ -18,7 +18,6 @@ using Caster.Api.Infrastructure.Exceptions;
 using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using EntryEntity = Caster.Api.Domain.Models.EnvironmentSetEntry;
 
 namespace Caster.Api.Features.Assignments;
 
@@ -30,7 +29,8 @@ public enum AssignmentOperation
 
 /// <summary>
 /// One assignment to add or remove: an Environment Set or an infrastructure connection, on a
-/// project. It names either EnvironmentSetId or ConnectionName.
+/// project or a project group. It names either ProjectId or ProjectGroupId, and either
+/// EnvironmentSetId or ConnectionName.
 /// </summary>
 [DataContract(Name = "AssignmentChange")]
 public class AssignmentChange
@@ -39,7 +39,11 @@ public class AssignmentChange
     public AssignmentOperation Operation { get; set; }
 
     [DataMember]
-    public Guid ProjectId { get; set; }
+    public Guid? ProjectId { get; set; }
+
+    /// <summary>A project group: what it is assigned reaches every project in it.</summary>
+    [DataMember]
+    public Guid? ProjectGroupId { get; set; }
 
     [DataMember]
     public Guid? EnvironmentSetId { get; set; }
@@ -74,9 +78,11 @@ public class EditAssignments
             RuleForEach(x => x.Changes).Where(x => x is not null).ChildRules(change =>
             {
                 change.RuleFor(x => x.Operation).IsInEnum();
-                change.RuleFor(x => x.ProjectId).NotEmpty();
                 change.RuleFor(x => x)
-                    .Must(x => x.EnvironmentSetId.HasValue != !string.IsNullOrWhiteSpace(x.ConnectionName))
+                    .Must(x => IsSet(x.ProjectId) != IsSet(x.ProjectGroupId))
+                    .WithMessage("A change names either a project or a project group.");
+                change.RuleFor(x => x)
+                    .Must(x => IsSet(x.EnvironmentSetId) != !string.IsNullOrWhiteSpace(x.ConnectionName))
                     .WithMessage("A change names either an Environment Set or a connection.");
             });
 
@@ -85,15 +91,18 @@ public class EditAssignments
                 .WithMessage("A change is listed more than once, or both added and removed.");
         }
 
+        private static bool IsSet(Guid? id) => id.HasValue && id.Value != Guid.Empty;
+
         private static string Key(AssignmentChange change) =>
-            $"{change.ProjectId}|{change.EnvironmentSetId}|{ProjectInventoryConnection.Normalize(change.ConnectionName ?? string.Empty)}";
+            $"{change.ProjectId}|{change.ProjectGroupId}|{change.EnvironmentSetId}|{ProjectInventoryConnection.Normalize(change.ConnectionName ?? string.Empty)}";
     }
 
     /// <summary>
-    /// Adds and removes Environment Sets and inventory connections on projects, checked against the
-    /// final state and saved together: a change that would leave a project with two sets giving the
-    /// same name refuses the whole request. Adding what is already assigned, or removing what isn't,
-    /// changes nothing. Set changes need ManageEnvironmentSets, connection changes ManageInfrastructure.
+    /// Adds and removes Environment Sets and inventory connections on projects and project groups,
+    /// checked against the final state and saved together: a change that would leave a project
+    /// with two sets giving the same name, directly or through its group, refuses the whole
+    /// request. Adding what is already assigned, or removing what isn't, changes nothing. Set
+    /// changes need ManageEnvironmentSets, connection changes ManageInfrastructure.
     /// </summary>
     public class Handler(
         ICasterAuthorizationService authorizationService,
@@ -122,11 +131,13 @@ public class EditAssignments
 
         private async Task Handle(Command request, CancellationToken cancellationToken)
         {
-            var projectIds = request.Changes.Select(x => x.ProjectId).Distinct().ToList();
-            var projectCount = await dbContext.Projects.CountAsync(x => projectIds.Contains(x.Id), cancellationToken);
-
-            if (projectCount != projectIds.Count)
+            var projectIds = request.Changes.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId.Value).Distinct().ToList();
+            if (await dbContext.Projects.CountAsync(x => projectIds.Contains(x.Id), cancellationToken) != projectIds.Count)
                 throw new EntityNotFoundException<Project>();
+
+            var groupIds = request.Changes.Where(x => x.ProjectGroupId.HasValue).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
+            if (await dbContext.ProjectGroups.CountAsync(x => groupIds.Contains(x.Id), cancellationToken) != groupIds.Count)
+                throw new EntityNotFoundException<Domain.Models.ProjectGroup>();
 
             await ApplySetChanges(request.Changes.Where(x => x.EnvironmentSetId.HasValue).ToList(), cancellationToken);
             await ApplyConnectionChanges(request.Changes.Where(x => x.ConnectionName is not null).ToList(), cancellationToken);
@@ -149,20 +160,60 @@ public class EditAssignments
             if (sets.Count != setIds.Count)
                 throw new EntityNotFoundException<Domain.Models.EnvironmentSet>();
 
-            var projectIds = changes.Select(x => x.ProjectId).Distinct().ToList();
-            var stored = await dbContext.ProjectEnvironmentSets
+            var projectIds = changes.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId.Value).Distinct().ToList();
+            var groupIds = changes.Where(x => x.ProjectGroupId.HasValue).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
+            var onProjects = await dbContext.ProjectEnvironmentSets
                 .Where(x => projectIds.Contains(x.ProjectId))
                 .ToListAsync(cancellationToken);
+            var onGroups = await dbContext.ProjectGroupEnvironmentSets
+                .Where(x => groupIds.Contains(x.ProjectGroupId))
+                .ToListAsync(cancellationToken);
 
-            var adds = changes
-                .Where(x => x.Operation == AssignmentOperation.Add &&
-                    !stored.Any(s => s.ProjectId == x.ProjectId && s.EnvironmentSetId == x.EnvironmentSetId))
-                .ToList();
+            var proposed = new ProposedSetChanges();
+            var addedSets = new HashSet<Guid>();
+
+            foreach (var change in changes)
+            {
+                var setId = change.EnvironmentSetId.Value;
+
+                if (change.ProjectId is { } projectId)
+                {
+                    var existing = onProjects.SingleOrDefault(x => x.ProjectId == projectId && x.EnvironmentSetId == setId);
+
+                    if (change.Operation == AssignmentOperation.Remove && existing is not null)
+                    {
+                        dbContext.ProjectEnvironmentSets.Remove(existing);
+                        proposed.ProjectUnassignments.Add((projectId, setId));
+                    }
+                    else if (change.Operation == AssignmentOperation.Add && existing is null)
+                    {
+                        dbContext.ProjectEnvironmentSets.Add(new Domain.Models.ProjectEnvironmentSet { ProjectId = projectId, EnvironmentSetId = setId });
+                        proposed.ProjectAssignments.Add((projectId, setId));
+                        addedSets.Add(setId);
+                    }
+                }
+                else
+                {
+                    var groupId = change.ProjectGroupId.Value;
+                    var existing = onGroups.SingleOrDefault(x => x.ProjectGroupId == groupId && x.EnvironmentSetId == setId);
+
+                    if (change.Operation == AssignmentOperation.Remove && existing is not null)
+                    {
+                        dbContext.ProjectGroupEnvironmentSets.Remove(existing);
+                        proposed.GroupUnassignments.Add((groupId, setId));
+                    }
+                    else if (change.Operation == AssignmentOperation.Add && existing is null)
+                    {
+                        dbContext.ProjectGroupEnvironmentSets.Add(new ProjectGroupEnvironmentSet { ProjectGroupId = groupId, EnvironmentSetId = setId });
+                        proposed.GroupAssignments.Add((groupId, setId));
+                        addedSets.Add(setId);
+                    }
+                }
+            }
 
             // The patterns may have changed since the entries were saved.
-            foreach (var setId in adds.Select(x => x.EnvironmentSetId.Value).Distinct())
+            foreach (var set in addedSets.Select(x => sets[x]))
             {
-                var set = sets[setId];
                 var disallowed = set.Entries
                     .Where(x => x.ValueSource == EnvironmentSetValueSource.Secret && !secretSource.IsAllowed(x.SecretName))
                     .Select(EnvironmentSetRules.Describe)
@@ -175,79 +226,8 @@ public class EditAssignments
                 }
             }
 
-            var removes = changes
-                .Where(x => x.Operation == AssignmentOperation.Remove)
-                .Select(x => stored.SingleOrDefault(s => s.ProjectId == x.ProjectId && s.EnvironmentSetId == x.EnvironmentSetId))
-                .Where(x => x is not null)
-                .ToList();
-
-            var final = stored
-                .Except(removes)
-                .Select(x => (x.ProjectId, x.EnvironmentSetId))
-                .Concat(adds.Select(x => (x.ProjectId, EnvironmentSetId: x.EnvironmentSetId.Value)))
-                .ToList();
-
-            await EnsureNoConflicts(final, adds.Select(x => x.ProjectId).ToHashSet(), cancellationToken);
-
-            dbContext.ProjectEnvironmentSets.RemoveRange(removes);
-            dbContext.ProjectEnvironmentSets.AddRange(adds.Select(x => new Domain.Models.ProjectEnvironmentSet
-            {
-                ProjectId = x.ProjectId,
-                EnvironmentSetId = x.EnvironmentSetId.Value
-            }));
-        }
-
-        /// <summary>
-        /// Refuses a project gaining a set that gives a name another of its final sets gives. Only
-        /// projects gaining a set are checked: removing one can't make a conflict.
-        /// </summary>
-        private async Task EnsureNoConflicts(
-            List<(Guid ProjectId, Guid EnvironmentSetId)> final,
-            HashSet<Guid> gaining,
-            CancellationToken cancellationToken)
-        {
-            if (gaining.Count == 0)
-                return;
-
-            var checkedAssignments = final.Where(x => gaining.Contains(x.ProjectId)).ToList();
-            var setIds = checkedAssignments.Select(x => x.EnvironmentSetId).Distinct().ToList();
-
-            var sets = await dbContext.EnvironmentSets
-                .AsNoTracking()
-                .Where(x => setIds.Contains(x.Id))
-                .Select(x => new
-                {
-                    x.Id,
-                    x.Name,
-                    Entries = x.Entries.Select(e => new { e.Kind, e.TargetName }).ToList()
-                })
-                .ToDictionaryAsync(x => x.Id, cancellationToken);
-
-            var projectNames = await dbContext.Projects
-                .Where(x => gaining.Contains(x.Id))
-                .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
-
-            foreach (var project in checkedAssignments.GroupBy(x => x.ProjectId).OrderBy(x => projectNames[x.Key]))
-            {
-                var givenBy = new Dictionary<string, string>(StringComparer.Ordinal);
-
-                foreach (var set in project.Select(x => sets[x.EnvironmentSetId]).OrderBy(x => x.Name))
-                {
-                    foreach (var stored in set.Entries)
-                    {
-                        var entry = new EntryEntity { Kind = stored.Kind, TargetName = stored.TargetName };
-
-                        if (givenBy.TryGetValue(entry.EffectiveName, out var otherSet))
-                        {
-                            throw new ConflictException(
-                                $"The {EnvironmentSetRules.Describe(entry)} would be set by both Environment Set \"{otherSet}\" and \"{set.Name}\" " +
-                                $"on project \"{projectNames[project.Key]}\". A name can come from only one set on a project.");
-                        }
-
-                        givenBy[entry.EffectiveName] = set.Name;
-                    }
-                }
-            }
+            if (proposed.ProjectAssignments.Count > 0 || proposed.GroupAssignments.Count > 0)
+                await dbContext.EnsureNoConflicts(proposed, cancellationToken);
         }
 
         private async Task ApplyConnectionChanges(List<AssignmentChange> changes, CancellationToken cancellationToken)
@@ -255,21 +235,32 @@ public class EditAssignments
             if (changes.Count == 0)
                 return;
 
-            var projectIds = changes.Select(x => x.ProjectId).Distinct().ToList();
-            var stored = await dbContext.ProjectInventoryConnections
+            var projectIds = changes.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId.Value).Distinct().ToList();
+            var groupIds = changes.Where(x => x.ProjectGroupId.HasValue).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
+            var onProjects = await dbContext.ProjectInventoryConnections
                 .Where(x => projectIds.Contains(x.ProjectId))
+                .ToListAsync(cancellationToken);
+            var onGroups = await dbContext.ProjectGroupInventoryConnections
+                .Where(x => groupIds.Contains(x.ProjectGroupId))
                 .ToListAsync(cancellationToken);
 
             foreach (var change in changes)
             {
                 var normalized = ProjectInventoryConnection.Normalize(change.ConnectionName);
-                var existing = stored.SingleOrDefault(x => x.ProjectId == change.ProjectId && x.NormalizedConnectionName == normalized);
+                var onProject = change.ProjectId is { } projectId
+                    ? onProjects.SingleOrDefault(x => x.ProjectId == projectId && x.NormalizedConnectionName == normalized)
+                    : null;
+                var onGroup = change.ProjectGroupId is { } groupId
+                    ? onGroups.SingleOrDefault(x => x.ProjectGroupId == groupId && x.NormalizedConnectionName == normalized)
+                    : null;
 
                 if (change.Operation == AssignmentOperation.Remove)
                 {
                     // A missing connection's name is taken too, so a stale assignment can be removed.
-                    if (existing is not null)
-                        dbContext.ProjectInventoryConnections.Remove(existing);
+                    if (onProject is not null)
+                        dbContext.ProjectInventoryConnections.Remove(onProject);
+                    if (onGroup is not null)
+                        dbContext.ProjectGroupInventoryConnections.Remove(onGroup);
 
                     continue;
                 }
@@ -277,11 +268,20 @@ public class EditAssignments
                 var connection = catalog.Find(change.ConnectionName)
                     ?? throw new EntityNotFoundException<Inventory.InventoryConnection>($"Inventory connection '{change.ConnectionName}' is not configured.");
 
-                if (existing is null)
+                if (change.ProjectId.HasValue && onProject is null)
                 {
                     dbContext.ProjectInventoryConnections.Add(new ProjectInventoryConnection
                     {
-                        ProjectId = change.ProjectId,
+                        ProjectId = change.ProjectId.Value,
+                        ConnectionName = connection.Name,
+                        NormalizedConnectionName = normalized
+                    });
+                }
+                else if (change.ProjectGroupId.HasValue && onGroup is null)
+                {
+                    dbContext.ProjectGroupInventoryConnections.Add(new ProjectGroupInventoryConnection
+                    {
+                        ProjectGroupId = change.ProjectGroupId.Value,
                         ConnectionName = connection.Name,
                         NormalizedConnectionName = normalized
                     });

@@ -16,7 +16,7 @@ namespace Caster.Api.Tests.Features.Assignments;
 
 /// <summary>
 /// <c>POST api/assignments</c>: Environment Sets and inventory connections added to and removed from
-/// projects in one request, checked against the final state and saved together. Set changes need
+/// projects and project groups in one request, checked against the final state and saved together. Set changes need
 /// ManageEnvironmentSets, connection changes ManageInfrastructure.
 /// </summary>
 public class AssignmentRequestTests(DatabaseFixture fixture, CasterAppFactory factory) : ApiTestBase(fixture, factory)
@@ -289,6 +289,144 @@ public class AssignmentRequestTests(DatabaseFixture fixture, CasterAppFactory fa
         await AssertStatus(HttpStatusCode.NoContent, await Client(sets).PostAsJsonAsync(Assignments, new { changes = new[] { setChange } }, Ct));
         await AssertStatus(HttpStatusCode.NoContent, await Client(infrastructure).PostAsJsonAsync(Assignments, new { changes = new[] { connectionChange } }, Ct));
     }
+
+    // ---- project groups -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Edit_adds_and_removes_a_group_s_sets_and_connections()
+    {
+        var group = Group();
+        var removed = TestData.EnvironmentSet("removed");
+        var added = TestData.EnvironmentSet("added");
+        await Seed(
+            group, removed, added,
+            new ProjectGroupEnvironmentSet { Id = Guid.NewGuid(), ProjectGroupId = group.Id, EnvironmentSetId = removed.Id },
+            GroupConnection(group, TestConfiguration.VsphereConnection));
+
+        var response = await RootClient.PostAsJsonAsync(Assignments, new
+        {
+            changes = new object[]
+            {
+                new { operation = "Add", projectGroupId = group.Id, environmentSetId = added.Id },
+                new { operation = "Remove", projectGroupId = group.Id, environmentSetId = removed.Id },
+                new { operation = "Add", projectGroupId = group.Id, connectionName = TestConfiguration.ProxmoxConnection },
+                new { operation = "Remove", projectGroupId = group.Id, connectionName = TestConfiguration.VsphereConnection }
+            }
+        }, Ct);
+
+        await AssertStatus(HttpStatusCode.NoContent, response);
+        Assert.Equal(added.Id, Assert.Single(await ReadBack(db => db.ProjectGroupEnvironmentSets.Where(x => x.ProjectGroupId == group.Id).ToListAsync(Ct))).EnvironmentSetId);
+        Assert.Equal(TestConfiguration.ProxmoxConnection,
+            Assert.Single(await ReadBack(db => db.ProjectGroupInventoryConnections.Where(x => x.ProjectGroupId == group.Id).ToListAsync(Ct))).ConnectionName);
+    }
+
+    /// <summary>A group's set reaches its projects, so it is checked against each project's own sets.</summary>
+    [Fact]
+    public async Task Edit_refuses_a_group_set_giving_a_name_a_project_in_the_group_gets_directly()
+    {
+        var group = Group();
+        var project = TestData.Project();
+        project.ProjectGroupId = group.Id;
+        var direct = TestData.EnvironmentSet("direct");
+        var shared = TestData.EnvironmentSet("shared");
+        await Seed(
+            group, project, direct, shared,
+            TestData.PlainEntry(direct, "REGION", "east"),
+            TestData.PlainEntry(shared, "REGION", "west"),
+            TestData.ProjectEnvironmentSet(project, direct));
+
+        var response = await RootClient.PostAsJsonAsync(Assignments, new
+        {
+            changes = new object[] { new { operation = "Add", projectGroupId = group.Id, environmentSetId = shared.Id } }
+        }, Ct);
+
+        await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.False(await ReadBack(db => db.ProjectGroupEnvironmentSets.AnyAsync(x => x.ProjectGroupId == group.Id, Ct)));
+    }
+
+    /// <summary>Taking the project's own set off in the same request makes room for the group's.</summary>
+    [Fact]
+    public async Task Edit_moves_a_set_from_a_project_to_its_group_in_one_request()
+    {
+        var group = Group();
+        var project = TestData.Project();
+        project.ProjectGroupId = group.Id;
+        var direct = TestData.EnvironmentSet("direct");
+        var shared = TestData.EnvironmentSet("shared");
+        await Seed(
+            group, project, direct, shared,
+            TestData.PlainEntry(direct, "REGION", "east"),
+            TestData.PlainEntry(shared, "REGION", "west"),
+            TestData.ProjectEnvironmentSet(project, direct));
+
+        var response = await RootClient.PostAsJsonAsync(Assignments, new
+        {
+            changes = new object[]
+            {
+                new { operation = "Remove", projectId = (Guid?)project.Id, projectGroupId = (Guid?)null, environmentSetId = direct.Id },
+                new { operation = "Add", projectId = (Guid?)null, projectGroupId = (Guid?)group.Id, environmentSetId = shared.Id }
+            }
+        }, Ct);
+
+        await AssertStatus(HttpStatusCode.NoContent, response);
+        Assert.False(await ReadBack(db => db.ProjectEnvironmentSets.AnyAsync(x => x.ProjectId == project.Id, Ct)));
+        Assert.True(await ReadBack(db => db.ProjectGroupEnvironmentSets.AnyAsync(x => x.ProjectGroupId == group.Id && x.EnvironmentSetId == shared.Id, Ct)));
+    }
+
+    [Fact]
+    public async Task Edit_refuses_a_change_naming_both_a_project_and_a_group()
+    {
+        var group = Group();
+        var project = TestData.Project();
+        var set = TestData.EnvironmentSet();
+        await Seed(group, project, set);
+
+        var response = await RootClient.PostAsJsonAsync(Assignments, new
+        {
+            changes = new object[] { new { operation = "Add", projectId = project.Id, projectGroupId = group.Id, environmentSetId = set.Id } }
+        }, Ct);
+
+        await AssertProblem(HttpStatusCode.BadRequest, response);
+    }
+
+    [Fact]
+    public async Task Edit_answers_404_for_a_group_that_does_not_exist()
+    {
+        var set = TestData.EnvironmentSet();
+        await Seed(set);
+
+        var response = await RootClient.PostAsJsonAsync(Assignments, new
+        {
+            changes = new object[] { new { operation = "Add", projectGroupId = Guid.NewGuid(), environmentSetId = set.Id } }
+        }, Ct);
+
+        await AssertProblem(HttpStatusCode.NotFound, response);
+    }
+
+    /// <summary>Group assignments are admin-only too: managing the group gives neither.</summary>
+    [Fact]
+    public async Task Edit_on_a_group_needs_the_system_permissions_not_a_group_role()
+    {
+        var group = Group();
+        var set = TestData.EnvironmentSet();
+        await Seed(group, set);
+        var sets = await Actor().WithSystemPermissions(SystemPermission.ManageEnvironmentSets).SeedAsync();
+        var groupManager = await Actor().WithSystemPermissions(SystemPermission.ManageProjectGroups).SeedAsync();
+        var change = new { operation = "Add", projectGroupId = group.Id, environmentSetId = set.Id };
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(groupManager).PostAsJsonAsync(Assignments, new { changes = new[] { change } }, Ct));
+        await AssertStatus(HttpStatusCode.NoContent, await Client(sets).PostAsJsonAsync(Assignments, new { changes = new[] { change } }, Ct));
+    }
+
+    private static ProjectGroup Group() => new() { Id = Guid.NewGuid(), Name = $"group-{Guid.NewGuid():N}" };
+
+    private static ProjectGroupInventoryConnection GroupConnection(ProjectGroup group, string name) => new()
+    {
+        Id = Guid.NewGuid(),
+        ProjectGroupId = group.Id,
+        ConnectionName = name,
+        NormalizedConnectionName = ProjectInventoryConnection.Normalize(name)
+    };
 
     private static ProjectInventoryConnection Connection(Project project, string name) => new()
     {
