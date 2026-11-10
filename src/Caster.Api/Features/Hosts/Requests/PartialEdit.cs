@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using FluentValidation;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Microsoft.CodeAnalysis;
 using Caster.Api.Infrastructure.Exceptions;
@@ -82,7 +81,7 @@ namespace Caster.Api.Features.Hosts
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Host>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Host>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageHosts], cancellationToken);
@@ -94,7 +93,7 @@ namespace Caster.Api.Features.Hosts
                 if (host == null)
                     throw new EntityNotFoundException<Host>();
 
-                mapper.Map(request, host);
+                request.ApplyPatchTo(host);
 
                 // A Host has one owner: the one just set replaces the other.
                 if (request.ProjectId.HasValue && request.ProjectId.Value.HasValue && !request.ProjectGroupId.HasValue)
@@ -103,7 +102,7 @@ namespace Caster.Api.Features.Hosts
                     host.ProjectId = null;
 
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Host>(host);
+                return host.ToHost();
             }
         }
     }

@@ -1,37 +1,25 @@
 // Copyright 2021 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
-
 using System.Linq;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
-using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Features.Directories
 {
     public static class DirectoryExtensions
     {
-        public static IQueryable<Directory> Expand(this IQueryable<Domain.Models.Directory> query, IConfigurationProvider configuration, bool includeRelated, bool includeFileContent)
+        /// <summary>
+        /// Projects the directories with their files, workspaces and designs when <paramref name="includeRelated"/>
+        /// is set, and the files' content as well when <paramref name="includeFileContent"/> is; without
+        /// <paramref name="includeRelated"/>, <paramref name="includeFileContent"/> has no effect.
+        /// </summary>
+        public static IQueryable<Directory> Expand(this IQueryable<Domain.Models.Directory> query, bool includeRelated, bool includeFileContent)
         {
-            IQueryable<Directory> newQuery;
+            if (!includeRelated)
+                return query.ProjectToDirectory();
 
-            if (includeRelated)
-            {
-                if (includeFileContent)
-                {
-                    newQuery = query.ProjectTo<Directory>(configuration, dest => dest.Files, dest => dest.Files.Select(f => f.Content), dest => dest.Workspaces, dest => dest.Designs);
-                }
-                else
-                {
-                    newQuery = query.ProjectTo<Directory>(configuration, dest => dest.Files, dest => dest.Workspaces, dest => dest.Designs);
-                }
-            }
-            else
-            {
-                newQuery = query.ProjectTo<Directory>(configuration);
-            }
-
-            return newQuery;
+            return includeFileContent
+                ? query.ProjectToDirectoryWithRelatedAndFileContent()
+                : query.ProjectToDirectoryWithRelated();
         }
     }
 }

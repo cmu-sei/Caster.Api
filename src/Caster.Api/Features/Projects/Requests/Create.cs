@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Infrastructure.Exceptions;
 using MediatR;
-using AutoMapper;
 using System.Collections.Generic;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
@@ -56,7 +55,6 @@ namespace Caster.Api.Features.Projects
         public class Handler(
             ICasterAuthorizationService authorizationService,
             ProjectGroups.ProjectGroupAccess projectGroupAccess,
-            IMapper mapper,
             CasterContext dbContext,
             TelemetryService telemetryService,
             IIdentityResolver identityResolver,
@@ -72,7 +70,7 @@ namespace Caster.Api.Features.Projects
 
             public override async Task<Project> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var project = mapper.Map<Domain.Models.Project>(request);
+                var project = request.ToEntity();
                 project.DateCreated = DateTime.UtcNow;
 
                 // Allow Blueprint (or other callers) to specify the ID
@@ -99,7 +97,7 @@ namespace Caster.Api.Features.Projects
 
                 await dbContext.SaveChangesAsync(cancellationToken);
 
-                return mapper.Map<Project>(project);
+                return project.ToProject();
             }
         }
     }

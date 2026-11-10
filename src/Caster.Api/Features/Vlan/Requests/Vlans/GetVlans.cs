@@ -6,14 +6,12 @@ using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -46,7 +44,7 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Vlan[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Vlan[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewVLANs], cancellationToken);
@@ -66,7 +64,7 @@ namespace Caster.Api.Features.Vlan
                 }
 
                 return await vlanQuery
-                    .ProjectTo<Vlan>(mapper.ConfigurationProvider)
+                    .ProjectToVlan()
                     .ToArrayAsync(cancellationToken);
             }
         }

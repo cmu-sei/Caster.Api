@@ -7,12 +7,10 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
 
@@ -30,7 +28,7 @@ namespace Caster.Api.Features.Vlan
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Vlan>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Vlan>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewVLANs], cancellationToken);
@@ -39,7 +37,7 @@ namespace Caster.Api.Features.Vlan
             {
                 var vlan = await dbContext.Vlans
                     .Where(x => x.Id == request.Id)
-                    .ProjectTo<Vlan>(mapper.ConfigurationProvider)
+                    .ProjectToVlan()
                     .FirstOrDefaultAsync(cancellationToken);
 
                 if (vlan == null)

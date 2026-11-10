@@ -4,9 +4,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
@@ -22,7 +20,7 @@ namespace Caster.Api.Features.Hosts
         {
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Host[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Host[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewHosts], cancellationToken);
@@ -30,7 +28,7 @@ namespace Caster.Api.Features.Hosts
             public override async Task<Host[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 return await dbContext.Hosts
-                    .ProjectTo<Host>(mapper.ConfigurationProvider)
+                    .ProjectToHost()
                     .ToArrayAsync(cancellationToken);
             }
         }

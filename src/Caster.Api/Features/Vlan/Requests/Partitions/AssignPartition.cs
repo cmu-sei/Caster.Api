@@ -8,7 +8,6 @@ using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
@@ -18,6 +17,7 @@ using Caster.Api.Infrastructure.Extensions;
 using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Caster.Api.Features.Projects;
 using Project = Caster.Api.Features.Projects.Project;
 
 namespace Caster.Api.Features.Vlan
@@ -49,7 +49,7 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Project>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Project>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
@@ -64,7 +64,7 @@ namespace Caster.Api.Features.Vlan
 
                 await dbContext.SaveChangesAsync(cancellationToken);
 
-                return mapper.Map<Project>(project);
+                return project.ToProject();
             }
         }
     }

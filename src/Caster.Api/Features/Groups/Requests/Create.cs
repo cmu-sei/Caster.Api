@@ -5,7 +5,6 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Models;
@@ -25,18 +24,18 @@ namespace Caster.Api.Features.Groups
             public string Name { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Group>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Group>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageGroups], cancellationToken);
 
             public override async Task<Group> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var group = mapper.Map<Domain.Models.Group>(request);
+                var group = request.ToEntity();
                 dbContext.Groups.Add(group);
 
                 await dbContext.SaveChangesAsync();
-                return mapper.Map<Group>(group);
+                return group.ToGroup();
             }
         }
     }

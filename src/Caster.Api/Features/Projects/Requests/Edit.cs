@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Authorization;
@@ -35,7 +34,7 @@ namespace Caster.Api.Features.Projects
             public string Description { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Project>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Project>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -47,9 +46,9 @@ namespace Caster.Api.Features.Projects
                 if (project == null)
                     throw new EntityNotFoundException<Project>();
 
-                mapper.Map(request, project);
+                request.ApplyTo(project);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Project>(project);
+                return project.ToProject();
             }
         }
     }

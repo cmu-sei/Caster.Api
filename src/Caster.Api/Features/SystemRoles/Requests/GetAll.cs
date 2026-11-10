@@ -4,9 +4,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -24,7 +22,7 @@ namespace Caster.Api.Features.SystemRoles
         {
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, SystemRole[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, SystemRole[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewRoles, SystemPermission.ViewProjects], cancellationToken);
@@ -32,7 +30,7 @@ namespace Caster.Api.Features.SystemRoles
             public override async Task<SystemRole[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 return await dbContext.SystemRoles
-                    .ProjectTo<SystemRole>(mapper.ConfigurationProvider)
+                    .ProjectToSystemRole()
                     .ToArrayAsync(cancellationToken);
             }
         }

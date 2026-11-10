@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using FluentValidation;
 using MediatR;
 using System.Runtime.Serialization;
-using AutoMapper;
 using Caster.Api.Data;
 using System;
 using Caster.Api.Infrastructure.Authorization;
@@ -73,17 +72,17 @@ namespace Caster.Api.Features.Hosts
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Host>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Host>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageHosts], cancellationToken);
 
             public override async Task<Host> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var host = mapper.Map<Domain.Models.Host>(request);
+                var host = request.ToEntity();
                 dbContext.Hosts.Add(host);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Host>(host);
+                return host.ToHost();
             }
         }
     }

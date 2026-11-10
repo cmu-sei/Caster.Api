@@ -7,7 +7,6 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Services.ProjectGroups;
 using Caster.Api.Infrastructure.Authorization;
@@ -55,7 +54,6 @@ public class AcquireVlan
 
     public class Handler(
         ICasterAuthorizationService authorizationService,
-        IMapper mapper,
         CasterContext dbContext,
         ILockService lockService) : BaseHandler<Command, Vlan>
     {
@@ -137,7 +135,7 @@ public class AcquireVlan
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            return mapper.Map<Vlan>(vlan);
+            return vlan.ToVlan();
         }
     }
 }

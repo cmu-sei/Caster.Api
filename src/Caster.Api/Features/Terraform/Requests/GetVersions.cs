@@ -13,7 +13,6 @@ using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Domain.Services;
 using System;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Text.Json.Serialization;
 using System.Collections.Generic;
 using Caster.Api.Infrastructure.Options;

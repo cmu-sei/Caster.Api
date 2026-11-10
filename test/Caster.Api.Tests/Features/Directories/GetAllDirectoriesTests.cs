@@ -95,7 +95,7 @@ public class GetAllDirectoriesTests(DatabaseFixture fixture) : DatabaseTestBase(
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var token = new ClaimsPrincipalBuilder().WithUserId(user.Id).WithName(user.Name).WithClaim("groups", TokenGroupName).Build();
         var claims = await new UserClaimsService(context, cache, IdentityProviderGroups()).AddUserClaims(token, update: true);
-        var handler = new GetAll.Handler(AuthorizationHarness.CreateCasterAuthorizationService(context, claims), TestMapper.Mapper, context);
+        var handler = new GetAll.Handler(AuthorizationHarness.CreateCasterAuthorizationService(context, claims), context);
 
         return await handler.Handle(new GetAll.Query { IncludeRelated = true, IncludeFileContent = true }, Ct);
     }

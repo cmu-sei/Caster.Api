@@ -14,9 +14,7 @@ using System.Text.Json.Serialization;
 using System.Linq;
 using Caster.Api.Features.Shared;
 using FluentValidation;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Domain.Models;
-using AutoMapper;
 using Caster.Api.Data;
 
 namespace Caster.Api.Features.DesignModules;
@@ -30,7 +28,7 @@ public class Get
         public Guid Id { get; set; }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, DesignModule>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, DesignModule>
     {
         public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Domain.Models.DesignModule>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -39,7 +37,7 @@ public class Get
         {
             var designModule = await dbContext.DesignModules
                 .Where(x => x.Id == request.Id)
-                .ProjectTo<DesignModule>(mapper.ConfigurationProvider, null, membersToExpand: new[] { "ValuesJson" })
+                .ProjectToDesignModuleWithValues()
                 .SingleOrDefaultAsync(cancellationToken);
 
             if (designModule == null)
