@@ -916,7 +916,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         [Fact]
         public async Task ProviderThrows_LogsOnlyTheRedactedMessage()
         {
-            const string tokenSecret = "9f1c2d3e-0000-4000-8000-00000000abcd";
+            const string tokenSecret = "lab2-test-secret-not-real";
             var options = TwoConnections();
             var logger = new Crucible.Api.Testing.RecordingLogger<InventoryService>();
             var client = new FakeProviderClient(o => o.Url == "https://pve2.test:8006"
@@ -1053,7 +1053,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         private static InventoryService Build(IOptionsMonitor<InfrastructureOptions> monitor, IInventoryProviderClient client) =>
             new(monitor, client, Substitute.For<ILogger<InventoryService>>());
 
-        private const string Lab2Token = "caster@pve!lab2=9f1c2d3e-0000-4000-8000-00000000abcd";
+        // Not shaped like a real token secret (a UUID), so secret scanning leaves it alone.
+        private const string Lab2Token = "caster@pve!lab2=lab2-test-secret-not-real";
 
         /// <summary>
         /// The default connection plus an enabled Proxmox connection named lab2,

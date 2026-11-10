@@ -32,7 +32,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
     public class ProxmoxInventoryClientTests
     {
         private const string Password = "sup3r-s3cret-pw";
-        private const string TokenSecret = "8f1c2d3e-4b5a-6789-abcd-ef0123456789";
+        // Not shaped like a real token secret (a UUID), so secret scanning leaves it alone.
+        private const string TokenSecret = "test-token-secret-not-real";
         private const string ApiToken = "caster-ro@pve!inventory=" + TokenSecret;
         private const string Ticket = "PVE:caster-ro@pve:68E0AB01::t1ck3t+s1gnature==";
 
