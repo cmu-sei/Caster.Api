@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
@@ -35,7 +34,6 @@ namespace Caster.Api.Features.Directories
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext) : BaseHandler<Query, Directory[]>
         {
             public override Task<bool> Authorize(Query request, CancellationToken cancellationToken) => Task.FromResult(true);
@@ -56,7 +54,7 @@ namespace Caster.Api.Features.Directories
                 }
 
                 return await query
-                    .Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent)
+                    .Expand(request.IncludeRelated, request.IncludeFileContent)
                     .ToArrayAsync(cancellationToken);
             }
         }

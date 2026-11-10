@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
@@ -42,7 +41,7 @@ namespace Caster.Api.Features.Workspaces
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Workspace>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Workspace>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -54,10 +53,10 @@ namespace Caster.Api.Features.Workspaces
                 if (workspace == null)
                     throw new EntityNotFoundException<Workspace>();
 
-                mapper.Map(request, workspace);
+                request.ApplyTo(workspace);
 
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Workspace>(workspace);
+                return workspace.ToWorkspace();
             }
         }
     }

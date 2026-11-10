@@ -5,7 +5,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -63,7 +62,7 @@ namespace Caster.Api.Features.Directories
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Directory[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Directory[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Project>(request.ProjectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -75,7 +74,7 @@ namespace Caster.Api.Features.Directories
                 if (!request.IncludeDescendants)
                     query = query.Where(d => d.ParentId == null);
 
-                var modifiedQuery = query.Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent);
+                var modifiedQuery = query.Expand(request.IncludeRelated, request.IncludeFileContent);
                 var directories = await modifiedQuery.ToArrayAsync();
 
                 return directories;

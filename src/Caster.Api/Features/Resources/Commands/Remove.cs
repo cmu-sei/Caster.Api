@@ -4,7 +4,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Data;
 using System;
@@ -42,11 +41,10 @@ namespace Caster.Api.Features.Resources
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext,
             ILockService lockService,
             TerraformOptions terraformOptions,
-            ITerraformService terraformService) : BaseOperationHandler<Command, ResourceCommandResult>(mapper, dbContext, lockService, terraformOptions, terraformService)
+            ITerraformService terraformService) : BaseOperationHandler<Command, ResourceCommandResult>(dbContext, lockService, terraformOptions, terraformService)
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Workspace>(request.WorkspaceId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);

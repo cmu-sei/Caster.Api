@@ -5,11 +5,9 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System;
 using System.Linq;
 using FluentValidation;
@@ -37,7 +35,7 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Partition[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Partition[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewVLANs], cancellationToken);
@@ -52,7 +50,7 @@ namespace Caster.Api.Features.Vlan
                 }
 
                 var partitions = await partitionQuery
-                    .ProjectTo<Partition>(mapper.ConfigurationProvider)
+                    .ProjectToPartition()
                     .ToArrayAsync(cancellationToken);
 
                 return partitions;

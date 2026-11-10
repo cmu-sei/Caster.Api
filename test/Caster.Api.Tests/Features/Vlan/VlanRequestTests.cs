@@ -273,6 +273,8 @@ public class VlanRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageVLANs).SeedAsync();
 
         await AssertStatus(HttpStatusCode.OK, await Client(actor).PatchAsJsonAsync($"api/vlans/partitions/{partition.Id}", new { name = "patched" }, Ct));
+
+        Assert.Equal("patched", (await StoredPartition(partition.Id)).Name);
     }
 
     [Fact]

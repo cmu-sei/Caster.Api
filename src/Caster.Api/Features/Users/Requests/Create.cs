@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using System.Runtime.Serialization;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
@@ -33,17 +32,17 @@ namespace Caster.Api.Features.Users
             public string RoleId { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, User>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, User>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageUsers], cancellationToken);
 
             public override async Task<User> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var user = mapper.Map<Domain.Models.User>(request);
+                var user = request.ToEntity();
                 dbContext.Users.Add(user);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<User>(user);
+                return user.ToUser();
             }
         }
     }

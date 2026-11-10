@@ -7,11 +7,9 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
@@ -36,16 +34,13 @@ namespace Caster.Api.Features.Applies
         public class Handler : BaseHandler<Query, Apply>
         {
             private readonly CasterContext _db;
-            private readonly IMapper _mapper;
             private readonly ICasterAuthorizationService _authorizationService;
 
             public Handler(
                 CasterContext db,
-                IMapper mapper,
                 ICasterAuthorizationService authorizationService)
             {
                 _db = db;
-                _mapper = mapper;
                 _authorizationService = authorizationService;
             }
 
@@ -60,7 +55,7 @@ namespace Caster.Api.Features.Applies
                     throw new EntityNotFoundException<Run>();
 
                 return await _db.Applies
-                    .ProjectTo<Apply>(_mapper.ConfigurationProvider)
+                    .ProjectToApply()
                     .SingleOrDefaultAsync(x => x.RunId == request.RunId, cancellationToken);
             }
         }
