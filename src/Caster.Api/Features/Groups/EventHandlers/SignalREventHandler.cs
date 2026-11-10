@@ -4,8 +4,6 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Crucible.Common.EntityEvents.Events;
 using Caster.Api.Hubs;
@@ -15,8 +13,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Features.Groups.EventHandlers;
 
-public class GroupMembershipCreatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    GroupMembershipBaseSignalRHandler(_db, _mapper, _projectHub),
+public class GroupMembershipCreatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    GroupMembershipBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityCreated<Domain.Models.GroupMembership>>
 {
     public async Task Handle(EntityCreated<Domain.Models.GroupMembership> notification, CancellationToken cancellationToken)
@@ -25,8 +23,8 @@ public class GroupMembershipCreatedSignalRHandler(CasterContext _db, IMapper _ma
     }
 }
 
-public class GroupMembershipUpdatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    GroupMembershipBaseSignalRHandler(_db, _mapper, _projectHub),
+public class GroupMembershipUpdatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    GroupMembershipBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityUpdated<Domain.Models.GroupMembership>>
 {
     public async Task Handle(EntityUpdated<Domain.Models.GroupMembership> notification, CancellationToken cancellationToken)
@@ -44,13 +42,13 @@ public class GroupMembershipDeletedSignalRHandler(IHubContext<ProjectHub> projec
     }
 }
 
-public class GroupMembershipBaseSignalRHandler(CasterContext db, IMapper mapper, IHubContext<ProjectHub> projectHub)
+public class GroupMembershipBaseSignalRHandler(CasterContext db, IHubContext<ProjectHub> projectHub)
 {
     protected async Task Handle(Domain.Models.GroupMembership entity, string method, string[] modifiedProperties, CancellationToken cancellationToken)
     {
         var groupMembership = await db.GroupMemberships
             .Where(x => x.Id == entity.Id)
-            .ProjectTo<GroupMembership>(mapper.ConfigurationProvider)
+            .ProjectToGroupMembership()
             .FirstOrDefaultAsync();
 
         await projectHub.Clients.Group(entity.GroupId.ToString()).SendAsync(method, groupMembership, modifiedProperties, cancellationToken);

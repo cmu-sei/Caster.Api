@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
@@ -57,7 +56,6 @@ public class AddVlansToPartition
 
     public class Handler(
         ICasterAuthorizationService authorizationService,
-        IMapper mapper,
         CasterContext dbContext,
         ILockService lockService) : BaseHandler<Command, Vlan[]>
     {
@@ -110,7 +108,7 @@ public class AddVlansToPartition
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            return mapper.Map<Vlan[]>(vlans);
+            return vlans.ToVlans();
         }
     }
 }

@@ -7,7 +7,6 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
@@ -58,7 +57,7 @@ public class ReassignVlans
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext, ILockService lockService) : BaseHandler<Command, Vlan[]>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, ILockService lockService) : BaseHandler<Command, Vlan[]>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
@@ -97,7 +96,7 @@ public class ReassignVlans
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            return mapper.Map<Vlan[]>(vlans);
+            return vlans.ToVlans();
         }
     }
 }

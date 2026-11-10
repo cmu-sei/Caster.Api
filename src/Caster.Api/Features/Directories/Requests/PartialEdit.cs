@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.AspNetCore.Authorization;
@@ -91,7 +90,7 @@ namespace Caster.Api.Features.Directories
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext db) : BaseEdit.Handler<Command, Directory>(db)
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext db) : BaseEdit.Handler<Command, Directory>(db)
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Directory>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -108,13 +107,13 @@ namespace Caster.Api.Features.Directories
                     await UpdatePaths(directory, request.ParentId.Value, cancellationToken);
                 }
 
-                mapper.Map(request, directory);
+                request.ApplyPatchTo(directory);
                 // The partial-edit map skips null values, but an explicit null detaches the parent.
                 if (request.ParentId.HasValue)
                     directory.ParentId = request.ParentId.Value;
 
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Directory>(directory);
+                return directory.ToDirectory();
             }
         }
     }

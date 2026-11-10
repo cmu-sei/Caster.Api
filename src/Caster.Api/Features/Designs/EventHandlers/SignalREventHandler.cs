@@ -5,7 +5,6 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Caster.Api.Data;
 using Crucible.Common.EntityEvents.Events;
 using Caster.Api.Hubs;
@@ -21,8 +20,7 @@ public class DesignCreatedSignalRHandler : DesignBaseSignalRHandler, INotificati
 {
     public DesignCreatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityCreated<Domain.Models.Design> notification, CancellationToken cancellationToken)
     {
@@ -34,8 +32,7 @@ public class DesignUpdatedSignalRHandler : DesignBaseSignalRHandler, INotificati
 {
     public DesignUpdatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityUpdated<Domain.Models.Design> notification, CancellationToken cancellationToken)
     {
@@ -51,8 +48,7 @@ public class DesignDeletedSignalRHandler : DesignBaseSignalRHandler, INotificati
 {
     public DesignDeletedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityDeleted<Domain.Models.Design> notification, CancellationToken cancellationToken)
     {
@@ -64,16 +60,13 @@ public class DesignDeletedSignalRHandler : DesignBaseSignalRHandler, INotificati
 public class DesignBaseSignalRHandler
 {
     protected readonly IHubContext<ProjectHub> _projectHub;
-    protected readonly IMapper _mapper;
     protected readonly CasterContext _db;
 
     public DesignBaseSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
         CasterContext db)
     {
         _projectHub = projectHub;
-        _mapper = mapper;
         _db = db;
     }
 
@@ -83,7 +76,7 @@ public class DesignBaseSignalRHandler
         string[] modifiedProperties,
         CancellationToken cancellationToken)
     {
-        var design = _mapper.Map<Design>(entity);
+        var design = entity.ToDesign();
         var group = await GetGroup(entity, cancellationToken);
         await _projectHub.Clients.Group(group).SendAsync(method, design, modifiedProperties, cancellationToken);
     }

@@ -16,7 +16,6 @@ using Caster.Api.Infrastructure.Extensions;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 
@@ -37,7 +36,7 @@ public class Edit
         public string Name { get; init; }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Design>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Design>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Domain.Models.Design>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -51,11 +50,11 @@ public class Edit
             if (design == null)
                 throw new EntityNotFoundException<Design>();
 
-            mapper.Map(request, design);
+            request.ApplyTo(design);
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            return mapper.Map<Design>(design);
+            return design.ToDesign();
         }
     }
 }

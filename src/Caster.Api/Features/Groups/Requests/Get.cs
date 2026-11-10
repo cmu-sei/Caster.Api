@@ -5,9 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Exceptions;
@@ -29,7 +27,7 @@ namespace Caster.Api.Features.Groups
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Group>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Group>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Group>(request.Id, [SystemPermission.ViewGroups], [GroupPermission.ManageMembership], cancellationToken);
@@ -37,7 +35,7 @@ namespace Caster.Api.Features.Groups
             public override async Task<Group> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 var group = await dbContext.Groups
-                    .ProjectTo<Group>(mapper.ConfigurationProvider)
+                    .ProjectToGroup()
                     .SingleOrDefaultAsync(e => e.Id == request.Id);
 
                 if (group == null)

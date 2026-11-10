@@ -5,7 +5,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
@@ -38,7 +37,7 @@ namespace Caster.Api.Features.Directories
             public bool IncludeFileContent { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Directory>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Directory>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Directory>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -46,7 +45,7 @@ namespace Caster.Api.Features.Directories
             public override async Task<Directory> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 var directory = await dbContext.Directories
-                    .Expand(mapper.ConfigurationProvider, request.IncludeRelated, request.IncludeFileContent)
+                    .Expand(request.IncludeRelated, request.IncludeFileContent)
                     .SingleOrDefaultAsync(e => e.Id == request.Id, cancellationToken);
 
                 if (directory == null)
