@@ -95,10 +95,11 @@ namespace Caster.Api.Features.Hosts
 
                 request.ApplyPatchTo(host);
 
-                // A Host has one owner: the one just set replaces the other.
-                if (request.ProjectId.HasValue && request.ProjectId.Value.HasValue && !request.ProjectGroupId.HasValue)
+                // A Host has one owner: the one just set replaces the other, whether the other was
+                // left out or sent as null. The validator refuses both set at once.
+                if (request.ProjectId.HasValue && request.ProjectId.Value.HasValue)
                     host.ProjectGroupId = null;
-                else if (request.ProjectGroupId.HasValue && request.ProjectGroupId.Value.HasValue && !request.ProjectId.HasValue)
+                else if (request.ProjectGroupId.HasValue && request.ProjectGroupId.Value.HasValue)
                     host.ProjectId = null;
 
                 await dbContext.SaveChangesAsync(cancellationToken);

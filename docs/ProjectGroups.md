@@ -33,8 +33,10 @@ Admins give a group Environment Sets and connections on the set's or connection'
 
 **`ManageProjectGroups` is a powerful permission.** A holder can make themselves a manager of any group, and so reach every grouped project and the credentials its Environment Sets give. Anyone who can edit a project's Terraform can read those credentials. Grant it as carefully as `ManageEnvironmentSets`. Requiring `ManageProject` to add a project keeps a group manager from pulling in a project they don't already manage.
 
+**Assigning a set to a group lets the group's managers decide who gets it.** A group manager can create projects in the group, add the projects they manage, and grant memberships to anyone, and each of these gives the group's Environment Sets and connections to more projects and editors, without `ManageEnvironmentSets` or `ManageInfrastructure`. Assign a set to a group only if its managers may hand out its credentials.
+
 ## When changes take effect
 
-Permissions are cached per user for `ClaimsTransformation:CacheExpirationSeconds` (60 by default) when `ClaimsTransformation:EnableCaching` is on, the default. A change to a group's memberships or projects reaches a user when their cached permissions expire, or sooner when a new token arrives. Open project pages are told about changes to the sets they get.
+Permissions are cached per user for `ClaimsTransformation:CacheExpirationSeconds` (60 by default) when `ClaimsTransformation:EnableCaching` is on, the default. A change to a group's memberships or projects clears the cached permissions of the group's members, as a change to a project's memberships does, so it applies to their next request. The cache is per API instance: with several replicas, the others catch up when their cached permissions expire. Open project pages are told about changes to the sets they get.
 
 Deleting a group leaves its projects and hosts, ungrouped, and removes its memberships and what it carried from them. Groups and their links are never part of a project export.

@@ -2,6 +2,7 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
@@ -11,11 +12,13 @@ using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Features.EnvironmentSets;
+using Caster.Api.Features.ProjectGroups.EventHandlers;
 using Caster.Api.Features.Shared;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Caster.Api.Features.ProjectGroups;
 
@@ -37,7 +40,7 @@ public class AddProject
         public Guid ProjectId { get; set; }
     }
 
-    public class Handler(CasterContext dbContext, ProjectGroupAccess access) : BaseHandler<Command, ProjectGroup>
+    public class Handler(CasterContext dbContext, ProjectGroupAccess access, IMemoryCache cache) : BaseHandler<Command, ProjectGroup>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken)
         {
@@ -61,12 +64,21 @@ public class AddProject
 
                 if (project.ProjectGroupId != request.ProjectGroupId)
                 {
+                    // Checked again under the lock: the project may have moved since Authorize read its group.
+                    if (project.ProjectGroupId is { } old && !access.CanManage(old))
+                        throw new ForbiddenException("Moving the project out of its group needs managing that group.");
+
                     var changes = new ProposedSetChanges();
                     changes.ProjectGroupChanges[project.Id] = request.ProjectGroupId;
                     await dbContext.EnsureNoConflicts(changes, cancellationToken);
 
+                    var touched = new List<Guid> { request.ProjectGroupId };
+                    if (project.ProjectGroupId is { } left)
+                        touched.Add(left);
+
                     project.ProjectGroupId = request.ProjectGroupId;
                     await dbContext.SaveChangesAsync(cancellationToken);
+                    await cache.ClearMembers(dbContext, touched, cancellationToken);
                 }
 
                 return await dbContext.GetView(request.ProjectGroupId, access, cancellationToken);
@@ -90,7 +102,7 @@ public class RemoveProject
         public Guid ProjectId { get; set; }
     }
 
-    public class Handler(CasterContext dbContext, ProjectGroupAccess access) : BaseHandler<Command, ProjectGroup>
+    public class Handler(CasterContext dbContext, ProjectGroupAccess access, IMemoryCache cache) : BaseHandler<Command, ProjectGroup>
     {
         public override Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             Task.FromResult(access.CanManage(request.ProjectGroupId));
@@ -103,6 +115,7 @@ public class RemoveProject
 
             project.ProjectGroupId = null;
             await dbContext.SaveChangesAsync(cancellationToken);
+            await cache.ClearMembers(dbContext, [request.ProjectGroupId], cancellationToken);
 
             return await dbContext.GetView(request.ProjectGroupId, access, cancellationToken);
         }

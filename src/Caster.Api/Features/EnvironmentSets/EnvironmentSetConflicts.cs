@@ -128,8 +128,18 @@ public static class EnvironmentSetConflicts
             .ToList();
 
         // A group's own sets must agree even before it has projects, so that a project put in
-        // it later, or created in it, gets a consistent set of names.
-        foreach (var groupId in addedGroupIds)
+        // it later, or created in it, gets a consistent set of names. That covers the groups
+        // given a set, and the groups holding a set whose entries change.
+        var editedSetIds = changes.Entries.Keys.ToList();
+        var checkedGroupIds = addedGroupIds
+            .Concat(await dbContext.ProjectGroupEnvironmentSets
+                .Where(x => editedSetIds.Contains(x.EnvironmentSetId))
+                .Select(x => x.ProjectGroupId)
+                .ToListAsync(cancellationToken))
+            .Distinct()
+            .ToList();
+
+        foreach (var groupId in checkedGroupIds)
         {
             var groupSets = await dbContext.ProjectGroupEnvironmentSets
                 .Where(x => x.ProjectGroupId == groupId)

@@ -261,6 +261,9 @@ namespace Caster.Api.Data.Migrations
             migrationBuilder.DropColumn(
                 name: "project_group_id",
                 table: "hosts");
+
+            // ManageProjectGroups (25) no longer exists.
+            migrationBuilder.Sql("UPDATE system_roles SET permissions = array_remove(permissions, 25);");
         }
     }
 }
