@@ -58,7 +58,7 @@ A setting that can't be used, such as an invalid regular expression or a locatio
 
 ## Projects
 
-A connection's inventory reaches a project's Inventory panel only when the connection is assigned to the project: in Administration > Infrastructure Connections, in the project's Environment dialog, through `POST api/assignments` (several changes at once, see [Environment Sets](EnvironmentSets.md#assigning)) or `POST api/projects/{id}/inventory/connections/{name}`. Assigning needs `ManageInfrastructure`, not a project permission, so a project's managers can't give themselves a hypervisor.
+A connection's inventory reaches a project's Inventory panel only when the connection is assigned to the project: in Administration > Connections, in the project's Environment dialog, through `POST api/assignments` (several changes at once, see [Environment Sets](EnvironmentSets.md#assigning)) or `POST api/projects/{id}/inventory/connections/{name}`. Assigning needs `ManageInfrastructure`, not a project permission, so a project's managers can't give themselves a hypervisor.
 
 * `api/projects/{id}/inventory/...` serves the same lists as `api/inventory/...`, for the project's connections only. A request that names no connection reads the project's first assigned connection, in configuration order, with inventory enabled. A project with none gets an empty result with no connection, never another connection's data.
 * An assignment names the connection as configuration spelled it. A connection that leaves configuration, or is renamed, stays assigned and shows as missing.

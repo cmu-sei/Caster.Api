@@ -31,7 +31,7 @@ namespace Caster.Api.Features.Inventory
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ViewInfrastructure], cancellationToken);
 
-            /// <summary>Each connection with the projects it is assigned to, for the Infrastructure Connections page.</summary>
+            /// <summary>Each connection with the projects it is assigned to, for the Connections page.</summary>
             public override async Task<InventoryConnection[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 var assignments = (await dbContext.ProjectInventoryConnections
