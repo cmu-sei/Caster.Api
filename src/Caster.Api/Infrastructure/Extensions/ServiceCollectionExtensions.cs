@@ -205,7 +205,7 @@ namespace Caster.Api.Infrastructure.Extensions
         /// <summary>
         /// Registers the read-only infrastructure inventory readers. Safe to call
         /// when the feature is disabled or unconfigured - nothing connects until
-        /// the background service runs and finds Infrastructure:Enabled true.
+        /// the background service runs and finds a connection with Inventory:Enabled.
         /// <para>
         /// Every provider is registered as an <see cref="IInventoryProvider"/>
         /// with its own named http client, and the only

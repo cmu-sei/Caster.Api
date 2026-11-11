@@ -93,7 +93,7 @@ public class VsphereInventoryClient(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            vimError = Redact($"Could not read vCenter at {options.Url}: {ex.Message}", options);
+            vimError = Redact($"Could not read vCenter: {ex.Message}", options);
             logger.LogError("Could not read the vCenter inventory at {VsphereUrl} as {VsphereUsername}: {Error}",
                 options.Url, options.Username, InventoryRedaction.Describe(ex, options));
         }
@@ -528,7 +528,7 @@ public class VsphereInventoryClient(
             logger.LogError("Could not create a vCenter REST session for {VsphereUrl} as {VsphereUsername}: {Error}",
                 options.Url, options.Username, InventoryRedaction.Describe(ex, options));
             return (InventoryCategoryResult.Unavailable(
-                Redact($"Could not connect to the vCenter REST api at {options.Url} to read content libraries: {ex.Message}", options)), false);
+                Redact($"Could not connect to the vCenter REST api to read content libraries: {ex.Message}", options)), false);
         }
 
         try

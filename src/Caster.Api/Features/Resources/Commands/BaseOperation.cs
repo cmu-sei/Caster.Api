@@ -116,7 +116,7 @@ namespace Caster.Api.Features.Resources
             }
             else
             {
-                // An incomplete Environment Set stops init; say so rather than answering with no error.
+                // A failed init (an incomplete Environment Set, for one) is reported rather than answered with no error.
                 errors.Add(initResult.Output);
             }
 

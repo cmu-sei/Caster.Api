@@ -51,6 +51,15 @@ public class AssignmentChange
     /// <summary>An infrastructure connection's name, matched without regard to case.</summary>
     [DataMember]
     public string ConnectionName { get; set; }
+
+    /// <summary>Whether the change names a set. A blank id or name counts as none, as the validator treats it.</summary>
+    internal bool IsSetChange => EnvironmentSetId.HasValue && EnvironmentSetId != Guid.Empty;
+
+    internal bool IsProjectChange => ProjectId.HasValue && ProjectId != Guid.Empty;
+
+    internal bool IsGroupChange => ProjectGroupId.HasValue && ProjectGroupId != Guid.Empty;
+
+    internal bool IsConnectionChange => !string.IsNullOrWhiteSpace(ConnectionName);
 }
 
 public class EditAssignments
@@ -79,10 +88,10 @@ public class EditAssignments
             {
                 change.RuleFor(x => x.Operation).IsInEnum();
                 change.RuleFor(x => x)
-                    .Must(x => IsSet(x.ProjectId) != IsSet(x.ProjectGroupId))
+                    .Must(x => x.IsProjectChange != x.IsGroupChange)
                     .WithMessage("A change names either a project or a project group.");
                 change.RuleFor(x => x)
-                    .Must(x => IsSet(x.EnvironmentSetId) != !string.IsNullOrWhiteSpace(x.ConnectionName))
+                    .Must(x => x.IsSetChange != x.IsConnectionChange)
                     .WithMessage("A change names either an Environment Set or a connection.");
             });
 
@@ -91,7 +100,6 @@ public class EditAssignments
                 .WithMessage("A change is listed more than once, or both added and removed.");
         }
 
-        private static bool IsSet(Guid? id) => id.HasValue && id.Value != Guid.Empty;
 
         private static string Key(AssignmentChange change) =>
             $"{change.ProjectId}|{change.ProjectGroupId}|{change.EnvironmentSetId}|{ProjectInventoryConnection.Normalize(change.ConnectionName ?? string.Empty)}";
@@ -112,13 +120,13 @@ public class EditAssignments
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken)
         {
-            if (request.Changes.Any(x => x.EnvironmentSetId.HasValue) &&
+            if (request.Changes.Any(x => x.IsSetChange) &&
                 !await authorizationService.Authorize([SystemPermission.ManageEnvironmentSets], cancellationToken))
             {
                 return false;
             }
 
-            return !request.Changes.Any(x => x.ConnectionName is not null) ||
+            return !request.Changes.Any(x => x.IsConnectionChange) ||
                 await authorizationService.Authorize([SystemPermission.ManageInfrastructure], cancellationToken);
         }
 
@@ -131,16 +139,16 @@ public class EditAssignments
 
         private async Task Handle(Command request, CancellationToken cancellationToken)
         {
-            var projectIds = request.Changes.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId.Value).Distinct().ToList();
+            var projectIds = request.Changes.Where(x => x.IsProjectChange).Select(x => x.ProjectId.Value).Distinct().ToList();
             if (await dbContext.Projects.CountAsync(x => projectIds.Contains(x.Id), cancellationToken) != projectIds.Count)
                 throw new EntityNotFoundException<Project>();
 
-            var groupIds = request.Changes.Where(x => x.ProjectGroupId.HasValue).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
+            var groupIds = request.Changes.Where(x => x.IsGroupChange).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
             if (await dbContext.ProjectGroups.CountAsync(x => groupIds.Contains(x.Id), cancellationToken) != groupIds.Count)
                 throw new EntityNotFoundException<Domain.Models.ProjectGroup>();
 
-            await ApplySetChanges(request.Changes.Where(x => x.EnvironmentSetId.HasValue).ToList(), cancellationToken);
-            await ApplyConnectionChanges(request.Changes.Where(x => x.ConnectionName is not null).ToList(), cancellationToken);
+            await ApplySetChanges(request.Changes.Where(x => x.IsSetChange).ToList(), cancellationToken);
+            await ApplyConnectionChanges(request.Changes.Where(x => x.IsConnectionChange).ToList(), cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
         }
@@ -160,8 +168,8 @@ public class EditAssignments
             if (sets.Count != setIds.Count)
                 throw new EntityNotFoundException<Domain.Models.EnvironmentSet>();
 
-            var projectIds = changes.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId.Value).Distinct().ToList();
-            var groupIds = changes.Where(x => x.ProjectGroupId.HasValue).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
+            var projectIds = changes.Where(x => x.IsProjectChange).Select(x => x.ProjectId.Value).Distinct().ToList();
+            var groupIds = changes.Where(x => x.IsGroupChange).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
             var onProjects = await dbContext.ProjectEnvironmentSets
                 .Where(x => projectIds.Contains(x.ProjectId))
                 .ToListAsync(cancellationToken);
@@ -235,8 +243,8 @@ public class EditAssignments
             if (changes.Count == 0)
                 return;
 
-            var projectIds = changes.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId.Value).Distinct().ToList();
-            var groupIds = changes.Where(x => x.ProjectGroupId.HasValue).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
+            var projectIds = changes.Where(x => x.IsProjectChange).Select(x => x.ProjectId.Value).Distinct().ToList();
+            var groupIds = changes.Where(x => x.IsGroupChange).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
             var onProjects = await dbContext.ProjectInventoryConnections
                 .Where(x => projectIds.Contains(x.ProjectId))
                 .ToListAsync(cancellationToken);
@@ -268,7 +276,7 @@ public class EditAssignments
                 var connection = catalog.Find(change.ConnectionName)
                     ?? throw new EntityNotFoundException<Inventory.InventoryConnection>($"Inventory connection '{change.ConnectionName}' is not configured.");
 
-                if (change.ProjectId.HasValue && onProject is null)
+                if (change.IsProjectChange && onProject is null)
                 {
                     dbContext.ProjectInventoryConnections.Add(new ProjectInventoryConnection
                     {
@@ -277,7 +285,7 @@ public class EditAssignments
                         NormalizedConnectionName = normalized
                     });
                 }
-                else if (change.ProjectGroupId.HasValue && onGroup is null)
+                else if (change.IsGroupChange && onGroup is null)
                 {
                     dbContext.ProjectGroupInventoryConnections.Add(new ProjectGroupInventoryConnection
                     {

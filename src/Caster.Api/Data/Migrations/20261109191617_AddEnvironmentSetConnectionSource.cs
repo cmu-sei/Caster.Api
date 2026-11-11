@@ -41,6 +41,9 @@ namespace Caster.Api.Data.Migrations
             migrationBuilder.DropColumn(
                 name: "connection_name",
                 table: "environment_set_entries");
+
+            // ManageInfrastructure (24), added with connection entries, no longer exists.
+            migrationBuilder.Sql("UPDATE system_roles SET permissions = array_remove(permissions, 24);");
         }
     }
 }

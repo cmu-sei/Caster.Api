@@ -592,7 +592,7 @@ public class InventoryService : BackgroundService, IInventoryService
 
         /// <summary>
         /// Messages name a setting without its connection, e.g. "Set
-        /// Infrastructure:Enabled to true". They are rewritten to this connection's
+        /// Infrastructure:Inventory:Enabled to true". They are rewritten to this connection's
         /// own keys, so the message points at the setting that actually needs changing.
         /// </summary>
         public InventorySnapshot Scoped(InventorySnapshot snapshot)

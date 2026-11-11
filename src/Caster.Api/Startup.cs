@@ -246,7 +246,7 @@ namespace Caster.Api
             services.AddSingleton<IRunQueueService, RunQueueService>();
             services.AddSingleton<IHostedService>(x => x.GetService<IRunQueueService>());
 
-            // Read-only infrastructure inventory. Off unless Infrastructure:Enabled is true.
+            // Read-only infrastructure inventory. Off unless a connection sets Inventory:Enabled.
             services.AddInventoryServices();
             services.AddSingleton<InventoryService>();
             services.AddSingleton<IInventoryService>(x => x.GetService<InventoryService>());
