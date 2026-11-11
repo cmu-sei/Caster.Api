@@ -1129,9 +1129,9 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         private const string GuestsBody = """
         { "data": [
-          { "id": "qemu/103", "vmid": 103, "name": "web", "node": "pve", "type": "qemu", "template": 0, "status": "running" },
-          { "id": "qemu/104", "vmid": 104, "name": "db", "node": "pve", "type": "qemu", "template": 0, "status": "stopped" },
-          { "id": "lxc/130", "vmid": 130, "name": "dns", "node": "pve", "type": "lxc", "template": 0, "status": "running" },
+          { "id": "qemu/103", "vmid": 103, "name": "web", "node": "pve", "type": "qemu", "template": 0, "status": "running", "maxcpu": 4, "maxmem": 4294967296 },
+          { "id": "qemu/104", "vmid": 104, "name": "db", "node": "pve", "type": "qemu", "template": 0, "status": "stopped", "maxcpu": 8, "maxmem": 8589934592 },
+          { "id": "lxc/130", "vmid": 130, "name": "dns", "node": "pve", "type": "lxc", "template": 0, "status": "running", "maxcpu": 1, "maxmem": 536870912 },
           { "id": "qemu/105", "vmid": 105, "name": "alpine-linux-template", "node": "pve", "type": "qemu", "template": 1, "status": "stopped" }
         ] }
         """;
@@ -1154,6 +1154,9 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             // the template is not a guest
             Assert.Equal("3", pve["vmsTotal"]);
             Assert.Equal("2", pve["vmsRunning"]);
+            // only the running guests count against the node
+            Assert.Equal("5", pve["allocatedCpus"]);
+            Assert.Equal("4608", pve["allocatedMemoryMiB"]);
 
             var pve2 = snapshot.Hosts.Entries[1].Properties;
             Assert.Equal("offline", pve2["status"]);

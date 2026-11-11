@@ -443,7 +443,12 @@ public class ProxmoxInventoryClient(
                 {
                     var onNode = byNode.GetValueOrDefault(x.Node) ?? [];
                     properties["vmsTotal"] = onNode.Length.ToString(CultureInfo.InvariantCulture);
-                    properties["vmsRunning"] = onNode.Count(g => g.Status == "running").ToString(CultureInfo.InvariantCulture);
+                    var running = onNode.Where(g => g.Status == "running").ToArray();
+                    properties["vmsRunning"] = running.Length.ToString(CultureInfo.InvariantCulture);
+                    // What the running guests are given, as a vSphere host reports it, so
+                    // capacity can allow for overcommit rather than go by current load.
+                    properties["allocatedCpus"] = running.Sum(g => g.MaxCpu ?? 0).ToString(CultureInfo.InvariantCulture);
+                    properties["allocatedMemoryMiB"] = running.Sum(g => (g.MaxMem ?? 0) / (1024L * 1024L)).ToString(CultureInfo.InvariantCulture);
                 }
 
                 return new InventoryEntry
