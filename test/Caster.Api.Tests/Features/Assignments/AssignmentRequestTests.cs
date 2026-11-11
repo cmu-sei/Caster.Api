@@ -290,6 +290,25 @@ public class AssignmentRequestTests(DatabaseFixture fixture, CasterAppFactory fa
         await AssertStatus(HttpStatusCode.NoContent, await Client(infrastructure).PostAsJsonAsync(Assignments, new { changes = new[] { connectionChange } }, Ct));
     }
 
+    /// <summary>A blank connection name on a set change is no connection: it needs no ManageInfrastructure and adds no connection.</summary>
+    [Fact]
+    public async Task Edit_treats_a_blank_connection_name_on_a_set_change_as_none()
+    {
+        var project = TestData.Project();
+        var set = TestData.EnvironmentSet();
+        await Seed(project, set);
+        var sets = await Actor().WithSystemPermissions(SystemPermission.ManageEnvironmentSets).SeedAsync();
+
+        var response = await Client(sets).PostAsJsonAsync(Assignments, new
+        {
+            changes = new[] { new { operation = "Add", projectId = project.Id, environmentSetId = set.Id, connectionName = "" } }
+        }, Ct);
+
+        await AssertStatus(HttpStatusCode.NoContent, response);
+        Assert.True(await ReadBack(db => db.ProjectEnvironmentSets.AnyAsync(x => x.ProjectId == project.Id && x.EnvironmentSetId == set.Id, Ct)));
+        Assert.False(await ReadBack(db => db.ProjectInventoryConnections.AnyAsync(x => x.ProjectId == project.Id, Ct)));
+    }
+
     private static ProjectInventoryConnection Connection(Project project, string name) => new()
     {
         Id = Guid.NewGuid(),

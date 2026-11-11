@@ -47,6 +47,11 @@ public class AssignmentChange
     /// <summary>An infrastructure connection's name, matched without regard to case.</summary>
     [DataMember]
     public string ConnectionName { get; set; }
+
+    /// <summary>Whether the change names a set. A blank id or name counts as none, as the validator treats it.</summary>
+    internal bool IsSetChange => EnvironmentSetId.HasValue && EnvironmentSetId != Guid.Empty;
+
+    internal bool IsConnectionChange => !string.IsNullOrWhiteSpace(ConnectionName);
 }
 
 public class EditAssignments
@@ -76,7 +81,7 @@ public class EditAssignments
                 change.RuleFor(x => x.Operation).IsInEnum();
                 change.RuleFor(x => x.ProjectId).NotEmpty();
                 change.RuleFor(x => x)
-                    .Must(x => x.EnvironmentSetId.HasValue != !string.IsNullOrWhiteSpace(x.ConnectionName))
+                    .Must(x => x.IsSetChange != x.IsConnectionChange)
                     .WithMessage("A change names either an Environment Set or a connection.");
             });
 
@@ -103,13 +108,13 @@ public class EditAssignments
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken)
         {
-            if (request.Changes.Any(x => x.EnvironmentSetId.HasValue) &&
+            if (request.Changes.Any(x => x.IsSetChange) &&
                 !await authorizationService.Authorize([SystemPermission.ManageEnvironmentSets], cancellationToken))
             {
                 return false;
             }
 
-            return !request.Changes.Any(x => x.ConnectionName is not null) ||
+            return !request.Changes.Any(x => x.IsConnectionChange) ||
                 await authorizationService.Authorize([SystemPermission.ManageInfrastructure], cancellationToken);
         }
 
@@ -128,8 +133,8 @@ public class EditAssignments
             if (projectCount != projectIds.Count)
                 throw new EntityNotFoundException<Project>();
 
-            await ApplySetChanges(request.Changes.Where(x => x.EnvironmentSetId.HasValue).ToList(), cancellationToken);
-            await ApplyConnectionChanges(request.Changes.Where(x => x.ConnectionName is not null).ToList(), cancellationToken);
+            await ApplySetChanges(request.Changes.Where(x => x.IsSetChange).ToList(), cancellationToken);
+            await ApplyConnectionChanges(request.Changes.Where(x => x.IsConnectionChange).ToList(), cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
         }
