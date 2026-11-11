@@ -10,6 +10,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services.Capacity;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Features.DesignModules;
 using Caster.Api.Features.Shared;
 using Caster.Api.Features.Shared.Services;
@@ -40,6 +42,13 @@ public class CreateFromAiDraft
         /// </summary>
         [DataMember]
         public DesignModuleFields[] Modules { get; init; }
+
+        /// <summary>
+        /// The draft's topology plan, as the draft gave it. When sent, a design whose machines
+        /// go over a limit of a workspace in the project is not saved.
+        /// </summary>
+        [DataMember]
+        public AiTopologyPlan Topology { get; init; }
     }
 
     public class Validator : AbstractValidator<Command>
@@ -64,7 +73,7 @@ public class CreateFromAiDraft
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Design>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IInventoryService inventoryService = null, ICapacityCheckService capacity = null) : BaseHandler<Command, Design>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -76,6 +85,8 @@ public class CreateFromAiDraft
         /// </summary>
         public override async Task<Design> HandleRequest(Command request, CancellationToken cancellationToken)
         {
+            await AiTopology.EnsureWithinLimits(request.Topology, inventoryService, capacity, request.DirectoryId, "design", cancellationToken);
+
             var design = new Domain.Models.Design
             {
                 Name = request.Name,

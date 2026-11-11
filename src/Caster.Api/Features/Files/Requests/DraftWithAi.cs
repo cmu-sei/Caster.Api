@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Capacity;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Features.Designs;
@@ -66,7 +67,7 @@ public class DraftWithAi
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask) : BaseHandler<Command, AiTerraformDraft>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask, ICapacityCheckService capacity = null) : BaseHandler<Command, AiTerraformDraft>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -74,7 +75,7 @@ public class DraftWithAi
         public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken)
         {
             aiTask.Use(AiTasks.Terraform, request.DirectoryId);
-            return new Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService)
+            return new Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService, capacity)
                 .Draft(request.DirectoryId, request.Prompt, request.FileId, request.Hypervisors, expected: null, cancellationToken);
         }
     }
@@ -82,7 +83,7 @@ public class DraftWithAi
     /// <summary>
     /// Drafts Terraform for a Directory from a request in words, which the free-text and brief routes both build.
     /// </summary>
-    public class Drafter(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService)
+    public class Drafter(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, ICapacityCheckService capacity = null)
     {
         public async Task<AiTerraformDraft> Draft(Guid directoryId, string prompt, Guid? fileId, IReadOnlyList<string> requestedHypervisors, AiTopologyExpectations expected, CancellationToken cancellationToken)
         {
@@ -101,7 +102,8 @@ public class DraftWithAi
 
             var warnings = new List<string>();
             var hypervisors = ResolveHypervisors(files, requestedHypervisors, warnings);
-            var inventory = await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken);
+            var inventory = await (await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken))
+                .WithCapacity(capacity, directoryId, cancellationToken);
             var catalog = await LoadCatalog(cancellationToken);
             var input = await aiModelClient.InvokeToolAsync(
                 AiTerraformDraftBuilder.BuildSystemPrompt(catalog, inventory.BuildPromptSection()),

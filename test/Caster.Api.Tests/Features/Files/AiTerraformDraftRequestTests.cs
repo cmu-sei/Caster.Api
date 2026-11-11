@@ -223,6 +223,49 @@ public class AiTerraformDraftRequestTests(DatabaseFixture fixture, CasterAppFact
         Assert.False(await FileNamed("a.tf"));
     }
 
+    [Fact]
+    public async Task Apply_refuses_a_draft_whose_topology_is_over_the_projects_limit()
+    {
+        var (project, directory) = await SeedDirectory();
+        await LimitMachines(project, 1);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/directories/{directory.Id}/files/ai-draft/apply", new
+        {
+            files = new[] { new { name = "vms.tf", content = "# two vms" } },
+            topology = new { machines = new[] { new { name = "a", cpu = 1, memoryMiB = 1024, diskGiB = 10 }, new { name = "b", cpu = 1, memoryMiB = 1024, diskGiB = 10 } } },
+        }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Equal("This draft cannot be saved. The machines need 2 machines, over the limit of 1 machine (set on the project) for a workspace. A draft over a limit cannot be saved.", problem.Title);
+        Assert.False(await FileNamed("vms.tf"));
+    }
+
+    [Fact]
+    public async Task Apply_saves_a_draft_whose_topology_is_within_the_limits()
+    {
+        var (project, directory) = await SeedDirectory();
+        await LimitMachines(project, 2);
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/directories/{directory.Id}/files/ai-draft/apply", new
+        {
+            files = new[] { new { name = "vms.tf", content = "# two vms" } },
+            topology = new { machines = new[] { new { name = "a", cpu = 1 }, new { name = "b", cpu = 1 } } },
+        }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.True(await FileNamed("vms.tf"));
+    }
+
+    private async Task LimitMachines(Project project, int max)
+    {
+        await using var context = NewContext();
+        var stored = await context.Projects.SingleAsync(x => x.Id == project.Id, Ct);
+        stored.MaxMachines = max;
+        await context.SaveChangesAsync(Ct);
+    }
+
     private Task<HttpResponseMessage> DraftFromBrief(TestActor actor, Directory directory, object brief) =>
         Client(actor).PostAsJsonAsync($"api/directories/{directory.Id}/files/ai-draft/brief", new { brief }, Ct);
 

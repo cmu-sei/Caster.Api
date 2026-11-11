@@ -9,6 +9,8 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services.Capacity;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
 using Caster.Api.Features.Shared;
@@ -37,6 +39,13 @@ public class ApplyAiDraft
         /// </summary>
         [DataMember]
         public List<FileChange> Files { get; init; } = [];
+
+        /// <summary>
+        /// The draft's topology plan, as the draft gave it. When sent, files whose machines go
+        /// over a limit of a workspace in the project are not saved.
+        /// </summary>
+        [DataMember]
+        public Designs.AiTopologyPlan Topology { get; init; }
     }
 
     public record FileChange
@@ -77,13 +86,17 @@ public class ApplyAiDraft
         ICasterAuthorizationService authorizationService,
         CasterContext dbContext,
         ILockService lockService,
-        IIdentityResolver identityResolver) : BaseHandler<Command, File[]>
+        IIdentityResolver identityResolver,
+        IInventoryService inventoryService = null,
+        ICapacityCheckService capacity = null) : BaseHandler<Command, File[]>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
         public override async Task<File[]> HandleRequest(Command request, CancellationToken cancellationToken)
         {
+            await Designs.AiTopology.EnsureWithinLimits(request.Topology, inventoryService, capacity, request.DirectoryId, "draft", cancellationToken);
+
             var userId = identityResolver.GetId();
             var canLock = await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.LockFiles], [ProjectPermission.LockFiles], cancellationToken);
             var directory = await dbContext.Directories.SingleAsync(d => d.Id == request.DirectoryId, cancellationToken);

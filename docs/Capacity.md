@@ -66,3 +66,9 @@ Cloud machines count against `MaxMachines` only. A clone that does not size its 
 ## Apply
 
 `GET api/runs/{id}/capacity` gives a run's check as it stands now: what the run adds, what the workspace has before and after, the limits in force, a line for each host and datastore with what is needed and what is free, and notes on what was not checked. `POST api/runs/{id}/actions/apply` makes the same check: over a limit, or without room in `Block` mode, it answers 409 with the reason; without room in `Warn` mode, it answers 409 unless called with `?acknowledgeCapacityWarning=true`.
+
+## AI drafts
+
+An AI design or Terraform draft is shown the room on each host of the connections it is grounded in (free vCPU and memory, worked out as above) and the limits a workspace in its project is held to: the lower of the project's and the global ones. Its topology plan is checked as a run of its machines would be, each sized from the plan or its template; the plan places machines on no host, so they are counted against all of their hypervisor's hosts and datastores between them. Room and limit problems are warnings on the draft, and the check is on the plan's totals as `capacity`.
+
+Saving a draft (`POST api/directories/{id}/designs/ai-draft/create`, `POST api/directories/{id}/files/ai-draft/apply`) with its `topology` is refused with a 409 when the machines go over a limit. Room is not checked when saving, since it can change before a run; the check before apply makes it then.

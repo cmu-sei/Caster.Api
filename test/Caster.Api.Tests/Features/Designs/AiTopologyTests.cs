@@ -4,6 +4,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
+using Caster.Api.Domain.Services.Capacity;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Features.Designs;
@@ -198,15 +200,15 @@ public class AiTopologyTests
     }
 
     [Fact]
-    public void Totals_take_sizes_from_the_template_and_warn_past_the_free_space()
+    public async Task Totals_take_sizes_from_the_template_and_warn_past_the_free_space()
     {
         var plan = Segmented();
         foreach (var machine in plan.Machines)
             machine.Template = "ubuntu-22";
         plan.Machines[0].DiskGiB = 40;
-        var inventory = AiInventory.Load(AiInventoryTests.Service(("default", InfrastructureProviders.Proxmox, AiInventoryTests.Snapshot(
+        var inventory = await AiCapacityTests.WithCapacity(AiInventory.Load(AiInventoryTests.Service(("default", InfrastructureProviders.Proxmox, AiInventoryTests.Snapshot(
             [AiInventoryTests.Entry("ubuntu-22", ("maxcpu", "2"), ("maxmem", "4294967296"), ("maxdisk", "34359738368"))],
-            datastores: [AiInventoryTests.Entry("local", ("freeSpace", "107374182400"))]))), null);
+            datastores: [AiInventoryTests.Entry("local", ("freeSpace", "107374182400"))]))), null));
 
         var warnings = AiTopology.Check(plan, inventory, Hypervisors.Proxmox);
 
@@ -215,16 +217,18 @@ public class AiTopologyTests
         Assert.Equal(16384, plan.Totals.MemoryMiB);
         Assert.Equal(40 + 3 * 32, plan.Totals.DiskGiB);
         Assert.Equal(100, plan.Totals.DatastoreFreeGiB);
-        Assert.Contains("The machines need 136 GiB of disk, more than the 100 GiB free on the Proxmox datastores.", warnings);
+        // 100 GiB free, less the 10% reserve
+        Assert.Contains("The hypervisors may not have room: The Proxmox datastores between them need 136 GiB for disks the plan places on none, and have 90 GiB free.", warnings);
+        Assert.Equal(CapacityCheckStatus.Warning, plan.Totals.Capacity.Status);
     }
 
     [Fact]
-    public void Totals_say_how_many_machines_have_no_size_when_there_is_capacity_to_compare()
+    public async Task Totals_say_how_many_machines_have_no_size_when_there_is_capacity_to_compare()
     {
         var plan = Segmented();
         plan.Machines[0].DiskGiB = 10;
-        var inventory = AiInventory.Load(AiInventoryTests.Service(("default", InfrastructureProviders.Proxmox, AiInventoryTests.Snapshot(
-            datastores: [AiInventoryTests.Entry("local", ("freeSpace", "107374182400"))]))), null);
+        var inventory = await AiCapacityTests.WithCapacity(AiInventory.Load(AiInventoryTests.Service(("default", InfrastructureProviders.Proxmox, AiInventoryTests.Snapshot(
+            datastores: [AiInventoryTests.Entry("local", ("freeSpace", "107374182400"))]))), null));
 
         Assert.Contains("3 of 4 machines have no size in the plan or their template, so the totals leave them out.",
             AiTopology.Check(plan, inventory, Hypervisors.Proxmox));

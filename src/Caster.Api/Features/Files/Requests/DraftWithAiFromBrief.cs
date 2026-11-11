@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Capacity;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Features.Designs;
 using Caster.Api.Features.Shared;
@@ -118,7 +119,7 @@ public class DraftWithAiFromBrief
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask) : BaseHandler<Command, AiTerraformDraft>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask, ICapacityCheckService capacity = null) : BaseHandler<Command, AiTerraformDraft>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -126,7 +127,7 @@ public class DraftWithAiFromBrief
         public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken)
         {
             aiTask.Use(AiTasks.Brief, request.DirectoryId);
-            return new DraftWithAi.Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService)
+            return new DraftWithAi.Drafter(authorizationService, dbContext, aiModelClient, aiOptions, terraformOptions, inventoryService, capacity)
                 .Draft(
                     request.DirectoryId,
                     AiScenarioBriefPrompt.Build(request.Brief, request.Instructions),

@@ -4,6 +4,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Caster.Api.Domain.Services.Inventory;
+using Caster.Api.Domain.Services.Capacity;
+using Caster.Api.Infrastructure.Options;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -134,9 +139,16 @@ public class AiTopologyTotals
     public long DiskGiB { get; set; }
 
     /// <summary>
-    /// Free space on the hypervisor's datastores, when the inventory reports it.
+    /// Free space on the hypervisor's datastores, when the inventory reports it. For display; the
+    /// room is checked in <see cref="Capacity"/>.
     /// </summary>
     public long? DatastoreFreeGiB { get; set; }
+
+    /// <summary>
+    /// The machines checked as a run of them would be before apply: against the limits of a
+    /// workspace in the draft's project, and the room on each host and datastore.
+    /// </summary>
+    public CapacityCheck Capacity { get; set; }
 }
 
 /// <summary>
@@ -356,13 +368,107 @@ public static class AiTopology
         if (expected != null)
             warnings.AddRange(BriefProblems(plan, expected));
         plan.Totals = Totals(plan, inventory, hypervisor);
-        if (plan.Totals.DatastoreFreeGiB is { } free && plan.Totals.DiskGiB > free)
-            warnings.Add($"The machines need {plan.Totals.DiskGiB} GiB of disk, more than the {free} GiB free on the {hypervisor ?? "hypervisor"} datastores.");
-        // only worth saying when there is capacity to compare the totals with
-        if (plan.Totals.DatastoreFreeGiB != null && plan.Totals.Sized < plan.Totals.Machines)
+        var capacity = plan.Totals.Capacity = CheckCapacity(plan, inventory, hypervisor);
+        warnings.AddRange(LimitProblems(capacity));
+        warnings.AddRange(capacity.Hosts.Where(h => !h.Fits).Select(h => $"The hypervisors may not have room: {h.Message}"));
+        warnings.AddRange(capacity.Datastores.Where(d => !d.Fits).Select(d => $"The hypervisors may not have room: {d.Message}"));
+        // only worth saying when there is room or a limit to compare the totals with
+        var compared = capacity.Hosts.Count > 0 || capacity.Datastores.Count > 0 || capacity.Limits.Any;
+        if (compared && plan.Totals.Sized < plan.Totals.Machines)
             warnings.Add($"{plan.Totals.Machines - plan.Totals.Sized} of {plan.Totals.Machines} machines have no size in the plan or their template, so the totals leave them out.");
         return warnings;
     }
+
+    /// <summary>
+    /// The plan's machines as a run that creates them, sized from the plan or their inventory
+    /// template. The plan places them on no host, so each is counted against all of its
+    /// hypervisor's hosts, and its disk against all of its datastores.
+    /// </summary>
+    public static DeploymentDemand Demand(AiTopologyPlan plan, AiInventory inventory, string hypervisor)
+    {
+        var provider = AiInventory.ProviderOf(hypervisor);
+        if (provider == null && inventory?.Sources.Select(s => s.Hypervisor).Distinct().ToList() is [var only])
+            provider = AiInventory.ProviderOf(only);
+
+        var demand = new DeploymentDemand();
+        foreach (var machine in plan?.Machines ?? [])
+        {
+            var template = inventory?.TemplateSize(hypervisor, machine.Template) ?? default;
+            var cpu = machine.Cpu ?? template.Cpu;
+            var memory = machine.MemoryMiB ?? template.MemoryMiB;
+            var disk = machine.DiskGiB ?? template.DiskGiB;
+            demand.Machines.Add(new PlannedMachine
+            {
+                Address = machine.Name,
+                Hypervisor = provider,
+                Action = "create",
+                After = new MachineSize
+                {
+                    Vcpu = cpu ?? 0,
+                    MemoryMiB = memory ?? 0,
+                    Disks = disk is { } gib ? [new PlannedDisk { SizeGiB = gib }] : [],
+                    Incomplete = cpu == null || memory == null || disk == null,
+                },
+            });
+        }
+
+        if (provider == null && demand.Machines.Count > 0 && inventory?.Room != null)
+            demand.Notes.Add("Room on the hypervisors was not checked: the draft does not say which hypervisor its machines go on.");
+
+        return demand;
+    }
+
+    /// <summary>The plan's machines checked against the limits and room the inventory carries.</summary>
+    public static CapacityCheck CheckCapacity(AiTopologyPlan plan, AiInventory inventory, string hypervisor) =>
+        CapacityChecker.Check(
+            Demand(plan, inventory, hypervisor),
+            inventory?.Limits ?? new EffectiveLimits(),
+            inventory?.Room,
+            inventory?.CapacityOptions ?? new CapacityOptions());
+
+    /// <summary>
+    /// Refuses to save a draft whose topology plan goes over a limit of a workspace in the
+    /// directory's project. Sizes come from the plan or, for a machine it leaves unsized, its
+    /// template in the inventory cache; room is not checked here, since it can change before
+    /// a run, and the check before apply makes it then.
+    /// </summary>
+    public static async Task EnsureWithinLimits(
+        AiTopologyPlan plan, IInventoryService inventoryService, ICapacityCheckService capacity, Guid directoryId, string what, CancellationToken cancellationToken)
+    {
+        if (plan == null || capacity == null)
+            return;
+
+        var limits = await capacity.GetDirectoryLimitsAsync(directoryId, cancellationToken);
+        if (!limits.Any)
+            return;
+
+        var inventory = inventoryService == null ? null : AiInventory.Load(inventoryService, null);
+        var check = CapacityChecker.Check(Demand(plan, inventory, null), limits, null, capacity.Options ?? new CapacityOptions());
+        var problems = LimitProblems(check).ToList();
+        if (problems.Count > 0)
+            throw new Infrastructure.Exceptions.ConflictException($"This {what} cannot be saved. {string.Join(" ", problems)}");
+    }
+
+    /// <summary>The limits the machines go over, in words. A draft with any cannot be saved.</summary>
+    public static IEnumerable<string> LimitProblems(CapacityCheck capacity) =>
+        (capacity?.LimitViolations ?? []).Select(v =>
+        {
+            var (one, many) = v.Limit switch
+            {
+                nameof(EffectiveLimits.MaxMachines) => ("machine", "machines"),
+                nameof(EffectiveLimits.MaxVcpu) => ("vCPU", "vCPUs"),
+                nameof(EffectiveLimits.MaxMemoryGiB) => ("GiB of memory", "GiB of memory"),
+                _ => ("GiB of disk", "GiB of disk"),
+            };
+            var where = v.Source switch
+            {
+                LimitSource.Project => "set on the project",
+                LimitSource.Workspace => "set on the workspace",
+                _ => "set in the Capacity settings",
+            };
+            string Amount(double x) => $"{x.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} {(x == 1 ? one : many)}";
+            return $"The machines need {Amount(v.Total)}, over the limit of {Amount(v.Value)} ({where}) for a workspace. A draft over a limit cannot be saved.";
+        });
 
     private static IEnumerable<string> AddressProblems(AiTopologyPlan plan)
     {

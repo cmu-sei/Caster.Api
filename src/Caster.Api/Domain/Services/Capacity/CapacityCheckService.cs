@@ -30,8 +30,17 @@ public interface ICapacityCheckService
     /// <summary>The lowest of the project's and the global limits: what a new workspace in it would have.</summary>
     Task<EffectiveLimits> GetProjectLimitsAsync(Guid projectId, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// The lowest of the project's and the global limits, for what is drafted in one of the
+    /// project's directories: a Design or Terraform written into its workspaces.
+    /// </summary>
+    Task<EffectiveLimits> GetDirectoryLimitsAsync(Guid directoryId, CancellationToken cancellationToken);
+
     /// <summary>The room on every host and datastore the inventory knows of, now.</summary>
     HypervisorRoom ReadRoom();
+
+    /// <summary>The Capacity settings in force.</summary>
+    CapacityOptions Options { get; }
 }
 
 public class CapacityCheckService(CasterContext db, CapacityOptions options, IHypervisorRoomSource roomSource) : ICapacityCheckService
@@ -81,7 +90,21 @@ public class CapacityCheckService(CasterContext db, CapacityOptions options, IHy
         return DeploymentLimitResolver.Resolve(options, project, null);
     }
 
+    public async Task<EffectiveLimits> GetDirectoryLimitsAsync(Guid directoryId, CancellationToken cancellationToken)
+    {
+        var projectId = await db.Directories
+            .Where(x => x.Id == directoryId)
+            .Select(x => (Guid?)x.ProjectId)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return projectId is { } id
+            ? await GetProjectLimitsAsync(id, cancellationToken)
+            : DeploymentLimitResolver.Resolve(options, null, null);
+    }
+
     public HypervisorRoom ReadRoom() => roomSource.Read(options);
+
+    public CapacityOptions Options => options;
 
     /// <summary>A demand that cannot be read is the same as none: nothing is checked.</summary>
     public static DeploymentDemand Read(string json)

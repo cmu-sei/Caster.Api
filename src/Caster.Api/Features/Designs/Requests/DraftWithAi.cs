@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Capacity;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Features.Shared;
@@ -65,7 +66,7 @@ public class DraftWithAi
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask) : BaseHandler<Command, AiDesignDraft>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask, ICapacityCheckService capacity = null) : BaseHandler<Command, AiDesignDraft>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -85,7 +86,8 @@ public class DraftWithAi
                     ? "There are no module versions that Terraform runs can download. Import modules first."
                     : $"There are no module versions for {string.Join(" or ", hypervisors)} that Terraform runs can download.");
 
-            var inventory = await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken);
+            var inventory = await (await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken))
+                .WithCapacity(capacity, request.DirectoryId, cancellationToken);
             aiTask.Use(AiTasks.Design, request.DirectoryId);
             var input = await aiModelClient.InvokeToolAsync(
                 AiDesignDraftBuilder.BuildSystemPrompt(catalog, hypervisors, inventory.BuildPromptSection()),

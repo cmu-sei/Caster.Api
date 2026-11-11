@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services.Capacity;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Options;
@@ -115,11 +116,70 @@ public class AiInventory
     public const int MaxTemplates = 120;
     public const int MaxNetworks = 150;
     public const int MaxDatastores = 40;
+    public const int MaxHosts = 40;
 
     public record Source(string Connection, string Hypervisor, InventorySnapshot Snapshot);
 
     public IReadOnlyList<Source> Sources { get; }
     public AiInventoryGrounding Grounding { get; }
+
+    /// <summary>
+    /// The free room on the hosts and datastores of <see cref="Sources"/>, as the check before
+    /// apply works it out. Null until <see cref="WithCapacity"/>, and when the draft is not grounded.
+    /// </summary>
+    public HypervisorRoom Room { get; private set; }
+
+    /// <summary>The limits a workspace of the draft's project is held to. Null until <see cref="WithCapacity"/>.</summary>
+    public EffectiveLimits Limits { get; private set; }
+
+    /// <summary>The Capacity settings the room was worked out with.</summary>
+    public CapacityOptions CapacityOptions { get; private set; } = new();
+
+    /// <summary>
+    /// Adds the room on the hypervisors and the limits of the directory's project, so the model
+    /// is shown both and the draft is checked against them as a run would be. The room is kept to
+    /// the connections the draft is grounded in; the limits are added even when it is not.
+    /// </summary>
+    public async Task<AiInventory> WithCapacity(ICapacityCheckService capacity, Guid directoryId, CancellationToken cancellationToken)
+    {
+        if (capacity == null)
+            return this;
+
+        CapacityOptions = capacity.Options ?? new CapacityOptions();
+        Limits = await capacity.GetDirectoryLimitsAsync(directoryId, cancellationToken);
+
+        if (Sources.Count > 0)
+            Room = ForSources(capacity.ReadRoom());
+
+        return this;
+    }
+
+    /// <summary>The room, kept to the hosts and datastores of the draft's connections.</summary>
+    private HypervisorRoom ForSources(HypervisorRoom room)
+    {
+        if (room == null)
+            return null;
+
+        var connections = Sources.Select(s => s.Connection).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var kept = new HypervisorRoom
+        {
+            Hosts = [.. room.Hosts.Where(h => connections.Contains(h.Connection))],
+            Datastores = [.. room.Datastores.Where(d => connections.Contains(d.Connection))],
+            ReadAt = room.ReadAt,
+            Notes = room.Notes,
+        };
+        foreach (var provider in room.HostsRead.Where(p => kept.Hosts.Any(h => string.Equals(h.Hypervisor, p, StringComparison.OrdinalIgnoreCase))))
+            kept.HostsRead.Add(provider);
+        foreach (var provider in room.DatastoresRead.Where(p => kept.Datastores.Any(d => string.Equals(d.Hypervisor, p, StringComparison.OrdinalIgnoreCase))))
+            kept.DatastoresRead.Add(provider);
+        return kept;
+    }
+
+    /// <summary>The provider name the capacity check uses, proxmox or vsphere, for a hypervisor.</summary>
+    public static string ProviderOf(string hypervisor) =>
+        string.Equals(hypervisor, Hypervisors.Proxmox, StringComparison.OrdinalIgnoreCase) ? InfrastructureProviders.Proxmox
+        : string.Equals(hypervisor, Hypervisors.VSphere, StringComparison.OrdinalIgnoreCase) ? InfrastructureProviders.Vsphere
+        : null;
 
     private AiInventory(IReadOnlyList<Source> sources, AiInventoryGrounding grounding)
     {
@@ -224,7 +284,7 @@ public class AiInventory
     public string BuildPromptSection()
     {
         if (Sources.Count == 0)
-            return "";
+            return LimitsSection();
 
         var sb = new StringBuilder();
         sb.AppendLine("Infrastructure inventory: what exists on the hypervisor now.");
@@ -242,10 +302,65 @@ public class AiInventory
             truncated |= AppendCategory(block, source, AiInventoryKind.Template, MaxTemplates, budget);
             truncated |= AppendCategory(block, source, AiInventoryKind.Network, MaxNetworks, budget);
             truncated |= AppendCategory(block, source, AiInventoryKind.Datastore, MaxDatastores, budget);
+            truncated |= AppendHosts(block, source, budget);
             if (truncated)
                 Grounding.Connections.First(c => c.Name == source.Connection).Truncated = true;
             sb.Append(block);
         }
+        sb.Append(LimitsSection());
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The room each host of a connection has for new machines, after the overcommit and the
+    /// reserve, as the check before apply works it out. Nothing without room to show.
+    /// </summary>
+    private bool AppendHosts(StringBuilder block, Source source, int budget)
+    {
+        var hosts = Room?.Hosts.Where(h => string.Equals(h.Connection, source.Connection, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (hosts == null || hosts.Count == 0)
+            return false;
+
+        block.AppendLine($"Hosts, with the room each has for new machines ({CapacityOptions.CpuOvercommitRatio.ToString("0.##", CultureInfo.InvariantCulture)} vCPU per core, {CapacityOptions.ReservePercent.ToString("0.##", CultureInfo.InvariantCulture)}% of memory kept back):");
+        var shown = 0;
+        foreach (var host in hosts)
+        {
+            var line = host.Online
+                ? $"- {host.Name} ({host.Cores} cores, {host.FreeVcpu} vCPU free, {(host.FreeMemoryMiB / 1024d).ToString("0.#", CultureInfo.InvariantCulture)} GiB memory free)"
+                : $"- {host.Name} (offline: no room)";
+            if (shown >= MaxHosts || block.Length + line.Length > budget)
+                break;
+            block.AppendLine(line);
+            shown++;
+        }
+        if (shown < hosts.Count)
+        {
+            block.AppendLine($"- and {hosts.Count - shown} more not listed");
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>The limits each workspace is held to, as the model is told them. Empty when there are none.</summary>
+    private string LimitsSection()
+    {
+        if (Limits is not { Any: true })
+            return "";
+
+        var parts = new List<string>();
+        if (Limits.MaxMachines is { } machines)
+            parts.Add($"{machines.Value} machines");
+        if (Limits.MaxVcpu is { } vcpu)
+            parts.Add($"{vcpu.Value} vCPU");
+        if (Limits.MaxMemoryGiB is { } memory)
+            parts.Add($"{memory.Value} GiB of memory");
+        if (Limits.MaxDiskGiB is { } disk)
+            parts.Add($"{disk.Value} GiB of disk");
+
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine($"Deployment limits: each workspace may have at most {string.Join(", ", parts)} in all.");
+        sb.AppendLine("- Keep the whole range within them. A draft over a limit cannot be saved, and a run over one is not applied.");
         return sb.ToString();
     }
 
