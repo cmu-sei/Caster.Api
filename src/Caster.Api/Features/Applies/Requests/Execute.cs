@@ -14,6 +14,7 @@ using Caster.Api.Domain.Events;
 using System.Security.Claims;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Capacity;
 using System.Linq;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Infrastructure.Extensions;
@@ -31,6 +32,13 @@ namespace Caster.Api.Features.Applies
             /// </summary>
             [DataMember]
             public Guid RunId { get; set; }
+
+            /// <summary>
+            /// True to apply even though the hypervisors may not have room for
+            /// the run. Never lets a run over a limit through.
+            /// </summary>
+            [DataMember]
+            public bool AcknowledgeCapacityWarning { get; set; }
         }
 
         public class Handler : BaseHandler<Command, Apply>
@@ -40,14 +48,17 @@ namespace Caster.Api.Features.Applies
             private readonly ICasterAuthorizationService _authorizationService;
             private readonly ClaimsPrincipal _user;
             private readonly ILockService _lockService;
+            private readonly ICapacityCheckService _capacity;
 
             public Handler(
                 CasterContext db,
                 IMediator mediator,
                 ICasterAuthorizationService authorizationService,
                 IIdentityResolver identityResolver,
-                ILockService lockService)
+                ILockService lockService,
+                ICapacityCheckService capacity)
             {
+                _capacity = capacity;
                 _db = db;
                 _mediator = mediator;
                 _authorizationService = authorizationService;
@@ -75,6 +86,7 @@ namespace Caster.Api.Features.Applies
                         .SingleOrDefaultAsync(r => r.Id == request.RunId);
 
                     ValidateRun(run);
+                    await CheckCapacity(request, run, cancellationToken);
 
                     apply = new Domain.Models.Apply
                     {
@@ -91,6 +103,25 @@ namespace Caster.Api.Features.Applies
                 await _mediator.Publish(new ApplyCreated { ApplyId = apply.Id, RunId = apply.RunId, WorkspaceId = workspaceId });
                 await _mediator.Publish(new RunUpdated(apply.RunId));
                 return apply.ToApply();
+            }
+
+            /// <summary>
+            /// Refuses a run over an effective limit, or out of room with the room
+            /// check set to Block, and one out of room with it set to Warn unless
+            /// the warning is acknowledged.
+            /// </summary>
+            private async Task CheckCapacity(Command request, Run run, CancellationToken cancellationToken)
+            {
+                var check = await _capacity.CheckRunAsync(run.Id, cancellationToken);
+
+                if (check == null)
+                    return;
+
+                if (!check.CanApply)
+                    throw new ConflictException($"This run cannot be applied. {check.Message}");
+
+                if (check.RequiresAcknowledgement && !request.AcknowledgeCapacityWarning)
+                    throw new ConflictException($"{check.Message} Acknowledge the warning to apply anyway.");
             }
 
             private void ValidateRun(Run run)

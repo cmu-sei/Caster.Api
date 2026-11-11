@@ -21,6 +21,21 @@ namespace Caster.Api.Features.Capacity;
 public class CapacityController(IMediator mediator) : ControllerBase
 {
     /// <summary>
+    /// Check a Run's plan against its Workspace's limits and the room on the hypervisors
+    /// </summary>
+    /// <remarks>
+    /// What applying the run would add, what the workspace would have, the
+    /// limits in force, and the room on each host and datastore, as they are
+    /// now. Apply makes the same check.
+    /// </remarks>
+    /// <param name="runId">The Id of the Run</param>
+    [HttpGet("runs/{runId}/capacity")]
+    [ProducesResponseType(typeof(CapacityCheck), (int)HttpStatusCode.OK)]
+    [SwaggerOperation(OperationId = "GetRunCapacity")]
+    public async Task<IActionResult> GetRunCapacity([FromRoute] Guid runId) =>
+        Ok(await mediator.Send(new GetRunCapacity.Query { RunId = runId }));
+
+    /// <summary>
     /// Get the limits in force for a Workspace
     /// </summary>
     /// <param name="id">The Id of the Workspace</param>
