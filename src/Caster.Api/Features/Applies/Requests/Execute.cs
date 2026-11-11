@@ -86,12 +86,13 @@ namespace Caster.Api.Features.Applies
                         .SingleOrDefaultAsync(r => r.Id == request.RunId);
 
                     ValidateRun(run);
-                    await CheckCapacity(request, run, cancellationToken);
+                    var capacityWarning = await CheckCapacity(request, run, cancellationToken);
 
                     apply = new Domain.Models.Apply
                     {
                         RunId = run.Id,
-                        Status = ApplyStatus.Queued
+                        Status = ApplyStatus.Queued,
+                        CapacityWarning = capacityWarning
                     };
 
                     await _db.Applies.AddAsync(apply);
@@ -107,21 +108,27 @@ namespace Caster.Api.Features.Applies
 
             /// <summary>
             /// Refuses a run over an effective limit, or out of room with the room
-            /// check set to Block, and one out of room with it set to Warn unless
-            /// the warning is acknowledged.
+            /// check set to Block. A run out of room with it set to Warn is applied,
+            /// so an automated caller such as Alloy is never stopped by it, and the
+            /// warning is kept on the apply, saying whether it was acknowledged;
+            /// Caster's own Apply asks for the acknowledgement first.
             /// </summary>
-            private async Task CheckCapacity(Command request, Run run, CancellationToken cancellationToken)
+            private async Task<string> CheckCapacity(Command request, Run run, CancellationToken cancellationToken)
             {
                 var check = await _capacity.CheckRunAsync(run.Id, cancellationToken);
 
                 if (check == null)
-                    return;
+                    return null;
 
                 if (!check.CanApply)
                     throw new ConflictException($"This run cannot be applied. {check.Message}");
 
-                if (check.RequiresAcknowledgement && !request.AcknowledgeCapacityWarning)
-                    throw new ConflictException($"{check.Message} Acknowledge the warning to apply anyway.");
+                if (!check.RequiresAcknowledgement)
+                    return null;
+
+                return request.AcknowledgeCapacityWarning
+                    ? $"{check.Message} Applied after the warning was acknowledged."
+                    : $"{check.Message} Applied without acknowledging the warning.";
             }
 
             private void ValidateRun(Run run)

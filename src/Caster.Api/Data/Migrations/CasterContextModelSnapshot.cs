@@ -31,6 +31,10 @@ namespace Caster.Api.Data.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("uuid_generate_v4()");
 
+                    b.Property<string>("CapacityWarning")
+                        .HasColumnType("text")
+                        .HasColumnName("capacity_warning");
+
                     b.Property<string>("Output")
                         .HasColumnType("text")
                         .HasColumnName("output");

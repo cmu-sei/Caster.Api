@@ -56,8 +56,9 @@ namespace Caster.Api.Features.Applies
         /// Refused with a 409 when the run takes its workspace over an effective
         /// limit, or when the hypervisors may not have room for it and
         /// Capacity:RoomCheck is Block. With RoomCheck Warn, a run the
-        /// hypervisors may not have room for is applied only when
-        /// acknowledgeCapacityWarning is true. See GET runs/{runId}/capacity.
+        /// hypervisors may not have room for is applied, and the warning is kept
+        /// on the apply's capacityWarning, saying whether acknowledgeCapacityWarning
+        /// was set. See GET runs/{runId}/capacity.
         /// </remarks>
         /// <param name="runId"></param>
         /// <param name="acknowledgeCapacityWarning">True to apply even though the hypervisors may not have room for the run.</param>
