@@ -14,6 +14,7 @@ using Caster.Api.Data;
 using Caster.Api.Domain.Events;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Capacity;
 using Caster.Api.Domain.Services.Topology;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
@@ -259,12 +260,47 @@ namespace Caster.Api.Features.Runs.EventHandlers
                 }
             }
 
-            if (!isError && _options.GenerateTopology)
+            if (!isError)
             {
-                await ReadTopology(workspace, showResult);
+                showResult = await ReadCapacityDemand(workspace, showResult);
+
+                if (_options.GenerateTopology)
+                {
+                    await ReadTopology(workspace, showResult);
+                }
             }
 
             return isError;
+        }
+
+        /// <summary>
+        /// Best effort, like the topology: the machines and their sizes, saved on
+        /// the plan for the check before apply. A plan that cannot be read is one
+        /// output line, and its apply is not checked. Returns the show output for
+        /// the topology to reuse.
+        /// </summary>
+        private async Task<TerraformResult> ReadCapacityDemand(Workspace workspace, TerraformResult showResult)
+        {
+            try
+            {
+                showResult ??= await _terraformService.Show(workspace);
+
+                if (showResult.IsError)
+                {
+                    _output.AddLine("Size check unavailable: terraform show did not succeed.");
+                    return showResult;
+                }
+
+                var demand = PlanCapacityParser.Parse(showResult.Output);
+                _plan.CapacityDemand = JsonSerializer.Serialize(demand, DefaultJsonSettings.Settings);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not read the machines of plan {PlanId}.", _plan.Id);
+                _output.AddLine($"Size check unavailable: {ex.Message}");
+            }
+
+            return showResult;
         }
 
         /// <summary>

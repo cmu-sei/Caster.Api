@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Capacity;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Extensions;
@@ -111,6 +112,10 @@ namespace Caster.Api
             services.AddOptions()
                 .Configure<InfrastructureOptions>(Configuration.GetSection("Infrastructure"))
                     .AddScoped(config => config.GetService<IOptionsMonitor<InfrastructureOptions>>().CurrentValue);
+
+            services.AddOptions()
+                .Configure<CapacityOptions>(Configuration.GetSection("Capacity"))
+                    .AddScoped(config => config.GetService<IOptionsMonitor<CapacityOptions>>().CurrentValue);
 
 
             services.AddMvc()
@@ -243,6 +248,10 @@ namespace Caster.Api
             services.AddSingleton<InventoryService>();
             services.AddSingleton<IInventoryService>(x => x.GetService<InventoryService>());
             services.AddSingleton<IHostedService>(x => x.GetService<InventoryService>());
+
+            // Deployment limits and the room on the hypervisors, checked before every apply.
+            services.AddSingleton<IHypervisorRoomSource, InventoryRoomSource>();
+            services.AddScoped<ICapacityCheckService, CapacityCheckService>();
 
             services.AddScoped<IGetFileQuery, GetFileQuery>();
 

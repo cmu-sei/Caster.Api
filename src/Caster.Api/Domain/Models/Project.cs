@@ -8,7 +8,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Caster.Api.Domain.Models
 {
-    public class Project : IEntity
+    public class Project : IEntity, Services.Capacity.IDeploymentLimits, Services.Capacity.IDeploymentLimitsTarget
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -19,6 +19,20 @@ namespace Caster.Api.Domain.Models
         public string Description { get; set; }
 
         public DateTime DateCreated { get; set; }
+
+        /// <summary>The most machines each workspace in this project may have. Null for no limit at this level. See <see cref="Services.Capacity.DeploymentLimitResolver"/>.</summary>
+        public int? MaxMachines { get; set; }
+
+        /// <summary>The most vCPUs its machines may have between them. Null for no limit at this level.</summary>
+        public int? MaxVcpu { get; set; }
+
+        /// <summary>The most memory, in GiB, its machines may have between them. Null for no limit at this level.</summary>
+        [Column("max_memory_gib")]
+        public int? MaxMemoryGiB { get; set; }
+
+        /// <summary>The most disk, in GiB, its machines may have between them. Null for no limit at this level.</summary>
+        [Column("max_disk_gib")]
+        public int? MaxDiskGiB { get; set; }
 
         public virtual ICollection<Directory> Directories { get; set; } = new List<Directory>();
 

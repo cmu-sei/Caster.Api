@@ -29,6 +29,14 @@ namespace Caster.Api.Domain.Models
         /// payload; served by its own endpoint.
         /// </summary>
         public string Topology { get; set; }
+
+        /// <summary>
+        /// JSON of the <see cref="Services.Capacity.DeploymentDemand"/> read from
+        /// this plan: its machines and their sizes, checked against the limits and
+        /// the room on the hypervisors before it is applied. Null when the plan
+        /// failed or could not be read. Kept out of the Plan payload.
+        /// </summary>
+        public string CapacityDemand { get; set; }
     }
 
     public enum PlanStatus
