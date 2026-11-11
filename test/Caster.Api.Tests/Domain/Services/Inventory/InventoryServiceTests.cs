@@ -253,7 +253,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         private static readonly DateTime FirstRead = new(2026, 10, 24, 9, 30, 0, DateTimeKind.Utc);
         private static readonly DateTime ThirdRead = new(2026, 10, 24, 10, 30, 0, DateTimeKind.Utc);
 
-        private const string Refused = "Could not connect to Proxmox at https://pve.test:8006: Connection refused";
+        private const string Refused = "Could not connect to Proxmox: Connection refused";
 
         [Fact]
         public async Task ProviderDown_AfterAGoodRead_KeepsThatReadAsStale()

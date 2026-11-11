@@ -308,7 +308,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             foreach (var result in new[] { snapshot.VmTemplates, snapshot.Networks, snapshot.Datastores, snapshot.Hosts, snapshot.Isos })
             {
                 Assert.False(result.Available);
-                Assert.Equal("Could not read vCenter at https://vcenter.test: the vim25 endpoint did not answer", result.Error);
+                Assert.Equal("Could not read vCenter: the vim25 endpoint did not answer", result.Error);
             }
         }
 
