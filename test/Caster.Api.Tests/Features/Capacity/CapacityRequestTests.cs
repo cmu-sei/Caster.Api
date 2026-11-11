@@ -1,6 +1,7 @@
 // Copyright 2026 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
+using System.Linq;
 using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -78,6 +79,13 @@ public class CapacityRequestTests(DatabaseFixture fixture, CapacityAppFactory fa
         return await context.Applies.AnyAsync(x => x.RunId == run.Id, Ct);
     }
 
+    // the warning the run's apply was made with, as the apply keeps it
+    private async Task<string> CapacityWarning(Run run)
+    {
+        await using var context = NewContext();
+        return await context.Applies.Where(x => x.RunId == run.Id).Select(x => x.CapacityWarning).SingleAsync(Ct);
+    }
+
     [Fact]
     public async Task Apply_within_the_limits_and_the_room_is_queued()
     {
@@ -120,19 +128,37 @@ public class CapacityRequestTests(DatabaseFixture fixture, CapacityAppFactory fa
         Assert.Contains("(set on the workspace)", problem.Title);
     }
 
-    [Fact]
-    public async Task Apply_without_room_in_warn_mode_needs_acknowledging()
+    /// <summary>
+    /// In Warn mode a run without room is applied whether or not the warning is acknowledged, so an automated caller such as
+    /// Alloy is never stopped by it, and the apply keeps the warning and whether it was acknowledged.
+    /// </summary>
+    [Theory]
+    [InlineData(false, "Applied without acknowledging the warning.")]
+    [InlineData(true, "Applied after the warning was acknowledged.")]
+    public async Task Apply_without_room_in_warn_mode_is_applied_with_the_warning_kept(bool acknowledge, string ending)
     {
         factory.Room = Room(freeVcpu: 2, freeMemoryGiB: 256);
         var (_, _, run) = await SeedPlannedRun();
 
-        var problem = await AssertProblem(HttpStatusCode.Conflict, await Apply(run));
-        Assert.Contains("pve1 needs 4 vCPUs", problem.Title);
-        Assert.Contains("Acknowledge the warning", problem.Title);
-        Assert.False(await Applied(run));
+        var response = await Apply(run, acknowledge);
 
-        await AssertStatus(HttpStatusCode.OK, await Apply(run, acknowledge: true));
+        await AssertStatus(HttpStatusCode.OK, response);
+        var warning = await CapacityWarning(run);
+        Assert.Contains("pve1 needs 4 vCPUs", warning);
+        Assert.EndsWith(ending, warning);
+    }
+
+    [Fact]
+    public async Task Apply_with_room_keeps_no_capacity_warning()
+    {
+        factory.Room = Room(freeVcpu: 64, freeMemoryGiB: 256);
+        var (_, _, run) = await SeedPlannedRun();
+
+        var response = await Apply(run);
+
+        await AssertStatus(HttpStatusCode.OK, response);
         Assert.True(await Applied(run));
+        Assert.Null(await CapacityWarning(run));
     }
 
     [Fact]

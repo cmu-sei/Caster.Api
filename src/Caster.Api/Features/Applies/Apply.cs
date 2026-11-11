@@ -27,6 +27,11 @@ namespace Caster.Api.Features.Applies
         /// The raw Terraform output of the Apply command
         /// </summary>
         public string Output { get; set; }
+
+        /// <summary>
+        /// The capacity warning the run was applied with, when the hypervisors may not have had room for it; null when they did
+        /// </summary>
+        public string CapacityWarning { get; set; }
     }
 }
 
