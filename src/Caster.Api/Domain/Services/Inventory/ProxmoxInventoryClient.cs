@@ -109,7 +109,7 @@ public class ProxmoxInventoryClient(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            var message = Redact($"Could not connect to Proxmox at {options.Url}: {ex.Message}", options);
+            var message = Redact($"Could not connect to Proxmox: {ex.Message}", options);
             logger.LogError("Could not authenticate to Proxmox at {ProxmoxUrl}: {Error}",
                 options.Url, InventoryRedaction.Describe(ex, options));
             return InventorySnapshot.AllUnavailable(message);

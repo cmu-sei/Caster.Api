@@ -8,8 +8,9 @@ namespace Caster.Api.Domain.Services.Inventory;
 
 /// <summary>
 /// Last line of defence so a provider error string can never carry a configured
-/// credential out to an api response or a log line. Shared by every provider so
-/// there is exactly one redaction rule to audit.
+/// credential out to an api response or a log line, nor the connection's address out
+/// to an api response. Shared by every provider so there is exactly one redaction rule
+/// to audit.
 /// </summary>
 public static class InventoryRedaction
 {
@@ -17,7 +18,8 @@ public static class InventoryRedaction
 
     /// <summary>
     /// Replaces every configured secret in <paramref name="message"/> with
-    /// <see cref="Mask"/>. <paramref name="extraSecrets"/> covers values that only
+    /// <see cref="Mask"/>, and the connection's url and host with its name, as project
+    /// members read these messages. <paramref name="extraSecrets"/> covers values that only
     /// exist for the duration of a read, such as a Proxmox auth ticket.
     /// </summary>
     public static string Redact(string message, InfrastructureConnectionOptions options, params string[] extraSecrets)
@@ -30,6 +32,13 @@ public static class InventoryRedaction
             message = message.Replace(secret, Mask);
         }
 
+        var name = string.IsNullOrWhiteSpace(options?.Name) ? "the connection" : options.Name;
+
+        foreach (var address in Addresses(options))
+        {
+            message = message.Replace(address, name, System.StringComparison.OrdinalIgnoreCase);
+        }
+
         return message;
     }
 
@@ -40,6 +49,26 @@ public static class InventoryRedaction
     /// </summary>
     public static string Describe(System.Exception exception, InfrastructureConnectionOptions options, params string[] extraSecrets) =>
         exception is null ? null : $"{exception.GetType().Name}: {Redact(exception.Message, options, extraSecrets)}";
+
+    /// <summary>
+    /// The url as configured, then the host with and without its port, longest first. A host
+    /// without a dot (a bare name such as "pve") is left alone, as it may be an ordinary word.
+    /// </summary>
+    private static IEnumerable<string> Addresses(InfrastructureConnectionOptions options)
+    {
+        var url = options?.Url?.Trim().TrimEnd('/');
+
+        if (string.IsNullOrEmpty(url))
+            yield break;
+
+        yield return url;
+
+        if (System.Uri.TryCreate(url, System.UriKind.Absolute, out var uri) && uri.Host.Contains('.'))
+        {
+            yield return uri.Authority;
+            yield return uri.Host;
+        }
+    }
 
     private static IEnumerable<string> Secrets(InfrastructureConnectionOptions options, string[] extraSecrets)
     {

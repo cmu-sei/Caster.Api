@@ -1076,6 +1076,22 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.DoesNotContain(TokenSecret, redacted);
         }
 
+        /// <summary>
+        /// Project members read inventory errors, and the API never returns a connection's
+        /// address, so an error that quotes the url or host names the connection instead.
+        /// </summary>
+        [Fact]
+        public void Redaction_NamesTheConnectionInsteadOfItsAddress()
+        {
+            var options = new InfrastructureConnectionOptions { Name = "lab-pve", Url = "https://PVE.example.test:8006/" };
+
+            var redacted = InventoryRedaction.Redact(
+                "GET https://pve.example.test:8006/api2/json failed: Connection refused (pve.example.test:8006), host pve.example.test", options);
+
+            Assert.DoesNotContain("example.test", redacted);
+            Assert.Equal("GET lab-pve/api2/json failed: Connection refused (lab-pve), host lab-pve", redacted);
+        }
+
         #endregion
 
         #region Read only
