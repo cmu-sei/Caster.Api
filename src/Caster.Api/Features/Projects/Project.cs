@@ -31,5 +31,20 @@ namespace Caster.Api.Features.Projects
         /// The vlan partition this project is a part of.
         /// </summary>
         public Guid? PartitionId { get; set; }
+
+        /// <summary>
+        /// The most machines this sets, or null for no limit here. The limit in
+        /// force is the lowest of the workspace's, its project's and the global one.
+        /// </summary>
+        public int? MaxMachines { get; set; }
+
+        /// <summary>The most vCPUs this sets, or null for no limit here.</summary>
+        public int? MaxVcpu { get; set; }
+
+        /// <summary>The most memory, in GiB, this sets, or null for no limit here.</summary>
+        public int? MaxMemoryGiB { get; set; }
+
+        /// <summary>The most disk, in GiB, this sets, or null for no limit here.</summary>
+        public int? MaxDiskGiB { get; set; }
     }
 }

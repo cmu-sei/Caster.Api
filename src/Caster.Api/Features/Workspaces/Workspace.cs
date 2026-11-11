@@ -44,5 +44,20 @@ namespace Caster.Api.Features.Workspaces
         /// Caster will attempt to mitigate by removing azurerm_resource_group children from the state.
         /// </summary>
         public int? AzureDestroyFailureThreshold { get; set; }
+
+        /// <summary>
+        /// The most machines this sets, or null for no limit here. The limit in
+        /// force is the lowest of the workspace's, its project's and the global one.
+        /// </summary>
+        public int? MaxMachines { get; set; }
+
+        /// <summary>The most vCPUs this sets, or null for no limit here.</summary>
+        public int? MaxVcpu { get; set; }
+
+        /// <summary>The most memory, in GiB, this sets, or null for no limit here.</summary>
+        public int? MaxMemoryGiB { get; set; }
+
+        /// <summary>The most disk, in GiB, this sets, or null for no limit here.</summary>
+        public int? MaxDiskGiB { get; set; }
     }
 }

@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using System.Security.Principal;
@@ -89,7 +88,7 @@ namespace Caster.Api.Features.Directories
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext db) : BaseEdit.Handler<Command, Directory>(db)
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext db) : BaseEdit.Handler<Command, Directory>(db)
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Directory>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -106,10 +105,10 @@ namespace Caster.Api.Features.Directories
                     await UpdatePaths(directory, request.ParentId, cancellationToken);
                 }
 
-                mapper.Map(request, directory);
+                request.ApplyTo(directory);
 
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Directory>(directory);
+                return directory.ToDirectory();
             }
         }
     }

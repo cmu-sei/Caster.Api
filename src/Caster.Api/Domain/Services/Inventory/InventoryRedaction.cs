@@ -33,6 +33,14 @@ public static class InventoryRedaction
         return message;
     }
 
+    /// <summary>
+    /// An exception as one redacted line, its type and message, for logging. The
+    /// exception itself isn't logged: its message, inner exceptions and stack can
+    /// all carry what was sent to the provider.
+    /// </summary>
+    public static string Describe(System.Exception exception, InfrastructureConnectionOptions options, params string[] extraSecrets) =>
+        exception is null ? null : $"{exception.GetType().Name}: {Redact(exception.Message, options, extraSecrets)}";
+
     private static IEnumerable<string> Secrets(InfrastructureConnectionOptions options, string[] extraSecrets)
     {
         if (!string.IsNullOrEmpty(options?.Password))

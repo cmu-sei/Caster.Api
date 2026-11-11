@@ -35,6 +35,7 @@ public class ProxmoxInventoryClient(
     private const string TicketPath = "access/ticket";
     private const string VersionPath = "version";
     private const string VmResourcesPath = "cluster/resources?type=vm";
+    private const string StorageResourcesPath = "cluster/resources?type=storage";
     private const string StoragePath = "storage";
     private const string NodesPath = "nodes";
     private const string SdnVnetsPath = "cluster/sdn/vnets";
@@ -109,26 +110,35 @@ public class ProxmoxInventoryClient(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             var message = Redact($"Could not connect to Proxmox at {options.Url}: {ex.Message}", options);
-            logger.LogError(ex, "Could not authenticate to Proxmox at {ProxmoxUrl}", options.Url);
+            logger.LogError("Could not authenticate to Proxmox at {ProxmoxUrl}: {Error}",
+                options.Url, InventoryRedaction.Describe(ex, options));
             return InventorySnapshot.AllUnavailable(message);
         }
 
         logger.LogInformation("Authenticated to Proxmox at {ProxmoxUrl} using {ProxmoxAuthMode}", options.Url, credential.Mode);
 
+        bool Enabled(InventoryCategory category) => InventoryFilters.IsEnabled(options, category);
+
         // Nodes and storages are each read once and shared, because three of the
         // four categories need them. A failure still only disables the categories
-        // that actually depend on the failed read.
-        var storages = await ReadAsync<ProxmoxStorage>(client, credential, StoragePath, "storages", options, cancellationToken);
-        var nodes = await ReadAsync<ProxmoxNode>(client, credential, NodesPath, "nodes", options, cancellationToken);
+        // that actually depend on the failed read. A category that's turned off
+        // isn't read; InventoryFilters reports it.
+        var storages = Enabled(InventoryCategory.Iso) || Enabled(InventoryCategory.Datastore)
+            ? await ReadAsync<ProxmoxStorage>(client, credential, StoragePath, "storages", options, cancellationToken)
+            : ProviderRead<ProxmoxStorage>.Succeeded([]);
+        var nodes = Enabled(InventoryCategory.Iso) || Enabled(InventoryCategory.Network) || Enabled(InventoryCategory.Host)
+            ? await ReadAsync<ProxmoxNode>(client, credential, NodesPath, "nodes", options, cancellationToken)
+            : ProviderRead<ProxmoxNode>.Succeeded([]);
+        var notRead = InventoryCategoryResult.NotEnabled(null);
 
         return new InventorySnapshot
         {
             LastUpdated = DateTime.UtcNow,
-            VmTemplates = await ReadVmTemplatesAsync(client, credential, options, cancellationToken),
-            Isos = await ReadIsosAsync(client, credential, nodes, storages, options, cancellationToken),
-            Networks = await ReadNetworksAsync(client, credential, nodes, options, cancellationToken),
-            Datastores = ProjectDatastores(storages),
-            Hosts = await ReadHostsAsync(client, credential, nodes, options, cancellationToken)
+            VmTemplates = Enabled(InventoryCategory.VmTemplate) ? await ReadVmTemplatesAsync(client, credential, options, cancellationToken) : notRead,
+            Isos = Enabled(InventoryCategory.Iso) ? await ReadIsosAsync(client, credential, nodes, storages, options, cancellationToken) : notRead,
+            Networks = Enabled(InventoryCategory.Network) ? await ReadNetworksAsync(client, credential, nodes, options, cancellationToken) : notRead,
+            Datastores = Enabled(InventoryCategory.Datastore) ? await ReadDatastoresAsync(client, credential, storages, options, cancellationToken) : notRead,
+            Hosts = Enabled(InventoryCategory.Host) ? await ReadHostsAsync(client, credential, nodes, options, cancellationToken) : notRead
         };
     }
 
@@ -306,7 +316,11 @@ public class ProxmoxInventoryClient(
         if (!read.Ok)
             return InventoryCategoryResult.Unavailable(read.Error);
 
-        var templates = read.Values.Where(x => x.Template == true).ToArray();
+        // Filtered before the per-template config reads, so a template that isn't listed costs nothing.
+        var filter = InventoryFilters.For(options, InventoryCategory.VmTemplate);
+        var templates = read.Values
+            .Where(x => x.Template == true && filter.Matches(x.Name, TemplateLocations(x)))
+            .ToArray();
         var configs = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal);
 
         // Telmate's snippet repeats the template's hardware, which only its config has.
@@ -324,6 +338,7 @@ public class ProxmoxInventoryClient(
                 var properties = new Dictionary<string, string>();
                 AddIfPresent(properties, "vmid", x.VmId?.ToString(CultureInfo.InvariantCulture));
                 AddIfPresent(properties, "node", x.Node);
+                AddIfPresent(properties, "pool", x.Pool);
                 AddIfPresent(properties, "type", x.Type);
                 AddIfPresent(properties, "status", x.Status);
                 AddIfPresent(properties, "maxcpu", x.MaxCpu?.ToString(CultureInfo.InvariantCulture));
@@ -339,6 +354,7 @@ public class ProxmoxInventoryClient(
                     // vSphere reader and repeat the name rather than fabricate one.
                     Path = x.Name,
                     Properties = properties,
+                    Locations = TemplateLocations(x),
                     Terraform = TerraformSnippets.ProxmoxTemplate(x.Name, x.VmId, x.Node, x.Type, configs.GetValueOrDefault(x.Id ?? string.Empty))
                 };
             })
@@ -347,6 +363,10 @@ public class ProxmoxInventoryClient(
 
         return InventoryCategoryResult.Ok(entries);
     }
+
+    /// <summary>A template is in its node, and its resource pool if it has one.</summary>
+    private static string[] TemplateLocations(ProxmoxResource template) =>
+        new[] { template.Node, template.Pool }.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
 
     /// <summary>
     /// GET nodes/{node}/qemu/{vmid}/config, flattened to strings. Null when it cannot
@@ -380,7 +400,8 @@ public class ProxmoxInventoryClient(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "Could not read the config of template {VmId} at {ProxmoxUrl}", vmId, options.Url);
+            logger.LogWarning("Could not read the config of template {VmId} at {ProxmoxUrl}: {Error}",
+                vmId, options.Url, InventoryRedaction.Describe(ex, options, credential?.Ticket));
             return null;
         }
     }
@@ -422,7 +443,12 @@ public class ProxmoxInventoryClient(
                 {
                     var onNode = byNode.GetValueOrDefault(x.Node) ?? [];
                     properties["vmsTotal"] = onNode.Length.ToString(CultureInfo.InvariantCulture);
-                    properties["vmsRunning"] = onNode.Count(g => g.Status == "running").ToString(CultureInfo.InvariantCulture);
+                    var running = onNode.Where(g => g.Status == "running").ToArray();
+                    properties["vmsRunning"] = running.Length.ToString(CultureInfo.InvariantCulture);
+                    // What the running guests are given, as a vSphere host reports it, so
+                    // capacity can allow for overcommit rather than go by current load.
+                    properties["allocatedCpus"] = running.Sum(g => g.MaxCpu ?? 0).ToString(CultureInfo.InvariantCulture);
+                    properties["allocatedMemoryMiB"] = running.Sum(g => (g.MaxMem ?? 0) / (1024L * 1024L)).ToString(CultureInfo.InvariantCulture);
                 }
 
                 return new InventoryEntry
@@ -431,6 +457,7 @@ public class ProxmoxInventoryClient(
                     Name = x.Node,
                     Path = x.Node,
                     Properties = properties,
+                    Locations = [x.Node],
                     Terraform = TerraformSnippets.ProxmoxNode(x.Node)
                 };
             });
@@ -439,13 +466,25 @@ public class ProxmoxInventoryClient(
     }
 
     /// <summary>
-    /// GET /storage. Also the source of the iso-capable storage list used by
-    /// <see cref="ReadIsosAsync"/>.
+    /// GET /storage, which is also the source of the iso-capable storage list used by
+    /// <see cref="ReadIsosAsync"/>, with each storage's capacity from GET
+    /// /cluster/resources?type=storage. A shared storage is listed once per node with
+    /// the same numbers, so one is taken; a node-local one is summed over its nodes.
+    /// Without the capacity read the storages are still listed, without it.
     /// </summary>
-    private static InventoryCategoryResult ProjectDatastores(ProviderRead<ProxmoxStorage> storages)
+    private async Task<InventoryCategoryResult> ReadDatastoresAsync(
+        HttpClient client, ProxmoxCredential credential, ProviderRead<ProxmoxStorage> storages,
+        InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
         if (!storages.Ok)
             return InventoryCategoryResult.Unavailable(storages.Error);
+
+        var usage = await ReadAsync<ProxmoxStorageResource>(client, credential, StorageResourcesPath, "storage capacity", options, cancellationToken);
+
+        if (!usage.Ok)
+            logger.LogDebug("Could not read Proxmox storage capacity, listing storages without it: {ProxmoxStorageError}", usage.Error);
+
+        var capacity = Capacity(usage.Ok ? usage.Values : []);
 
         var entries = storages.Values
             .Where(x => !string.IsNullOrWhiteSpace(x.Storage))
@@ -456,6 +495,14 @@ public class ProxmoxInventoryClient(
                 AddIfPresent(properties, "content", x.Content);
                 AddIfPresent(properties, "path", x.Path);
 
+                if (capacity.TryGetValue(x.Storage, out var c))
+                {
+                    properties["capacity"] = c.Capacity.ToString(CultureInfo.InvariantCulture);
+                    properties["freeSpace"] = c.FreeSpace.ToString(CultureInfo.InvariantCulture);
+                    properties["shared"] = c.Shared ? "true" : "false";
+                    AddIfPresent(properties, "nodes", string.Join(",", c.Nodes));
+                }
+
                 return new InventoryEntry
                 {
                     // Proxmox identifies a storage by its name, cluster wide.
@@ -463,6 +510,7 @@ public class ProxmoxInventoryClient(
                     Name = x.Storage,
                     Path = x.Storage,
                     Properties = properties,
+                    Locations = [x.Storage],
                     Terraform = TerraformSnippets.ProxmoxStorage(x.Storage, x.Content)
                 };
             })
@@ -470,6 +518,32 @@ public class ProxmoxInventoryClient(
             .ToArray();
 
         return InventoryCategoryResult.Ok(entries);
+    }
+
+    /// <summary>
+    /// Each storage's capacity and free space in bytes, from the per-node entries of
+    /// /cluster/resources?type=storage. Nodes where the storage isn't active report
+    /// no size and are left out.
+    /// </summary>
+    private static Dictionary<string, (long Capacity, long FreeSpace, bool Shared, string[] Nodes)> Capacity(
+        IEnumerable<ProxmoxStorageResource> resources)
+    {
+        return resources
+            .Where(x => !string.IsNullOrWhiteSpace(x.Storage) && x.MaxDisk is > 0)
+            .GroupBy(x => x.Storage, StringComparer.Ordinal)
+            .ToDictionary(
+                x => x.Key,
+                x =>
+                {
+                    var shared = x.Any(r => r.Shared == true);
+                    var counted = shared ? x.Take(1).ToArray() : x.ToArray();
+                    var total = counted.Sum(r => r.MaxDisk ?? 0);
+                    var free = counted.Sum(r => Math.Max(0, (r.MaxDisk ?? 0) - (r.Disk ?? 0)));
+                    var nodes = x.Select(r => r.Node).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+
+                    return (total, free, shared, nodes);
+                },
+                StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -712,6 +786,8 @@ public class ProxmoxInventoryClient(
         foreach (var (iface, owners) in nodesByInterface)
         {
             entries[iface].Properties["nodes"] = string.Join(",", owners);
+            // A bridge is on its nodes.
+            entries[iface].Locations = owners.ToArray();
         }
 
         await AddSdnVnetsAsync(client, credential, entries, options, cancellationToken);
@@ -764,6 +840,10 @@ public class ProxmoxInventoryClient(
 
             AddIfPresent(entry.Properties, "zone", vnet.Zone);
             AddIfPresent(entry.Properties, "alias", vnet.Alias);
+
+            // A vnet is in its SDN zone.
+            if (!string.IsNullOrWhiteSpace(vnet.Zone))
+                entry.Locations = (entry.Locations ?? []).Append(vnet.Zone).Distinct(StringComparer.Ordinal).ToArray();
             AddIfPresent(entry.Properties, "tag", vnet.Tag?.ToString(CultureInfo.InvariantCulture));
         }
     }
@@ -805,7 +885,8 @@ public class ProxmoxInventoryClient(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "Exception reading {Description} from {ProxmoxUrl}", description, options.Url);
+            logger.LogError("Exception reading {Description} from {ProxmoxUrl}: {Error}",
+                description, options.Url, InventoryRedaction.Describe(ex, options, credential?.Ticket));
 
             return ProviderRead<T>.Failed(
                 Redact($"Could not read {description} from Proxmox: {ex.Message}", options, credential?.Ticket));
@@ -957,6 +1038,10 @@ public class ProxmoxInventoryClient(
         [JsonPropertyName("node")]
         public string Node { get; set; }
 
+        /// <summary>The resource pool the guest is in, if any.</summary>
+        [JsonPropertyName("pool")]
+        public string Pool { get; set; }
+
         /// <summary>
         /// "qemu" or "lxc".
         /// </summary>
@@ -981,6 +1066,31 @@ public class ProxmoxInventoryClient(
 
         [JsonPropertyName("maxdisk")]
         public long? MaxDisk { get; set; }
+    }
+
+    /// <summary>
+    /// An entry of GET /cluster/resources?type=storage: one storage on one node.
+    /// </summary>
+    private class ProxmoxStorageResource
+    {
+        [JsonPropertyName("storage")]
+        public string Storage { get; set; }
+
+        [JsonPropertyName("node")]
+        public string Node { get; set; }
+
+        /// <summary>Bytes used.</summary>
+        [JsonPropertyName("disk")]
+        public long? Disk { get; set; }
+
+        /// <summary>Bytes in total.</summary>
+        [JsonPropertyName("maxdisk")]
+        public long? MaxDisk { get; set; }
+
+        /// <summary>Reported as the integer 0 or 1, not a json bool.</summary>
+        [JsonPropertyName("shared")]
+        [JsonConverter(typeof(ProxmoxFlagConverter))]
+        public bool? Shared { get; set; }
     }
 
     /// <summary>

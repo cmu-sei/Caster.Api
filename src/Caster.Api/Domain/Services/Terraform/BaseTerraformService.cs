@@ -189,6 +189,17 @@ public abstract class BaseTerraformService : ITerraformService
         }
     }
 
+    /// <summary>
+    /// The API's own environment variables that never reach a run, even with InheritAll on or an
+    /// Inherit pattern that matches them. Infrastructure connections hold the hypervisor
+    /// credentials the inventory reads with.
+    /// </summary>
+    private static readonly string[] HeldBackPrefixes = ["Infrastructure__", "Infrastructure:"];
+
+    /// <summary>Whether an API environment variable is kept out of runs. See <see cref="HeldBackPrefixes"/>.</summary>
+    public static bool IsHeldBack(string name) =>
+        HeldBackPrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
     protected Dictionary<string, string> GetEnvironmentVariables(Workspace workspace)
     {
         var envVars = new Dictionary<string, string>
@@ -228,7 +239,7 @@ public abstract class BaseTerraformService : ITerraformService
             }).ToDictionary();
         }
 
-        foreach (var appEnvVar in appEnvVars)
+        foreach (var appEnvVar in appEnvVars.Where(x => !IsHeldBack(x.Key)))
         {
             envVars.Add(appEnvVar.Key, appEnvVar.Value);
         }

@@ -3,7 +3,6 @@ Copyright 2026 Carnegie Mellon University. All Rights Reserved.
  Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 */
 
-using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -16,23 +15,17 @@ namespace Caster.Api.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.UpdateData(
-                table: "system_roles",
-                keyColumn: "id",
-                keyValue: new Guid("1da3027e-725d-4753-9455-a836ed9bdb1e"),
-                column: "permissions",
-                value: new[] { 1, 7, 9, 11, 13, 15, 17, 19, 21 });
+            // Append rather than overwrite, so an Observer role an admin has changed keeps its permissions.
+            migrationBuilder.Sql(
+                "UPDATE system_roles SET permissions = array_append(permissions, 21) " +
+                "WHERE id = '1da3027e-725d-4753-9455-a836ed9bdb1e' AND NOT (21 = ANY(permissions));");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.UpdateData(
-                table: "system_roles",
-                keyColumn: "id",
-                keyValue: new Guid("1da3027e-725d-4753-9455-a836ed9bdb1e"),
-                column: "permissions",
-                value: new[] { 1, 7, 9, 11, 13, 15, 17, 19 });
+            // ViewInfrastructure no longer exists after rolling back, so no role keeps it.
+            migrationBuilder.Sql("UPDATE system_roles SET permissions = array_remove(permissions, 21);");
         }
     }
 }

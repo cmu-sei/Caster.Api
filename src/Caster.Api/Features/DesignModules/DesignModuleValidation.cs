@@ -76,7 +76,9 @@ public static class DesignModuleValidation
     /// </summary>
     public static async Task EnsureNoPlaceholders(CasterContext dbContext, System.Guid designId, CancellationToken cancellationToken)
     {
+        // Untracked, so the check does not load the modules into the Design the caller answers with.
         var modules = await dbContext.DesignModules
+            .AsNoTracking()
             .Where(m => m.DesignId == designId && m.Enabled)
             .ToListAsync(cancellationToken);
 

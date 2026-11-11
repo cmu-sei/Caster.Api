@@ -5,11 +5,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Authorization;
@@ -40,7 +38,7 @@ namespace Caster.Api.Features.Workspaces
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Workspace[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Workspace[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -49,7 +47,7 @@ namespace Caster.Api.Features.Workspaces
             {
                 return await dbContext.Workspaces
                     .Where(x => x.DirectoryId == request.DirectoryId)
-                    .ProjectTo<Workspace>(mapper.ConfigurationProvider)
+                    .ProjectToWorkspace()
                     .ToArrayAsync(cancellationToken);
             }
         }

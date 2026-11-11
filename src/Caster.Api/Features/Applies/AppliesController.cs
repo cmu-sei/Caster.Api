@@ -52,13 +52,21 @@ namespace Caster.Api.Features.Applies
         /// <summary>
         /// Applies the Plan associated with the specified Run
         /// </summary>
+        /// <remarks>
+        /// Refused with a 409 when the run takes its workspace over an effective
+        /// limit, or when the hypervisors may not have room for it and
+        /// Capacity:RoomCheck is Block. With RoomCheck Warn, a run the
+        /// hypervisors may not have room for is applied only when
+        /// acknowledgeCapacityWarning is true. See GET runs/{runId}/capacity.
+        /// </remarks>
         /// <param name="runId"></param>
+        /// <param name="acknowledgeCapacityWarning">True to apply even though the hypervisors may not have room for the run.</param>
         [HttpPost("runs/{runId}/actions/apply")]
         [ProducesResponseType(typeof(Apply), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "ApplyRun")]
-        public async Task<IActionResult> Execute([FromRoute] Guid runId)
+        public async Task<IActionResult> Execute([FromRoute] Guid runId, [FromQuery] bool acknowledgeCapacityWarning = false)
         {
-            var result = await _mediator.Send(new Execute.Command { RunId = runId });
+            var result = await _mediator.Send(new Execute.Command { RunId = runId, AcknowledgeCapacityWarning = acknowledgeCapacityWarning });
             return Ok(result);
         }
     }

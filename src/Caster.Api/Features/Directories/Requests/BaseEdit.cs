@@ -4,7 +4,6 @@
 using System;
 using System.Threading.Tasks;
 using Caster.Api.Data;
-using AutoMapper;
 using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Data.Extensions;

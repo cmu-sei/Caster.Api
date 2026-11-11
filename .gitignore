@@ -41,3 +41,6 @@ msbuild.wrn
 **/appsettings.[Ss]taging.json
 **/appsettings.[Pp]roduction.json
 omnisharp.json
+
+# Test and coverage output (`dotnet test --results-directory TestResults/...`).
+TestResults/

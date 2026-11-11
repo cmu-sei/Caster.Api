@@ -1,0 +1,165 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.8",
+  "resource_changes": [
+    {
+      "address": "proxmox_virtual_environment_vm.web",
+      "mode": "managed", "type": "proxmox_virtual_environment_vm", "name": "web",
+      "change": {
+        "actions": ["create"], "before": null,
+        "after": {
+          "name": "web", "node_name": "pve1",
+          "cpu": [{ "cores": 2, "sockets": 2, "type": "x86-64-v2-AES" }],
+          "memory": [{ "dedicated": 4096, "floating": 0 }],
+          "disk": [
+            { "interface": "scsi0", "datastore_id": "local-lvm", "size": 32 },
+            { "interface": "scsi1", "datastore_id": "ceph", "size": 100 }
+          ],
+          "clone": []
+        },
+        "after_unknown": { "id": true, "ipv4_addresses": true, "disk": [{ "path_in_datastore": true }, { "path_in_datastore": true }] }
+      }
+    },
+    {
+      "address": "module.lab[\"dc\"].proxmox_virtual_environment_vm.vm",
+      "module_address": "module.lab[\"dc\"]",
+      "mode": "managed", "type": "proxmox_virtual_environment_vm", "name": "vm",
+      "change": {
+        "actions": ["create"], "before": null,
+        "after": { "name": "dc", "node_name": "pve2", "cpu": [{ "cores": 4 }], "memory": [{ "dedicated": 8192 }], "disk": [], "clone": [{ "vm_id": 9000 }] },
+        "after_unknown": { "id": true }
+      }
+    },
+    {
+      "address": "proxmox_virtual_environment_container.dns",
+      "mode": "managed", "type": "proxmox_virtual_environment_container", "name": "dns",
+      "change": {
+        "actions": ["create"], "before": null,
+        "after": {
+          "node_name": "pve1", "cpu": [{ "cores": 1 }], "memory": [{ "dedicated": 1024 }],
+          "disk": [{ "datastore_id": "local-lvm", "size": 8 }],
+          "mount_point": [{ "volume": "local-lvm", "size": "10G", "path": "/data" }, { "volume": "/mnt/host", "path": "/host" }],
+          "clone": []
+        },
+        "after_unknown": { "id": true }
+      }
+    },
+    {
+      "address": "proxmox_vm_qemu.legacy",
+      "mode": "managed", "type": "proxmox_vm_qemu", "name": "legacy",
+      "change": {
+        "actions": ["create"], "before": null,
+        "after": {
+          "target_node": "pve1", "cores": 2, "sockets": 1, "vcpus": 0, "memory": 2048, "clone": "ubuntu-tpl",
+          "disk": [{ "type": "scsi", "storage": "local-lvm", "size": "20G" }, { "type": "cloudinit", "storage": "local-lvm" }]
+        },
+        "after_unknown": { "id": true }
+      }
+    },
+    {
+      "address": "proxmox_vm_qemu.modern",
+      "mode": "managed", "type": "proxmox_vm_qemu", "name": "modern",
+      "change": {
+        "actions": ["create"], "before": null,
+        "after": {
+          "target_node": "pve2", "memory": 4096, "clone": "ubuntu-tpl",
+          "cpu": [{ "cores": 4, "sockets": 2, "vcores": 0 }],
+          "disks": [{
+            "scsi": [{ "scsi0": [{ "disk": [{ "storage": "ceph", "size": "64G" }], "cdrom": [] }], "scsi1": [{ "disk": [{ "storage": "ceph", "size": "1T" }] }] }],
+            "ide": [{ "ide2": [{ "cloudinit": [{ "storage": "local-lvm" }] }] }]
+          }]
+        },
+        "after_unknown": { "id": true }
+      }
+    },
+    {
+      "address": "proxmox_lxc.cache",
+      "mode": "managed", "type": "proxmox_lxc", "name": "cache",
+      "change": {
+        "actions": ["create"], "before": null,
+        "after": { "target_node": "pve1", "cores": 2, "memory": 512, "rootfs": [{ "storage": "local-lvm", "size": "8G" }], "mountpoint": [{ "storage": "local-lvm", "size": "512M", "mp": "/var/cache" }] },
+        "after_unknown": { "id": true }
+      }
+    },
+    {
+      "address": "vsphere_virtual_machine.ws",
+      "mode": "managed", "type": "vsphere_virtual_machine", "name": "ws",
+      "change": {
+        "actions": ["create"], "before": null,
+        "after": {
+          "name": "ws", "num_cpus": 2, "memory": 4096, "host_system_id": "host-12", "datastore_id": "datastore-1",
+          "disk": [{ "label": "disk0", "size": 60, "datastore_id": "<computed>" }, { "label": "disk1", "size": 40, "datastore_id": "datastore-2" }],
+          "clone": [{ "template_uuid": "4211" }]
+        },
+        "after_unknown": { "id": true, "moid": true }
+      }
+    },
+    {
+      "address": "vsphere_virtual_machine.app",
+      "mode": "managed", "type": "vsphere_virtual_machine", "name": "app",
+      "change": {
+        "actions": ["update"],
+        "before": { "num_cpus": 2, "memory": 4096, "datastore_id": "datastore-1", "disk": [{ "label": "disk0", "size": 40, "datastore_id": "datastore-1" }] },
+        "after": { "num_cpus": 4, "memory": 2048, "datastore_id": "datastore-1", "disk": [{ "label": "disk0", "size": 50, "datastore_id": "datastore-1" }] },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "vsphere_virtual_machine.old",
+      "mode": "managed", "type": "vsphere_virtual_machine", "name": "old",
+      "change": {
+        "actions": ["delete"],
+        "before": { "num_cpus": 8, "memory": 16384, "datastore_id": "datastore-1", "disk": [{ "label": "disk0", "size": 200 }] },
+        "after": null, "after_unknown": {}
+      }
+    },
+    {
+      "address": "vsphere_virtual_machine.kept",
+      "mode": "managed", "type": "vsphere_virtual_machine", "name": "kept",
+      "change": {
+        "actions": ["no-op"],
+        "before": { "num_cpus": 1, "memory": 1024, "datastore_id": "datastore-1", "disk": [{ "label": "disk0", "size": 20 }] },
+        "after": { "num_cpus": 1, "memory": 1024, "datastore_id": "datastore-1", "disk": [{ "label": "disk0", "size": 20 }] },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "vsphere_virtual_machine.kept",
+      "mode": "managed", "type": "vsphere_virtual_machine", "name": "kept", "deposed": "00000001",
+      "change": { "actions": ["delete"], "before": { "num_cpus": 1, "memory": 1024, "disk": [] }, "after": null }
+    },
+    {
+      "address": "aws_instance.bastion",
+      "mode": "managed", "type": "aws_instance", "name": "bastion",
+      "change": { "actions": ["create"], "before": null, "after": { "instance_type": "t3.micro" }, "after_unknown": { "id": true } }
+    },
+    {
+      "address": "crucible_player_virtual_machine.web",
+      "mode": "managed", "type": "crucible_player_virtual_machine", "name": "web",
+      "change": { "actions": ["create"], "before": null, "after": { "name": "web" }, "after_unknown": { "id": true } }
+    },
+    {
+      "address": "data.vsphere_datastore.ds",
+      "mode": "data", "type": "vsphere_datastore", "name": "ds",
+      "change": { "actions": ["read"], "before": null, "after": {} }
+    }
+  ],
+  "prior_state": {
+    "values": {
+      "root_module": {
+        "resources": [
+          { "address": "vsphere_virtual_machine.kept", "mode": "managed", "type": "vsphere_virtual_machine", "name": "kept", "values": { "num_cpus": 1, "memory": 1024, "disk": [{ "size": 20 }] } }
+        ],
+        "child_modules": [
+          {
+            "address": "module.untargeted",
+            "resources": [
+              { "address": "module.untargeted.proxmox_virtual_environment_vm.vm", "mode": "managed", "type": "proxmox_virtual_environment_vm", "name": "vm",
+                "values": { "node_name": "pve1", "cpu": [{ "cores": 2, "sockets": 1 }], "memory": [{ "dedicated": 2048 }], "disk": [{ "datastore_id": "local-lvm", "size": 16 }], "clone": [] } }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

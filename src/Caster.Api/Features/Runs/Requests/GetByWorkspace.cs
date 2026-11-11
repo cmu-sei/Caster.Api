@@ -5,7 +5,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -45,7 +44,7 @@ namespace Caster.Api.Features.Runs
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Run[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Run[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Workspace>(request.WorkspaceId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -56,8 +55,7 @@ namespace Caster.Api.Features.Runs
                     .Where(x => x.WorkspaceId == request.WorkspaceId)
                     .OrderByDescending(r => r.CreatedAt)
                     .Limit(request.Limit)
-                    .Expand(mapper.ConfigurationProvider,
-                            includePlan: request.IncludePlan,
+                    .Expand(                            includePlan: request.IncludePlan,
                             includeApply: request.IncludeApply)
                     .ToArrayAsync(cancellationToken);
             }

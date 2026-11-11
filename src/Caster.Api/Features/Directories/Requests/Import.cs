@@ -3,11 +3,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
@@ -15,7 +13,6 @@ using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Authorization;
 using System.Text.Json.Serialization;
 using Caster.Api.Domain.Services;
-using Caster.Api.Domain.Services.Inventory;
 using Microsoft.AspNetCore.Http;
 using FluentValidation;
 using Caster.Api.Domain.Models;
@@ -82,21 +79,13 @@ namespace Caster.Api.Features.Directories
             /// A list of non-fatal problems found with the archive
             /// </summary>
             public string[] Warnings { get; set; }
-
-            /// <summary>
-            /// The VM templates and ISOs the archive says its Terraform needs, and whether each
-            /// was found here. They must be copied to the hypervisor separately.
-            /// </summary>
-            public ImportedDisk[] Disks { get; set; }
         }
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext,
             IArchiveService archiveService,
             IImportService importService,
-            IDiskManifestService diskManifestService,
             IMediator mediator) : BaseHandler<Command, ImportDirectoryResult>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
@@ -124,16 +113,12 @@ namespace Caster.Api.Features.Directories
 
                 importResult.SkippedSettings = extracted.SkippedSettings;
                 importResult.Warnings = GetWarnings(extracted, directory.Name);
-                importResult.Disks = diskManifestService.Check(extracted.DiskManifest);
-
-                if (importResult.Disks.Any())
-                    importResult.Warnings = importResult.Warnings.Append(DiskManifestMessages.BestEffort).ToList();
 
                 var entries = dbContext.GetUpdatedEntries();
                 await dbContext.SaveChangesAsync(cancellationToken);
                 await this.PublishEvents(entries);
 
-                return mapper.Map<ImportDirectoryResult>(importResult);
+                return importResult.ToImportDirectoryResult();
             }
 
             private static List<string> GetWarnings(ArchiveExtractResult extracted, string targetName)

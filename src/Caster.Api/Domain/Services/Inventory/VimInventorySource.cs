@@ -29,6 +29,9 @@ public class VimInventory
     public List<VimVm> Vms { get; set; } = [];
     public List<VimHost> Hosts { get; set; } = [];
     public List<VimNetwork> Networks { get; set; } = [];
+
+    /// <summary>Distributed switches, which port groups name as their switch.</summary>
+    public List<VimSwitch> Switches { get; set; } = [];
     public List<VimDatastore> Datastores { get; set; } = [];
     public List<VimIso> Isos { get; set; } = [];
 
@@ -36,7 +39,8 @@ public class VimInventory
     public string IsoError { get; set; }
 }
 
-public record VimDatacenter(string Id, string Name, string VmFolder);
+/// <summary>A datacenter. Its parent is the folder it is in, for its inventory path.</summary>
+public record VimDatacenter(string Id, string Name, string VmFolder, string Parent = null);
 
 /// <summary>A folder, or another object that only matters as a parent, e.g. a cluster.</summary>
 public record VimFolder(string Id, string Name, string Parent);
@@ -57,7 +61,10 @@ public record VimHost(
 
 /// <param name="Type">Network, DistributedVirtualPortgroup or OpaqueNetwork.</param>
 /// <param name="Uplink">A distributed switch's uplink portgroup, which VMs are not attached to.</param>
-public record VimNetwork(string Id, string Name, string Type, bool Uplink, string Parent = null);
+/// <param name="Switch">A distributed portgroup's switch, by id.</param>
+public record VimNetwork(string Id, string Name, string Type, bool Uplink, string Parent = null, string Switch = null);
+
+public record VimSwitch(string Id, string Name);
 
 public record VimDatastore(string Id, string Name, string Type, long? Capacity, long? FreeSpace, bool Accessible, string Browser, string Parent = null);
 
@@ -101,10 +108,11 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
             await client.LoginAsync(content.sessionManager, options.Username, options.Password, null);
             loggedIn = true;
 
-            var objects = await RetrieveAsync(client, content.propertyCollector, InventoryFilter(content.rootFolder), cancellationToken);
+            var objects = await RetrieveInventoryAsync(client, content, options.Datacenters, cancellationToken);
             var inventory = Project(objects);
 
-            await SearchIsosAsync(client, content.propertyCollector, inventory, objects, options.IsoLocations, cancellationToken);
+            if (InventoryFilters.IsEnabled(options, InventoryCategory.Iso))
+                await SearchIsosAsync(client, content.propertyCollector, inventory, objects, options, cancellationToken);
 
             return inventory;
         }
@@ -119,7 +127,7 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
                 catch (Exception ex)
                 {
                     // vCenter expires idle sessions on its own.
-                    logger.LogDebug(ex, "Could not log out of the vCenter inventory session");
+                    logger.LogDebug("Could not log out of the vCenter inventory session: {ExceptionType}", ex.GetType().Name);
                 }
             }
 
@@ -161,36 +169,96 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
     }
 
     /// <summary>
-    /// Everything below the root folder: datacenters, their VM, host, network and
-    /// datastore folders and what is in them, and each compute resource's hosts.
+    /// The whole inventory, or with <paramref name="datacenters"/> named, only those
+    /// datacenters: first the folders and datacenters above them, for their paths, then
+    /// everything inside the ones named. Names ignore case, and one that matches no
+    /// datacenter fails the read rather than list less than was asked for.
     /// </summary>
-    private static PropertyFilterSpec InventoryFilter(ManagedObjectReference root)
+    private static async Task<List<ObjectContent>> RetrieveInventoryAsync(
+        VimPortTypeClient client, ServiceContent content, string[] datacenters, CancellationToken cancellationToken)
+    {
+        var wanted = (datacenters ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToArray();
+
+        if (wanted.Length == 0)
+            return await RetrieveAsync(client, content.propertyCollector, InventoryFilter([content.rootFolder], datacentersOnly: false), cancellationToken);
+
+        var top = await RetrieveAsync(client, content.propertyCollector, InventoryFilter([content.rootFolder], datacentersOnly: true), cancellationToken);
+        var (chosen, unknown, names) = ChooseDatacenters(top, wanted);
+
+        if (unknown.Length > 0)
+        {
+            var known = names.Length == 0 ? "There are no datacenters." : $"Datacenters: {string.Join(", ", names)}.";
+            throw new InvalidOperationException(
+                $"Infrastructure:Datacenters names {string.Join(", ", unknown.Select(x => $"\"{x}\""))}, which is not a datacenter on this vCenter. {known}");
+        }
+
+        var inside = await RetrieveAsync(client, content.propertyCollector, InventoryFilter(chosen, datacentersOnly: false), cancellationToken);
+
+        // Every datacenter is in both reads.
+        return top
+            .Where(x => x.obj?.type != "Datacenter" || chosen.Any(c => c.Value == x.obj.Value))
+            .Concat(inside.Where(x => x.obj?.type != "Datacenter"))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The datacenters among <paramref name="objects"/> named in <paramref name="wanted"/>,
+    /// ignoring case, the entries that name none, and every datacenter's name.
+    /// </summary>
+    public static (ManagedObjectReference[] Chosen, string[] Unknown, string[] Names) ChooseDatacenters(
+        IEnumerable<ObjectContent> objects, string[] wanted)
+    {
+        var datacenters = objects
+            .Where(x => x.obj?.type == "Datacenter")
+            .Select(x => (Ref: x.obj, Name: x.propSet?.FirstOrDefault(p => p.name == "name")?.val?.ToString()))
+            .Where(x => x.Name != null)
+            .ToArray();
+
+        var chosen = datacenters
+            .Where(x => wanted.Contains(x.Name, StringComparer.OrdinalIgnoreCase))
+            .Select(x => x.Ref)
+            .ToArray();
+        var unknown = wanted
+            .Where(x => !datacenters.Any(d => string.Equals(d.Name, x, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+
+        return (chosen, unknown, datacenters.Select(x => x.Name).Distinct().Order(StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
+    /// Everything below <paramref name="roots"/>: datacenters, their VM, host, network
+    /// and datastore folders and what is in them, and each compute resource's hosts.
+    /// With <paramref name="datacentersOnly"/>, only the folders and datacenters, not
+    /// what is inside the datacenters.
+    /// </summary>
+    private static PropertyFilterSpec InventoryFilter(ManagedObjectReference[] roots, bool datacentersOnly)
     {
         SelectionSpec[] Next(params string[] names) => names.Select(x => new SelectionSpec { name = x }).ToArray();
-        var all = new[] { "folder", "dcVm", "dcHost", "dcNetwork", "dcDatastore", "computeHost" };
+
+        var all = datacentersOnly
+            ? new[] { "folder" }
+            : new[] { "folder", "dcVm", "dcHost", "dcNetwork", "dcDatastore", "computeHost" };
+        SelectionSpec[] traversal = datacentersOnly
+            ?
+            [
+                new TraversalSpec { name = "folder", type = "Folder", path = "childEntity", skip = false, selectSet = Next(all) }
+            ]
+            :
+            [
+                new TraversalSpec { name = "folder", type = "Folder", path = "childEntity", skip = false, selectSet = Next(all) },
+                new TraversalSpec { name = "dcVm", type = "Datacenter", path = "vmFolder", skip = false, selectSet = Next("folder") },
+                new TraversalSpec { name = "dcHost", type = "Datacenter", path = "hostFolder", skip = false, selectSet = Next("folder") },
+                new TraversalSpec { name = "dcNetwork", type = "Datacenter", path = "networkFolder", skip = false, selectSet = Next("folder") },
+                new TraversalSpec { name = "dcDatastore", type = "Datacenter", path = "datastoreFolder", skip = false, selectSet = Next("folder") },
+                new TraversalSpec { name = "computeHost", type = "ComputeResource", path = "host", skip = false }
+            ];
 
         return new PropertyFilterSpec
         {
-            objectSet =
-            [
-                new ObjectSpec
-                {
-                    obj = root,
-                    skip = false,
-                    selectSet =
-                    [
-                        new TraversalSpec { name = "folder", type = "Folder", path = "childEntity", skip = false, selectSet = Next(all) },
-                        new TraversalSpec { name = "dcVm", type = "Datacenter", path = "vmFolder", skip = false, selectSet = Next("folder") },
-                        new TraversalSpec { name = "dcHost", type = "Datacenter", path = "hostFolder", skip = false, selectSet = Next("folder") },
-                        new TraversalSpec { name = "dcNetwork", type = "Datacenter", path = "networkFolder", skip = false, selectSet = Next("folder") },
-                        new TraversalSpec { name = "dcDatastore", type = "Datacenter", path = "datastoreFolder", skip = false, selectSet = Next("folder") },
-                        new TraversalSpec { name = "computeHost", type = "ComputeResource", path = "host", skip = false }
-                    ]
-                }
-            ],
+            objectSet = roots.Select(x => new ObjectSpec { obj = x, skip = false, selectSet = traversal }).ToArray(),
             propSet =
             [
-                new PropertySpec { type = "Datacenter", pathSet = ["name", "vmFolder"] },
+                new PropertySpec { type = "Datacenter", pathSet = ["name", "vmFolder", "parent"] },
                 new PropertySpec { type = "Folder", pathSet = ["name", "parent"] },
                 new PropertySpec
                 {
@@ -210,9 +278,9 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
                 // Subtypes too, e.g. ClusterComputeResource. A host's parent, for its datacenter.
                 new PropertySpec { type = "ComputeResource", pathSet = ["name", "parent"] },
                 new PropertySpec { type = "Network", pathSet = ["name", "parent"] },
-                new PropertySpec { type = "DistributedVirtualPortgroup", pathSet = ["name", "config.uplink", "tag", "parent"] },
+                new PropertySpec { type = "DistributedVirtualPortgroup", pathSet = ["name", "config.uplink", "tag", "parent", "config.distributedVirtualSwitch"] },
                 // Subtypes too, e.g. VmwareDistributedVirtualSwitch.
-                new PropertySpec { type = "DistributedVirtualSwitch", pathSet = ["config.uplinkPortgroup"] },
+                new PropertySpec { type = "DistributedVirtualSwitch", pathSet = ["name", "config.uplinkPortgroup"] },
                 new PropertySpec
                 {
                     type = "Datastore",
@@ -256,7 +324,7 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
             switch (item.obj?.type)
             {
                 case "Datacenter":
-                    inventory.Datacenters.Add(new VimDatacenter(id, Text(values, "name"), Reference(values, "vmFolder")));
+                    inventory.Datacenters.Add(new VimDatacenter(id, Text(values, "name"), Reference(values, "vmFolder"), Reference(values, "parent")));
                     break;
                 case "Folder":
                 // A datastore cluster, which is a folder of datastores.
@@ -296,17 +364,31 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
                 case "DistributedVirtualPortgroup":
                     // Both the Network and the portgroup spec can match a portgroup.
                     var existing = inventory.Networks.FindIndex(x => x.Id == id);
-                    var network = new VimNetwork(id, Text(values, "name"), item.obj.type, IsUplink(values), Reference(values, "parent"));
+                    var network = new VimNetwork(
+                        id, Text(values, "name"), item.obj.type, IsUplink(values), Reference(values, "parent"),
+                        Reference(values, "config.distributedVirtualSwitch"));
 
                     if (existing < 0)
+                    {
                         inventory.Networks.Add(network);
-                    else if (network.Uplink)
-                        inventory.Networks[existing] = network with { Parent = network.Parent ?? inventory.Networks[existing].Parent };
-                    else if (inventory.Networks[existing].Parent == null)
-                        inventory.Networks[existing] = inventory.Networks[existing] with { Parent = network.Parent };
+                    }
+                    else
+                    {
+                        // Each half of the pair fills in what the other lacks.
+                        var known = inventory.Networks[existing];
+                        inventory.Networks[existing] = known with
+                        {
+                            Type = network.Type == "Network" ? known.Type : network.Type,
+                            Uplink = known.Uplink || network.Uplink,
+                            Parent = known.Parent ?? network.Parent,
+                            Switch = known.Switch ?? network.Switch
+                        };
+                    }
                     break;
                 case "DistributedVirtualSwitch":
                 case "VmwareDistributedVirtualSwitch":
+                    inventory.Switches.Add(new VimSwitch(id, Text(values, "name")));
+
                     if (values.TryGetValue("config.uplinkPortgroup", out var portgroups) && portgroups is ManagedObjectReference[] refs)
                         uplinks.UnionWith(refs.Where(x => x?.Value != null).Select(x => x.Value));
                     break;
@@ -344,8 +426,10 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
     /// </summary>
     private async Task SearchIsosAsync(
         VimPortTypeClient client, ManagedObjectReference collector, VimInventory inventory, List<ObjectContent> objects,
-        string[] isoLocations, CancellationToken cancellationToken)
+        InfrastructureConnectionOptions options, CancellationToken cancellationToken)
     {
+        var isoLocations = options.IsoLocations;
+
         var browsers = objects
             .Where(x => x.obj?.type == "Datastore")
             .Select(x => (Datastore: inventory.Datastores.FirstOrDefault(d => d.Id == x.obj.Value), Browser: x.propSet?.FirstOrDefault(p => p.name == "browser")?.val as ManagedObjectReference))
@@ -394,7 +478,7 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
 
                 if (info.state != TaskInfoState.success)
                 {
-                    failed.Add($"{root}: {info.error?.localizedMessage ?? info.state.ToString()}");
+                    failed.Add($"{root}: {InventoryRedaction.Redact(info.error?.localizedMessage, options) ?? info.state.ToString()}");
                     continue;
                 }
 
@@ -408,8 +492,8 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogWarning(ex, "Could not search {DatastorePath} for ISOs", root);
-                failed.Add($"{root}: {ex.Message}");
+                logger.LogWarning("Could not search {DatastorePath} for ISOs: {Error}", root, InventoryRedaction.Describe(ex, options));
+                failed.Add($"{root}: {InventoryRedaction.Redact(ex.Message, options)}");
             }
         }
 

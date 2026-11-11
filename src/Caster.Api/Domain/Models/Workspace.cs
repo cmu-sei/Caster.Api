@@ -15,7 +15,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Caster.Api.Domain.Models
 {
-    public class Workspace : IEntity
+    public class Workspace : IEntity, Services.Capacity.IDeploymentLimits, Services.Capacity.IDeploymentLimitsTarget
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -44,6 +44,20 @@ namespace Caster.Api.Domain.Models
         public int? Parallelism { get; set; }
 
         public int? AzureDestroyFailureThreshold { get; set; }
+
+        /// <summary>The most machines this workspace may have. Null for no limit at this level. See <see cref="Services.Capacity.DeploymentLimitResolver"/>.</summary>
+        public int? MaxMachines { get; set; }
+
+        /// <summary>The most vCPUs its machines may have between them. Null for no limit at this level.</summary>
+        public int? MaxVcpu { get; set; }
+
+        /// <summary>The most memory, in GiB, its machines may have between them. Null for no limit at this level.</summary>
+        [Column("max_memory_gib")]
+        public int? MaxMemoryGiB { get; set; }
+
+        /// <summary>The most disk, in GiB, its machines may have between them. Null for no limit at this level.</summary>
+        [Column("max_disk_gib")]
+        public int? MaxDiskGiB { get; set; }
 
         /// <summary>
         /// JSON of the <see cref="TopologyNodeLayout"/>s people have set in the

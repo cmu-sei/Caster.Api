@@ -4,7 +4,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Data;
 using System;
@@ -31,7 +30,7 @@ namespace Caster.Api.Features.Resources
             public Guid WorkspaceId { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Resource[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Resource[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Workspace>(request.WorkspaceId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -46,7 +45,7 @@ namespace Caster.Api.Features.Resources
                 }
 
                 var state = workspace.GetState();
-                return mapper.Map<Resource[]>(state.GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes)));
+                return state.GetResources().ToResourcesWithoutAttributes();
             }
         }
     }

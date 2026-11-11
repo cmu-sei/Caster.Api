@@ -8,8 +8,6 @@ using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
@@ -79,8 +77,7 @@ public class ApplyAiDraft
         ICasterAuthorizationService authorizationService,
         CasterContext dbContext,
         ILockService lockService,
-        IIdentityResolver identityResolver,
-        IMapper mapper) : BaseHandler<Command, File[]>
+        IIdentityResolver identityResolver) : BaseHandler<Command, File[]>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -162,7 +159,7 @@ public class ApplyAiDraft
                 return await dbContext.Files
                     .Where(f => ids.Contains(f.Id))
                     .OrderBy(f => f.Name)
-                    .ProjectTo<File>(mapper.ConfigurationProvider)
+                    .ProjectToFile()
                     .ToArrayAsync(cancellationToken);
             }
             finally

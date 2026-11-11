@@ -5,9 +5,9 @@ using System;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
-using AutoMapper.Internal;
 using Caster.Api.Data;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Capacity;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Extensions;
@@ -22,7 +22,6 @@ using Caster.Api.Infrastructure.Exceptions.Middleware;
 using Caster.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Extensions;
 using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Infrastructure.Mapping;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
 using FluentValidation;
@@ -116,6 +115,10 @@ namespace Caster.Api
                 .Configure<InfrastructureOptions>(Configuration.GetSection("Infrastructure"))
                     .AddScoped(config => config.GetService<IOptionsMonitor<InfrastructureOptions>>().CurrentValue);
 
+            services.AddOptions()
+                .Configure<CapacityOptions>(Configuration.GetSection("Capacity"))
+                    .AddScoped(config => config.GetService<IOptionsMonitor<CapacityOptions>>().CurrentValue);
+
 
             services.AddMvc()
             .AddJsonOptions(options =>
@@ -139,13 +142,6 @@ namespace Caster.Api
                 });
 
             services.AddSwagger(_authOptions);
-
-            services.AddAutoMapper(cfg =>
-            {
-                cfg.Internal().ForAllPropertyMaps(
-                    pm => pm.SourceType != null && Nullable.GetUnderlyingType(pm.SourceType) == pm.DestinationType,
-                    (pm, c) => c.MapFrom<object, object, object, object>(new IgnoreNullSourceValues(), pm.SourceMember.Name));
-            }, typeof(Startup));
 
             services.AddMediatR(cfg =>
             {
@@ -261,7 +257,10 @@ namespace Caster.Api
             services.AddSingleton<InventoryService>();
             services.AddSingleton<IInventoryService>(x => x.GetService<InventoryService>());
             services.AddSingleton<IHostedService>(x => x.GetService<InventoryService>());
-            services.AddSingleton<IDiskManifestService, DiskManifestService>();
+
+            // Deployment limits and the room on the hypervisors, checked before every apply.
+            services.AddSingleton<IHypervisorRoomSource, InventoryRoomSource>();
+            services.AddScoped<ICapacityCheckService, CapacityCheckService>();
 
             services.AddScoped<IGetFileQuery, GetFileQuery>();
 

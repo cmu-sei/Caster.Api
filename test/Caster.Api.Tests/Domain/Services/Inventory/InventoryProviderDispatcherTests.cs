@@ -102,7 +102,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             var options = new InfrastructureConnectionOptions
             {
-                Enabled = true,
+                Inventory = { Enabled = true },
                 Provider = InfrastructureProviders.Proxmox,
                 Url = "https://pve.test:8006"
             };
@@ -213,7 +213,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             using var provider = services.BuildServiceProvider(validateScopes: true);
 
             var snapshot = await provider.GetRequiredService<IInventoryProviderClient>().GetInventoryAsync(
-                new InfrastructureConnectionOptions { Enabled = true, Provider = InfrastructureProviders.Proxmox },
+                new InfrastructureConnectionOptions { Inventory = { Enabled = true }, Provider = InfrastructureProviders.Proxmox },
                 CancellationToken.None);
 
             // proxmox was selected, and failed on its own missing credentials
@@ -229,7 +229,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 Substitute.For<ILogger<InventoryProviderDispatcher>>());
 
             return await dispatcher.GetInventoryAsync(
-                new InfrastructureConnectionOptions { Enabled = true, Provider = configured }, CancellationToken.None);
+                new InfrastructureConnectionOptions { Inventory = { Enabled = true }, Provider = configured }, CancellationToken.None);
         }
 
         private sealed class FakeProvider(string provider) : IInventoryProvider

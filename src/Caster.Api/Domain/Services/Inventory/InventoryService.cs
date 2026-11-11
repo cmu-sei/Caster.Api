@@ -4,6 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,14 +27,21 @@ public class InventoryConnectionInfo
 
     public string Provider { get; set; }
 
+    /// <summary>Whether inventory is enabled for the connection (its Inventory:Enabled).</summary>
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// True for the connection configured by the top-level Infrastructure settings.
+    /// True for the connection used when a request names none.
     /// </summary>
     public bool IsDefault { get; set; }
 
     public DateTime? LastUpdated { get; set; }
+
+    /// <summary>The kinds of object the connection reads, from its Inventory:Resources.</summary>
+    public InventoryCategory[] Resources { get; set; } = [];
+
+    /// <summary>Why the connection's settings can't be used, or null when they can.</summary>
+    public string Error { get; set; }
 }
 
 public interface IInventoryService
@@ -118,9 +128,11 @@ public class InventoryService : BackgroundService, IInventoryService
             {
                 Name = x.Name,
                 Provider = x.Options.Provider,
-                Enabled = x.Options.Enabled,
+                Enabled = IsEnabled(x.Options),
                 IsDefault = x == fallback,
-                LastUpdated = x.Snapshot.LastUpdated
+                LastUpdated = x.Snapshot.LastUpdated,
+                Resources = InventoryFilters.Enabled(x.Options),
+                Error = x.Misconfiguration
             })
             .ToArray();
     }
@@ -202,6 +214,12 @@ public class InventoryService : BackgroundService, IInventoryService
 
         target.Wake();
 
+        // A caller that has already gone gets an answer straight away. The refresh it
+        // asked for still runs; only the wait is skipped, so a refresh that happens to
+        // finish first can't make an abandoned request look completed.
+        if (cancellationToken.IsCancellationRequested)
+            return false;
+
         // The provider call runs on the background service with the host's
         // stopping token. The request's token only bounds how long we wait here,
         // so a disconnected http caller never cancels the refresh itself.
@@ -230,12 +248,15 @@ public class InventoryService : BackgroundService, IInventoryService
     /// The first enabled connection in configuration order, else the first one.
     /// </summary>
     private static Connection Default(Connection[] ordered) =>
-        ordered.FirstOrDefault(x => x.Options.Enabled) ?? ordered.FirstOrDefault();
+        ordered.FirstOrDefault(x => IsEnabled(x.Options)) ?? ordered.FirstOrDefault();
+
+    private static bool IsEnabled(InfrastructureConnectionOptions options) => options.Inventory?.Enabled == true;
 
     /// <summary>
     /// Brings the connections in line with configuration. A connection that is
-    /// still configured keeps its cache and is refreshed with the new settings, a
-    /// new one starts reading straight away, and a removed one stops.
+    /// still configured is refreshed with the new settings, keeping its cache only if
+    /// nothing that changes what it lists has changed. A new one starts reading
+    /// straight away, and a removed one stops.
     /// </summary>
     private void Reconcile(InfrastructureOptions options)
     {
@@ -275,14 +296,15 @@ public class InventoryService : BackgroundService, IInventoryService
             {
                 if (_connections.TryGetValue(name, out var existing))
                 {
-                    existing.Options = connectionOptions;
                     existing.Order = order;
+                    existing.Configure(connectionOptions, Validate(name, connectionOptions, order));
                     existing.Wake();
                     next[name] = existing;
                     continue;
                 }
 
                 var added = new Connection(name, connectionOptions) { Order = order };
+                added.Configure(connectionOptions, Validate(name, connectionOptions, order));
                 next[name] = added;
 
                 if (_running)
@@ -297,6 +319,23 @@ public class InventoryService : BackgroundService, IInventoryService
 
             _connections = next;
         }
+    }
+
+    /// <summary>
+    /// Why a connection's settings can't be used, naming its own keys, or null. Logged once
+    /// per configuration, since the connection isn't read until it's fixed.
+    /// </summary>
+    private string Validate(string name, InfrastructureConnectionOptions options, int order)
+    {
+        var problem = InventoryFilters.Validate(options);
+
+        if (problem is null)
+            return null;
+
+        var scoped = Connection.Scope(InventoryMessages.Misconfigured(problem), order);
+        _logger.LogWarning("Infrastructure connection {Connection} is misconfigured: {Problem}", name, scoped);
+
+        return scoped;
     }
 
     private void StartLoop(Connection connection, bool readFirst)
@@ -324,20 +363,34 @@ public class InventoryService : BackgroundService, IInventoryService
 
     private async Task DoWork(Connection connection, CancellationToken cancellationToken)
     {
-        var options = connection.Options;
+        // Everything this read uses is taken together, so a reconfiguration while it
+        // runs can't mix old and new settings, and its result is dropped.
+        var (options, revision, misconfiguration) = connection.Current();
+        var published = true;
 
         try
         {
-            if (!options.Enabled)
+            if (!IsEnabled(options))
             {
                 _logger.LogInformation("Infrastructure inventory connection {Connection} disabled, skipping inventory query", connection.Name);
-                connection.Replace(InventorySnapshot.AllUnavailable(InventoryMessages.ConnectionNotEnabled), null);
+                published = connection.Replace(InventorySnapshot.AllUnavailable(InventoryMessages.ConnectionNotEnabled), null, revision);
+                return;
+            }
+
+            if (misconfiguration is not null)
+            {
+                published = connection.Replace(InventorySnapshot.AllUnavailable(misconfiguration), null, revision);
                 return;
             }
 
             _logger.LogInformation("Querying {Provider} inventory for connection {Connection} at {ProviderUrl}...",
                 options.Provider, connection.Name, options.Url);
-            connection.Replace(await _client.GetInventoryAsync(options, cancellationToken), options);
+
+            var read = await _client.GetInventoryAsync(options, cancellationToken);
+            published = connection.Replace(InventoryFilters.Apply(read, options), options, revision);
+
+            if (!published)
+                _logger.LogInformation("Discarding the inventory read for connection {Connection}: its settings changed while it ran", connection.Name);
         }
         catch (OperationCanceledException)
         {
@@ -345,20 +398,24 @@ public class InventoryService : BackgroundService, IInventoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Exception getting infrastructure inventory for connection {Connection}.", connection.Name);
-
+            // The exception itself can carry the credentials, so only its redacted message is logged.
             var message = InventoryRedaction.Redact(
                 $"Could not read the infrastructure inventory: {ex.Message}", options);
 
-            connection.Replace(InventorySnapshot.AllUnavailable(message), options);
+            _logger.LogError("Exception getting infrastructure inventory for connection {Connection}: {Error}",
+                connection.Name, InventoryRedaction.Describe(ex, options));
+
+            published = connection.Replace(InventorySnapshot.AllUnavailable(message), options, revision);
         }
         finally
         {
             connection.HasRead = true;
 
             // Snapshot is assigned before this fires, so anyone released by the
-            // signal is guaranteed to observe the new value.
-            connection.SignalRefreshComplete();
+            // signal is guaranteed to observe the new value. A discarded read
+            // doesn't count: the reconfiguration woke the loop for another.
+            if (published)
+                connection.SignalRefreshComplete();
         }
     }
 
@@ -375,12 +432,86 @@ public class InventoryService : BackgroundService, IInventoryService
         /// <summary>Position in Infrastructure:Connections, which also orders the list.</summary>
         public int Order { get; set; }
 
-        public InfrastructureConnectionOptions Options { get; set; } = options;
+        private readonly object _settingsLock = new();
+
+        public InfrastructureConnectionOptions Options { get; private set; } = options;
+
+        /// <summary>Why <see cref="Options"/> can't be used, naming this connection's keys, or null.</summary>
+        public string Misconfiguration { get; private set; }
+
+        /// <summary>
+        /// Goes up whenever a setting that changes what the connection lists changes. A
+        /// read started under an earlier revision is discarded rather than cached.
+        /// </summary>
+        public long Revision { get; private set; }
+
+        private string _fingerprint;
 
         public InventorySnapshot Snapshot { get; private set; } = InventorySnapshot.AllUnavailable(InventoryMessages.ConnectionNotEnabled);
 
-        // The provider and url Snapshot was read from. Null when it was not read.
-        private string _snapshotTarget;
+        // Whether Snapshot holds a read worth keeping categories from.
+        private bool _snapshotKeepable;
+
+        /// <summary>
+        /// Applies new settings. When anything that changes what is listed has changed
+        /// (provider, url, credentials, Datacenters, IsoLocations or the Inventory
+        /// settings other than RefreshMinutes), the cache is cleared and the revision
+        /// goes up, so nothing read under the old settings is shown or kept.
+        /// </summary>
+        public void Configure(InfrastructureConnectionOptions next, string misconfiguration)
+        {
+            var fingerprint = Fingerprint(next);
+
+            lock (_settingsLock)
+            {
+                Options = next;
+                Misconfiguration = misconfiguration;
+
+                if (fingerprint == _fingerprint)
+                    return;
+
+                var first = _fingerprint is null;
+                _fingerprint = fingerprint;
+                Revision++;
+
+                if (!first)
+                {
+                    Snapshot = InventorySnapshot.AllUnavailable(InventoryMessages.NotLoaded);
+                    _snapshotKeepable = false;
+                }
+            }
+        }
+
+        public (InfrastructureConnectionOptions Options, long Revision, string Misconfiguration) Current()
+        {
+            lock (_settingsLock)
+            {
+                return (Options, Revision, Misconfiguration);
+            }
+        }
+
+        /// <summary>
+        /// Everything that changes what the connection lists, hashed so the credentials
+        /// aren't kept in another readable copy. RefreshMinutes only changes when.
+        /// </summary>
+        internal static string Fingerprint(InfrastructureConnectionOptions options)
+        {
+            var visible = new
+            {
+                Provider = options.Provider?.Trim().ToLowerInvariant(),
+                Url = options.Url?.Trim().ToLowerInvariant(),
+                options.Username,
+                options.Password,
+                options.ApiToken,
+                options.InsecureSkipVerify,
+                options.Datacenters,
+                options.IsoLocations,
+                options.Inventory?.Enabled,
+                options.Inventory?.Resources
+            };
+
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(visible))));
+        }
 
         public Task Loop { get; set; }
 
@@ -427,7 +558,8 @@ public class InventoryService : BackgroundService, IInventoryService
 
         public async Task Wait(CancellationToken cancellationToken)
         {
-            var minutes = Options.RefreshMinutes > 0 ? Options.RefreshMinutes : 30;
+            var configured = Options.Inventory?.RefreshMinutes ?? 0;
+            var minutes = configured > 0 ? configured : 30;
 
             await Task.WhenAny(Task.Delay(TimeSpan.FromMinutes(minutes), cancellationToken), _wake.Task);
 
@@ -440,17 +572,22 @@ public class InventoryService : BackgroundService, IInventoryService
         /// <summary>
         /// Caches <paramref name="read"/>, keeping the last successful read of any
         /// category it is missing. Pass the options it was read with, or null for a
-        /// snapshot that was not read; nothing is kept across a change of provider
-        /// or url, since the old entries describe a different system.
+        /// snapshot that was not read, which keeps nothing. Returns false, caching
+        /// nothing, when the settings changed after the read started.
         /// </summary>
-        public void Replace(InventorySnapshot read, InfrastructureConnectionOptions readWith)
+        public bool Replace(InventorySnapshot read, InfrastructureConnectionOptions readWith, long revision)
         {
-            var target = readWith is null ? null : $"{readWith.Provider}|{readWith.Url}".ToLowerInvariant();
+            lock (_settingsLock)
+            {
+                if (revision != Revision)
+                    return false;
 
-            var previous = target is not null && target == _snapshotTarget ? Snapshot : null;
+                var previous = readWith is not null && _snapshotKeepable ? Snapshot : null;
 
-            Snapshot = Scoped(read.KeepingLastGood(previous));
-            _snapshotTarget = target;
+                Snapshot = Scoped(read.KeepingLastGood(previous));
+                _snapshotKeepable = readWith is not null;
+                return true;
+            }
         }
 
         /// <summary>
@@ -466,10 +603,14 @@ public class InventoryService : BackgroundService, IInventoryService
             foreach (var category in new[] { snapshot.VmTemplates, snapshot.Isos, snapshot.Networks, snapshot.Datastores, snapshot.ContentLibrary, snapshot.Hosts })
             {
                 if (category?.Error is not null)
-                    category.Error = TopLevelKey.Replace(category.Error, $"Infrastructure:Connections:{Order}:");
+                    category.Error = Scope(category.Error, Order);
             }
 
             return snapshot;
         }
+
+        /// <summary>Rewrites "Infrastructure:X" to "Infrastructure:Connections:{order}:X".</summary>
+        public static string Scope(string message, int order) =>
+            message is null ? null : TopLevelKey.Replace(message, $"Infrastructure:Connections:{order}:");
     }
 }

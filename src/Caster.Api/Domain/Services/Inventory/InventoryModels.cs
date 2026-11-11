@@ -54,6 +54,13 @@ public class InventoryEntry
     /// for objects that are not referenced this way. See <see cref="TerraformSnippets"/>.
     /// </summary>
     public Dictionary<string, string> Terraform { get; set; } = [];
+
+    /// <summary>
+    /// Where the object is, for the Inventory:Resources Locations filter: full inventory
+    /// paths, which start with '/', and names, such as a Proxmox node or a distributed
+    /// switch. Only used while reading, and never returned by the api.
+    /// </summary>
+    public string[] Locations { get; set; } = [];
 }
 
 /// <summary>
@@ -77,6 +84,13 @@ public class InventoryCategoryResult
     /// can leave it out instead of reporting it as unavailable.
     /// </summary>
     public bool Applies { get; set; } = true;
+
+    /// <summary>
+    /// False when this kind of object is turned off for the connection, in its
+    /// Inventory:Resources settings. Such a category is never <see cref="Available"/>,
+    /// and a client can leave it out.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// True when the latest read of this category failed and <see cref="Entries"/>
@@ -104,6 +118,9 @@ public class InventoryCategoryResult
 
     public static InventoryCategoryResult NotApplicable(string reason) =>
         new() { Entries = [], Available = false, Applies = false, Error = reason };
+
+    public static InventoryCategoryResult NotEnabled(string reason) =>
+        new() { Entries = [], Available = false, Enabled = false, Error = reason };
 }
 
 /// <summary>
@@ -191,7 +208,9 @@ public class InventorySnapshot
             return current;
         }
 
-        if (previous is not { Available: true })
+        // Only a read that failed is filled in. A category that's turned off, or one the
+        // provider doesn't have, has nothing to keep.
+        if (!current.Enabled || !current.Applies || previous is not { Available: true })
             return current;
 
         return new InventoryCategoryResult
@@ -220,10 +239,29 @@ public static class InventoryMessages
 {
     public const string NotLoaded = "Infrastructure inventory has not been loaded yet.";
 
-    public const string NotEnabled = "Infrastructure inventory is not enabled. Add a connection under Infrastructure:Connections, with a Name, Provider and Url, and set its Enabled to true.";
+    public const string NotEnabled = "Infrastructure inventory is not enabled. Add a connection under Infrastructure:Connections, with a Name, Provider and Url, and set its Inventory:Enabled to true.";
 
     /// <summary>For one connection that is configured but switched off. Names its own key once scoped.</summary>
-    public const string ConnectionNotEnabled = "This infrastructure connection is not enabled. Set Infrastructure:Enabled to true.";
+    public const string ConnectionNotEnabled = "Inventory is not enabled for this infrastructure connection. Set Infrastructure:Inventory:Enabled to true.";
+
+    /// <summary>For a category that's turned off. Names its own key once scoped.</summary>
+    public static string CategoryNotEnabled(InventoryCategory category, string key) =>
+        $"{Describe(category)} are turned off for this connection, in Infrastructure:Inventory:Resources:{key}:Enabled.";
+
+    /// <summary>For a connection whose settings can't be used. Names its own keys once scoped.</summary>
+    public static string Misconfigured(string reason) =>
+        $"This infrastructure connection is misconfigured, so it isn't read. {reason}";
+
+    public static string Describe(InventoryCategory category) => category switch
+    {
+        InventoryCategory.VmTemplate => "VM templates",
+        InventoryCategory.Iso => "ISOs",
+        InventoryCategory.Network => "Networks",
+        InventoryCategory.Datastore => "Datastores",
+        InventoryCategory.ContentLibrary => "Content libraries",
+        InventoryCategory.Host => "Hosts",
+        _ => category.ToString()
+    };
 
     public const string NotConfigured = "Infrastructure inventory is enabled but the provider connection is incomplete. Infrastructure:Url, Infrastructure:Username and Infrastructure:Password are all required.";
 

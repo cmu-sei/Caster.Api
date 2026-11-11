@@ -132,11 +132,10 @@ public class GitlabRepositoryServiceTokenTests(DatabaseFixture fixture) : Databa
         return services.BuildServiceProvider();
     }
 
-    /// <summary>The service over the test's own database; <c>GetModuleAsync</c> maps nothing, so it takes no mapper.</summary>
+    /// <summary>The service over the test's own database.</summary>
     private GitlabRepositoryService Service(IServiceProvider provider) =>
         new(
             Db,
-            null,
             provider.GetRequiredService<IOptionsMonitor<TerraformOptions>>(),
             provider.GetRequiredService<IHttpClientFactory>());
 }

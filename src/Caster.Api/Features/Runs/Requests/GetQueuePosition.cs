@@ -4,7 +4,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using MediatR;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
@@ -22,8 +21,7 @@ public class GetQueuePosition
 
     public class Handler(
         ICasterAuthorizationService authorizationService,
-        IRunQueueService runQueueService,
-        IMapper mapper) : BaseHandler<Query, QueuePosition>
+        IRunQueueService runQueueService) : BaseHandler<Query, QueuePosition>
     {
         public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Domain.Models.Run>(
@@ -33,6 +31,6 @@ public class GetQueuePosition
                 cancellationToken);
 
         public override Task<QueuePosition> HandleRequest(Query request, CancellationToken cancellationToken)
-            => Task.FromResult(mapper.Map<QueuePosition>(runQueueService.GetQueuePosition(request.RunId)));
+            => Task.FromResult(runQueueService.GetQueuePosition(request.RunId).ToQueuePosition());
     }
 }

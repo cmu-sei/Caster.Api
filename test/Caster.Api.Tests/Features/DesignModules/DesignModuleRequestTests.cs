@@ -209,7 +209,7 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
 
         var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
 
-        Assert.Matches(@"^Error mapping types\.[\s\S]*DesignModules\.Create\+Command -> Caster\.Api\.Domain\.Models\.DesignModule[\s\S]*Destination Member:\s+Values\s*$", problem.Detail);
+        Assert.Equal("Object reference not set to an instance of an object.", problem.Detail);
         Assert.False(await AnyDesignModule(design.Id));
     }
 
@@ -316,6 +316,21 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
         Assert.Equal("2.0.0", (await StoredDesignModule(designModule.Id)).ModuleVersion);
     }
 
+    /// <summary>An edit naming another module stores and answers that module.</summary>
+    [Fact]
+    public async Task Edit_naming_another_module_stores_and_answers_it()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+        var other = TestData.Module("other-module");
+        await Seed(other, TestData.ModuleVersion(other, "1.0.0"));
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = other.Id, name = designModule.Name, moduleVersion = "1.0.0", values = NoValues }, Ct);
+
+        Assert.Equal(other.Id, (await ReadAsync<DesignModuleView>(response)).ModuleId);
+        Assert.Equal(other.Id, (await StoredDesignModule(designModule.Id)).ModuleId);
+    }
+
     [Fact]
     public async Task Edit_answers_a_bad_request_for_a_version_the_module_does_not_have()
     {
@@ -354,6 +369,41 @@ public class DesignModuleRequestTests(DatabaseFixture fixture, CasterAppFactory 
 
         var problem = await AssertProblem(HttpStatusCode.BadRequest, response);
         Assert.Equal(["This design already has a module named 'other'"], Errors(problem, "Name"));
+        Assert.Equal(designModule.Name, (await StoredDesignModule(designModule.Id)).Name);
+    }
+
+    /// <summary>An edit of a module stored without a value list stores and answers an empty one.</summary>
+    [Fact]
+    public async Task Edit_of_a_module_stored_without_a_value_list_stores_an_empty_one()
+    {
+        var (_, design) = await SeedDesign();
+        var designModule = TestData.DesignModule(design, await SeedModule());
+        designModule.Values = null;
+        await Seed(designModule);
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = designModule.ModuleId, name = "renamed", moduleVersion = "1.0.0", values = NoValues }, Ct);
+
+        var json = await ReadAsync<JsonElement>(response);
+        Assert.Equal(JsonValueKind.Array, json.GetProperty("values").ValueKind);
+        Assert.Equal(0, json.GetProperty("values").GetArrayLength());
+        var stored = await StoredDesignModule(designModule.Id);
+        Assert.Equal("renamed", stored.Name);
+        Assert.NotNull(stored.Values);
+        Assert.Empty(stored.Values);
+    }
+
+    /// <summary>An edit body without <c>values</c> is answered with a 500, and nothing is stored.</summary>
+    [Fact]
+    public async Task Edit_without_a_values_member_answers_with_a_server_error()
+    {
+        var (_, design, designModule) = await SeedDesignModule();
+
+        var response = await RootClient.PutAsJsonAsync($"api/designModules/{designModule.Id}",
+            new { designId = design.Id, moduleId = designModule.ModuleId, name = "renamed", moduleVersion = "1.0.0" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("Object reference not set to an instance of an object.", problem.Detail);
         Assert.Equal(designModule.Name, (await StoredDesignModule(designModule.Id)).Name);
     }
 

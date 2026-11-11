@@ -10,7 +10,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Data;
-using AutoMapper;
 using Caster.Api.Infrastructure.Options;
 using Microsoft.Extensions.Options;
 using Caster.Api.Domain.Models;
@@ -27,20 +26,17 @@ namespace Caster.Api.Domain.Services
     public class GitlabRepositoryService : IGitlabRepositoryService
     {
         private readonly CasterContext _db;
-        private readonly IMapper _mapper;
         private readonly IOptionsMonitor<TerraformOptions> _terraformOptions;
         private readonly IHttpClientFactory _httpClientFactory;
         private HttpClient _httpClient;
 
         public GitlabRepositoryService(
             CasterContext db,
-            IMapper mapper,
             IOptionsMonitor<TerraformOptions> terraformOptions,
             IHttpClientFactory httpClientFactory
         )
         {
             _db = db;
-            _mapper = mapper;
             _terraformOptions = terraformOptions;
             _httpClientFactory = httpClientFactory;
         }

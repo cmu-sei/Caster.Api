@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Workspaces.Interfaces;
@@ -54,7 +53,6 @@ namespace Caster.Api.Features.Workspaces
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext,
             TerraformOptions terraformOptions,
             TelemetryService telemetryService) : BaseHandler<Command, Workspace>
@@ -64,12 +62,12 @@ namespace Caster.Api.Features.Workspaces
 
             public override async Task<Workspace> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var workspace = mapper.Map<Domain.Models.Workspace>(request);
+                var workspace = request.ToEntity();
                 workspace = await SetCascadedProperties(workspace, request, cancellationToken);
 
                 dbContext.Workspaces.Add(workspace);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Workspace>(workspace);
+                return workspace.ToWorkspace();
             }
 
             private async Task<Domain.Models.Workspace> SetCascadedProperties(Domain.Models.Workspace workspace, Command request, CancellationToken ct)

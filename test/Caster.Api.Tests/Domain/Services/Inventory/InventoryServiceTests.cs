@@ -42,8 +42,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         public void Disabled_IsTheDefault()
         {
             Assert.Empty(new InfrastructureOptions().Connections);
-            Assert.False(new InfrastructureConnectionOptions().Enabled);
-            Assert.Equal(30, new InfrastructureConnectionOptions().RefreshMinutes);
+            Assert.False(new InfrastructureConnectionOptions().Inventory.Enabled);
+            Assert.Equal(30, new InfrastructureConnectionOptions().Inventory.RefreshMinutes);
             Assert.Equal("vsphere", new InfrastructureConnectionOptions().Provider);
 
             // and nothing is served until a read succeeds
@@ -125,7 +125,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             // a long interval, so the only thing that can trigger a second read is ForceRefresh
             var options = EnabledOptions();
-            options.Connections[0].RefreshMinutes = 600;
+            options.Connections[0].Inventory.RefreshMinutes = 600;
 
             var sut = Build(options, client);
 
@@ -159,7 +159,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             });
 
             var options = EnabledOptions();
-            options.Connections[0].RefreshMinutes = 600;
+            options.Connections[0].Inventory.RefreshMinutes = 600;
 
             var sut = Build(options, client);
 
@@ -201,7 +201,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var client = new FakeProviderClient(_ => Loaded());
 
             var options = EnabledOptions();
-            options.Connections[0].RefreshMinutes = 600;
+            options.Connections[0].Inventory.RefreshMinutes = 600;
 
             var sut = Build(options, client);
             client.OnCall = token => providerToken = token;
@@ -439,7 +439,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             await RunReads(sut, refreshes: 1, beforeRefresh: () =>
             {
                 var disabled = EnabledOptions();
-                disabled.Connections[0].Enabled = false;
+                disabled.Connections[0].Inventory.Enabled = false;
                 monitor.Set(disabled);
             });
 
@@ -447,7 +447,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             Assert.False(templates.Available);
             Assert.False(templates.Stale);
-            Assert.Contains("Set Infrastructure:Connections:0:Enabled to true", templates.Error);
+            Assert.Contains("Set Infrastructure:Connections:0:Inventory:Enabled to true", templates.Error);
         }
 
         /// <summary>
@@ -554,7 +554,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         public async Task EachConnection_MessagesNameItsOwnSettings()
         {
             var options = TwoConnections();
-            options.Connections[1].Enabled = false;
+            options.Connections[1].Inventory.Enabled = false;
 
             var sut = Build(options, new FakeProviderClient(ReadFrom));
 
@@ -562,14 +562,14 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             var error = sut.GetSnapshot("lab2").VmTemplates.Error;
 
-            Assert.Contains("Set Infrastructure:Connections:1:Enabled to true", error);
+            Assert.Contains("Set Infrastructure:Connections:1:Inventory:Enabled to true", error);
             Assert.DoesNotContain("Set Infrastructure:Enabled", error);
 
             // the first connection names its own index too
-            options.Connections[0].Enabled = false;
+            options.Connections[0].Inventory.Enabled = false;
             var first = Build(options, new FakeProviderClient(ReadFrom));
             await Run(first);
-            Assert.Contains("Set Infrastructure:Connections:0:Enabled to true", first.GetSnapshot("default").VmTemplates.Error);
+            Assert.Contains("Set Infrastructure:Connections:0:Inventory:Enabled to true", first.GetSnapshot("default").VmTemplates.Error);
         }
 
         [Fact]
@@ -655,7 +655,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             // the listing type has nowhere to put a url or a secret
             var properties = typeof(InventoryConnectionInfo).GetProperties().Select(x => x.Name).ToArray();
-            Assert.Equal(["Name", "Provider", "Enabled", "IsDefault", "LastUpdated"], properties);
+            Assert.Equal(["Name", "Provider", "Enabled", "IsDefault", "LastUpdated", "Resources", "Error"], properties);
         }
 
         [Fact]
@@ -666,7 +666,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             {
                 // names are compared ignoring case
                 Name = "Default",
-                Enabled = true,
+                Inventory = { Enabled = true },
                 Provider = "proxmox",
                 Url = "https://impostor.test"
             });
@@ -681,7 +681,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         public void ConnectionWithoutAName_IsIgnored()
         {
             var options = EnabledOptions();
-            options.Connections.Add(new InfrastructureConnectionOptions { Enabled = true, Provider = "proxmox", Url = "https://pve.test:8006" });
+            options.Connections.Add(new InfrastructureConnectionOptions { Inventory = { Enabled = true }, Provider = "proxmox", Url = "https://pve.test:8006" });
 
             var sut = Build(options, new FakeProviderClient(ReadFrom));
 
@@ -692,7 +692,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         public void TheDefault_IsTheFirstEnabledConnection()
         {
             var options = TwoConnections();
-            options.Connections[0].Enabled = false;
+            options.Connections[0].Inventory.Enabled = false;
 
             var sut = Build(options, new FakeProviderClient(ReadFrom));
 
@@ -755,6 +755,266 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         #endregion
 
+        #region Settings
+
+        [Fact]
+        public async Task Misconfigured_IsNeverReadAndSaysWhy()
+        {
+            var options = TwoConnections();
+            options.Connections[1].Inventory.Resources.Networks.Include = "lab-(";
+            var client = new FakeProviderClient(ReadFrom);
+            var sut = Build(options, client);
+
+            await Run(sut);
+
+            Assert.Equal(0, client.CallsTo("https://pve2.test:8006"));
+            var connection = sut.GetConnections().Single(x => x.Name == "lab2");
+            Assert.Contains("misconfigured", connection.Error);
+            Assert.Contains("Infrastructure:Connections:1:Inventory:Resources:Networks:Include", connection.Error);
+
+            var snapshot = sut.GetSnapshot("lab2");
+            Assert.False(snapshot.Networks.Available);
+            Assert.Equal(connection.Error, snapshot.VmTemplates.Error);
+
+            // the other connection is read as usual
+            Assert.Null(sut.GetConnections().Single(x => x.Name == "default").Error);
+            Assert.True(sut.GetSnapshot().VmTemplates.Available);
+        }
+
+        [Fact]
+        public async Task ATurnedOffKind_IsNotEnabled_AndListedAsSuch()
+        {
+            var options = EnabledOptions();
+            options.Connections[0].Inventory.Resources.Networks.Enabled = false;
+            var sut = Build(options, new FakeProviderClient(_ => Loaded()));
+
+            await Run(sut);
+
+            var snapshot = sut.GetSnapshot();
+            Assert.False(snapshot.Networks.Enabled);
+            Assert.Empty(snapshot.Networks.Entries);
+            Assert.Contains("Infrastructure:Connections:0:Inventory:Resources:Networks:Enabled", snapshot.Networks.Error);
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.DoesNotContain(InventoryCategory.Network, sut.GetConnections()[0].Resources);
+        }
+
+        [Fact]
+        public async Task Filters_AreAppliedToWhatIsCached()
+        {
+            var options = EnabledOptions();
+            options.Connections[0].Inventory.Resources.VmTemplates.Exclude = "^win";
+            var sut = Build(options, new FakeProviderClient(_ => Loaded()));
+
+            await Run(sut);
+
+            Assert.Empty(sut.GetSnapshot().VmTemplates.Entries);
+            Assert.Single(sut.GetSnapshot().Networks.Entries);
+        }
+
+        public static TheoryData<string> VisibleChanges() =>
+        [
+            "Username", "Password", "Datacenters", "IsoLocations", "Resources", "Provider"
+        ];
+
+        /// <summary>
+        /// Anything that changes what the connection lists empties the cache, so nothing
+        /// read with the old settings is shown, or kept as stale.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(VisibleChanges))]
+        public async Task AVisibleSettingChange_DropsTheCache(string setting)
+        {
+            var monitor = new TestOptionsMonitor<InfrastructureOptions>(EnabledOptions());
+            var reads = 0;
+            var sut = Build(monitor, new FakeProviderClient(_ => Interlocked.Increment(ref reads) == 1
+                ? LoadedAt(FirstRead)
+                : InventorySnapshot.AllUnavailable(Refused)));
+
+            await RunReads(sut, refreshes: 1, beforeRefresh: () =>
+            {
+                var changed = EnabledOptions();
+                var connection = changed.Connections[0];
+
+                switch (setting)
+                {
+                    case "Username": connection.Username = "someone-else"; break;
+                    case "Password": connection.Password = "a-new-password"; break;
+                    case "Datacenters": connection.Datacenters = ["DC2"]; break;
+                    case "IsoLocations": connection.IsoLocations = ["other-ds"]; break;
+                    case "Resources": connection.Inventory.Resources.Hosts.Exclude = "^esx9"; break;
+                    case "Provider": connection.Provider = "proxmox"; break;
+                }
+
+                monitor.Set(changed);
+                Assert.False(sut.GetSnapshot().VmTemplates.Available);
+            });
+
+            var snapshot = sut.GetSnapshot();
+            Assert.False(snapshot.VmTemplates.Available);
+            Assert.False(snapshot.VmTemplates.Stale);
+            Assert.Empty(snapshot.VmTemplates.Entries);
+        }
+
+        [Fact]
+        public async Task ARefreshIntervalChange_KeepsTheCache()
+        {
+            var monitor = new TestOptionsMonitor<InfrastructureOptions>(EnabledOptions());
+            var reads = 0;
+            var sut = Build(monitor, new FakeProviderClient(_ => Interlocked.Increment(ref reads) == 1
+                ? LoadedAt(FirstRead)
+                : InventorySnapshot.AllUnavailable(Refused)));
+
+            await RunReads(sut, refreshes: 1, beforeRefresh: () =>
+            {
+                var changed = EnabledOptions();
+                changed.Connections[0].Inventory.RefreshMinutes = 5;
+                monitor.Set(changed);
+            });
+
+            // the failed refresh keeps the read from before, as stale
+            var templates = sut.GetSnapshot().VmTemplates;
+            Assert.True(templates.Available);
+            Assert.True(templates.Stale);
+        }
+
+        /// <summary>
+        /// A read that was running when the settings changed finishes with the old
+        /// settings. It is discarded, never cached, and the next read uses the new ones.
+        /// </summary>
+        [Fact]
+        public async Task AReadStartedBeforeASettingsChange_IsDiscarded()
+        {
+            var monitor = new TestOptionsMonitor<InfrastructureOptions>(EnabledOptions());
+            var client = new BlockingProviderClient();
+            var sut = Build(monitor, client);
+
+            try
+            {
+                var starting = sut.StartAsync(CancellationToken.None);
+                await client.FirstCallStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+                var changed = EnabledOptions();
+                changed.Connections[0].Password = "rotated-password";
+                monitor.Set(changed);
+
+                client.Release.TrySetResult();
+                await starting;
+
+                // the old read is not shown, even for a moment
+                Assert.DoesNotContain(sut.GetSnapshot().VmTemplates.Entries, x => x.Name == "read-with-sup3r-s3cret-pw");
+
+                await WaitFor(() => sut.GetSnapshot().VmTemplates.Available);
+                Assert.Equal("read-with-rotated-password", Assert.Single(sut.GetSnapshot().VmTemplates.Entries).Name);
+            }
+            finally
+            {
+                client.Release.TrySetResult();
+                await sut.StopAsync(CancellationToken.None);
+            }
+        }
+
+        [Fact]
+        public async Task ProviderThrows_LogsOnlyTheRedactedMessage()
+        {
+            const string tokenSecret = "lab2-test-secret-not-real";
+            var options = TwoConnections();
+            var logger = new Crucible.Api.Testing.RecordingLogger<InventoryService>();
+            var client = new FakeProviderClient(o => o.Url == "https://pve2.test:8006"
+                ? throw new InvalidOperationException($"refused {Lab2Token}, secret {tokenSecret}")
+                : throw new InvalidOperationException($"login failed for {Password}"));
+            var sut = new InventoryService(new TestOptionsMonitor<InfrastructureOptions>(options), client, logger);
+
+            await Run(sut);
+
+            var errors = logger.At(LogLevel.Error);
+            Assert.Equal(2, errors.Count);
+            Assert.All(errors, x =>
+            {
+                Assert.Null(x.Exception);
+                Assert.DoesNotContain(Password, x.Message);
+                Assert.DoesNotContain(Lab2Token, x.Message);
+                Assert.DoesNotContain(tokenSecret, x.Message);
+                Assert.Contains("InvalidOperationException", x.Message);
+            });
+            Assert.DoesNotContain(tokenSecret, sut.GetSnapshot("lab2").VmTemplates.Error);
+        }
+
+        /// <summary>
+        /// Refreshes that overlap a read wait for it rather than queue a read each: however
+        /// many arrive, at most one more read follows the one in flight.
+        /// </summary>
+        [Fact]
+        public async Task OverlappingRefreshes_AreMerged()
+        {
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var calls = 0;
+            var client = new FakeProviderClient(_ =>
+            {
+                if (Interlocked.Increment(ref calls) == 2)
+                {
+                    blocked.TrySetResult();
+                    gate.Task.Wait(TimeSpan.FromSeconds(10));
+                }
+
+                return Loaded();
+            });
+            var sut = Build(EnabledOptions(), client);
+
+            try
+            {
+                await sut.StartAsync(CancellationToken.None);
+                sut.ForceRefresh();
+                await blocked.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+                var refreshes = Enumerable.Range(0, 5)
+                    .Select(_ => sut.ForceRefreshAsync(TimeSpan.FromSeconds(10), CancellationToken.None))
+                    .ToArray();
+
+                gate.TrySetResult();
+
+                Assert.All(await Task.WhenAll(refreshes), Assert.True);
+                await WaitFor(() => Volatile.Read(ref calls) >= 3);
+                await Task.Delay(200, TestContext.Current.CancellationToken);
+
+                Assert.Equal(3, Volatile.Read(ref calls));
+            }
+            finally
+            {
+                gate.TrySetResult();
+                await sut.StopAsync(CancellationToken.None);
+            }
+        }
+
+        /// <summary>The first read waits to be released; every read names the password it used.</summary>
+        private sealed class BlockingProviderClient : IInventoryProviderClient
+        {
+            private int _calls;
+
+            public TaskCompletionSource FirstCallStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public async Task<InventorySnapshot> GetInventoryAsync(InfrastructureConnectionOptions options, CancellationToken cancellationToken)
+            {
+                if (Interlocked.Increment(ref _calls) == 1)
+                {
+                    FirstCallStarted.TrySetResult();
+                    await Release.Task;
+                }
+
+                return new InventorySnapshot
+                {
+                    LastUpdated = DateTime.UtcNow,
+                    VmTemplates = InventoryCategoryResult.Ok([
+                        new InventoryEntry { Id = "vm-1", Name = $"read-with-{options.Password}", Path = "vm-1" }
+                    ])
+                };
+            }
+        }
+
+        #endregion
+
         #region Helpers
 
         /// <summary>One enabled vSphere connection, named default.</summary>
@@ -765,12 +1025,11 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 new InfrastructureConnectionOptions
                 {
                     Name = "default",
-                    Enabled = true,
+                    Inventory = { Enabled = true, RefreshMinutes = 600 },
                     Provider = "vsphere",
                     Url = "https://vcenter.test",
                     Username = "caster-ro@vsphere.local",
                     Password = Password,
-                    RefreshMinutes = 600
                 }
             ]
         };
@@ -794,7 +1053,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         private static InventoryService Build(IOptionsMonitor<InfrastructureOptions> monitor, IInventoryProviderClient client) =>
             new(monitor, client, Substitute.For<ILogger<InventoryService>>());
 
-        private const string Lab2Token = "caster@pve!lab2=9f1c2d3e-0000-4000-8000-00000000abcd";
+        // Not shaped like a real token secret (a UUID), so secret scanning leaves it alone.
+        private const string Lab2Token = "caster@pve!lab2=lab2-test-secret-not-real";
 
         /// <summary>
         /// The default connection plus an enabled Proxmox connection named lab2,
@@ -807,11 +1067,10 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             options.Connections.Add(new InfrastructureConnectionOptions
             {
                 Name = "lab2",
-                Enabled = true,
+                Inventory = { Enabled = true, RefreshMinutes = 600 },
                 Provider = "proxmox",
                 Url = "https://pve2.test:8006",
                 ApiToken = Lab2Token,
-                RefreshMinutes = 600
             });
 
             return options;

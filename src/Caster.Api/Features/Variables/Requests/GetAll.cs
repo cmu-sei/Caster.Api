@@ -11,10 +11,8 @@ using Caster.Api.Infrastructure.Authorization;
 using System.Linq;
 using Caster.Api.Features.Shared;
 using FluentValidation;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 
@@ -36,7 +34,7 @@ public class GetAll
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Variable[]>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Variable[]>
     {
         public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Design>(request.DesignId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -51,7 +49,7 @@ public class GetAll
             }
 
             var variables = await variablesQuery
-                .ProjectTo<Variable>(mapper.ConfigurationProvider)
+                .ProjectToVariable()
                 .ToArrayAsync(cancellationToken);
 
             return variables;

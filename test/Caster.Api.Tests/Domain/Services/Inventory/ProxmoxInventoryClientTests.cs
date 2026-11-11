@@ -32,7 +32,8 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
     public class ProxmoxInventoryClientTests
     {
         private const string Password = "sup3r-s3cret-pw";
-        private const string TokenSecret = "8f1c2d3e-4b5a-6789-abcd-ef0123456789";
+        // Not shaped like a real token secret (a UUID), so secret scanning leaves it alone.
+        private const string TokenSecret = "test-token-secret-not-real";
         private const string ApiToken = "caster-ro@pve!inventory=" + TokenSecret;
         private const string Ticket = "PVE:caster-ro@pve:68E0AB01::t1ck3t+s1gnature==";
 
@@ -46,6 +47,21 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
           { "id": "qemu/105", "vmid": 105, "name": "alpine-linux-template", "node": "pve", "type": "qemu", "template": 1, "status": "stopped", "maxcpu": 1, "maxmem": 536870912, "maxdisk": 222298112 },
           { "id": "qemu/106", "vmid": 106, "name": "tinycore-linux-template", "node": "pve", "type": "qemu", "template": 1, "status": "stopped", "maxcpu": 1, "maxmem": 536870912, "maxdisk": 0 },
           { "id": "lxc/120", "vmid": 120, "name": "alpine-ct-template", "node": "pve2", "type": "lxc", "template": 1, "status": "stopped", "maxcpu": 2, "maxmem": 1073741824, "maxdisk": 8589934592 }
+        ] }
+        """;
+
+        /// <summary>
+        /// GET /api2/json/cluster/resources?type=storage: one entry per storage per
+        /// node, "shared" as the integer 0 or 1. "local" is on each node with its own
+        /// numbers; a storage that isn't active on a node has no size there.
+        /// </summary>
+        private const string StorageResourcesBody = """
+        { "data": [
+          { "id": "storage/pve/local", "storage": "local", "node": "pve", "type": "storage", "disk": 30000000000, "maxdisk": 100000000000, "shared": 0, "status": "available" },
+          { "id": "storage/pve2/local", "storage": "local", "node": "pve2", "type": "storage", "disk": 10000000000, "maxdisk": 50000000000, "shared": 0, "status": "available" },
+          { "id": "storage/pve/local-lvm", "storage": "local-lvm", "node": "pve", "type": "storage", "disk": 5000000000, "maxdisk": 400000000000, "shared": 1, "status": "available" },
+          { "id": "storage/pve2/local-lvm", "storage": "local-lvm", "node": "pve2", "type": "storage", "disk": 5000000000, "maxdisk": 400000000000, "shared": 1, "status": "available" },
+          { "id": "storage/pve2/iso-stock", "storage": "iso-stock", "node": "pve2", "type": "storage", "status": "unknown" }
         ] }
         """;
 
@@ -643,12 +659,118 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         #endregion
 
+        #region Locations, filters and capacity
+
+        [Fact]
+        public async Task GetInventoryAsync_ReadsTheConfigOnlyOfTemplatesThatAreListed()
+        {
+            var requested = new List<string>();
+            var options = Options();
+            options.Inventory.Resources.VmTemplates.Include = "^alpine";
+
+            var snapshot = InventoryFilters.Apply(await Read(Track(requested, DefaultResponder()), options), options);
+
+            Assert.Equal(["alpine-ct-template", "alpine-linux-template"], snapshot.VmTemplates.Entries.Select(x => x.Name));
+            Assert.Contains("/api2/json/nodes/pve/qemu/105/config", requested);
+            Assert.DoesNotContain("/api2/json/nodes/pve/qemu/106/config", requested);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ATemplateIsInItsNodeAndPool()
+        {
+            var options = Options();
+            options.Inventory.Resources.VmTemplates.Locations = ["golden", "PVE2"];
+
+            var snapshot = InventoryFilters.Apply(await Read(Responder(vm: """
+            { "data": [
+              { "id": "qemu/105", "vmid": 105, "name": "in-pool", "node": "pve", "pool": "Golden", "type": "qemu", "template": 1 },
+              { "id": "qemu/106", "vmid": 106, "name": "no-pool", "node": "pve", "type": "qemu", "template": 1 },
+              { "id": "lxc/120", "vmid": 120, "name": "on-pve2", "node": "pve2", "type": "lxc", "template": 1 }
+            ] }
+            """), options), options);
+
+            Assert.Equal(["in-pool", "on-pve2"], snapshot.VmTemplates.Entries.Select(x => x.Name));
+            Assert.Equal("Golden", snapshot.VmTemplates.Entries[0].Properties["pool"]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ABridgeIsOnItsNodesAndAVnetInItsZone()
+        {
+            var options = Options();
+            options.Inventory.Resources.Networks.Locations = ["evpnzone"];
+
+            var snapshot = InventoryFilters.Apply(await Read(Responder(vnets: """
+            { "data": [
+              { "vnet": "vnet-dmz", "type": "vnet", "zone": "evpnzone", "tag": 200 },
+              { "vnet": "vnet-lab", "type": "vnet", "zone": "simple" }
+            ] }
+            """), options), options);
+
+            Assert.Equal(["vnet-dmz"], snapshot.Networks.Entries.Select(x => x.Name));
+
+            options.Inventory.Resources.Networks.Locations = ["pve"];
+            snapshot = InventoryFilters.Apply(await Read(DefaultResponder(), options), options);
+
+            Assert.Contains("vmbr0", snapshot.Networks.Entries.Select(x => x.Name));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_GivesDatastoresTheirCapacity()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            // node-local storage on two nodes is summed
+            var local = snapshot.Datastores.Entries.Single(x => x.Name == "local");
+            Assert.Equal("150000000000", local.Properties["capacity"]);
+            Assert.Equal("110000000000", local.Properties["freeSpace"]);
+            Assert.Equal("false", local.Properties["shared"]);
+            Assert.Equal("pve,pve2", local.Properties["nodes"]);
+
+            // shared storage repeats the same numbers on every node, so it's counted once
+            var shared = snapshot.Datastores.Entries.Single(x => x.Name == "local-lvm");
+            Assert.Equal("400000000000", shared.Properties["capacity"]);
+            Assert.Equal("395000000000", shared.Properties["freeSpace"]);
+            Assert.Equal("true", shared.Properties["shared"]);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ListsDatastoresWithoutCapacityWhenItCannotBeRead()
+        {
+            var snapshot = await Read(request => request.RequestUri.PathAndQuery == "/api2/json/cluster/resources?type=storage"
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : DefaultResponder()(request));
+
+            Assert.True(snapshot.Datastores.Available);
+            Assert.All(snapshot.Datastores.Entries, x => Assert.False(x.Properties.ContainsKey("capacity")));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_DoesNotReadKindsThatAreTurnedOff()
+        {
+            var requested = new List<string>();
+            var options = Options();
+            options.Inventory.Resources.VmTemplates.Enabled = false;
+            options.Inventory.Resources.Isos.Enabled = false;
+            options.Inventory.Resources.Networks.Enabled = false;
+            options.Inventory.Resources.Hosts.Enabled = false;
+
+            var snapshot = InventoryFilters.Apply(await Read(Track(requested, DefaultResponder()), options), options);
+
+            Assert.DoesNotContain(requested, x => x.Contains("/qemu/") || x.EndsWith("/network") || x.EndsWith("/content") || x == "/api2/json/nodes");
+            Assert.DoesNotContain("/api2/json/cluster/sdn/vnets", requested);
+            Assert.False(snapshot.VmTemplates.Enabled);
+            Assert.False(snapshot.Hosts.Enabled);
+            Assert.True(snapshot.Datastores.Available);
+        }
+
+        #endregion
+
         #region Independence
 
         [Fact]
         public async Task GetInventoryAsync_VmTemplatesFailIndependently()
         {
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api2/json/cluster/resources"
+            var snapshot = await Read(request => request.RequestUri.PathAndQuery == "/api2/json/cluster/resources?type=vm"
                 ? new HttpResponseMessage(HttpStatusCode.Forbidden)
                 : DefaultResponder()(request));
 
@@ -980,12 +1102,11 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         private static InfrastructureConnectionOptions Options() => new()
         {
-            Enabled = true,
+            Inventory = { Enabled = true, RefreshMinutes = 30 },
             Provider = "proxmox",
             Url = "https://pve.test:8006",
             ApiToken = ApiToken,
             InsecureSkipVerify = true,
-            RefreshMinutes = 30
         };
 
         private static InfrastructureConnectionOptions TicketOptions()
@@ -1008,9 +1129,9 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
         private const string GuestsBody = """
         { "data": [
-          { "id": "qemu/103", "vmid": 103, "name": "web", "node": "pve", "type": "qemu", "template": 0, "status": "running" },
-          { "id": "qemu/104", "vmid": 104, "name": "db", "node": "pve", "type": "qemu", "template": 0, "status": "stopped" },
-          { "id": "lxc/130", "vmid": 130, "name": "dns", "node": "pve", "type": "lxc", "template": 0, "status": "running" },
+          { "id": "qemu/103", "vmid": 103, "name": "web", "node": "pve", "type": "qemu", "template": 0, "status": "running", "maxcpu": 4, "maxmem": 4294967296 },
+          { "id": "qemu/104", "vmid": 104, "name": "db", "node": "pve", "type": "qemu", "template": 0, "status": "stopped", "maxcpu": 8, "maxmem": 8589934592 },
+          { "id": "lxc/130", "vmid": 130, "name": "dns", "node": "pve", "type": "lxc", "template": 0, "status": "running", "maxcpu": 1, "maxmem": 536870912 },
           { "id": "qemu/105", "vmid": 105, "name": "alpine-linux-template", "node": "pve", "type": "qemu", "template": 1, "status": "stopped" }
         ] }
         """;
@@ -1033,6 +1154,9 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             // the template is not a guest
             Assert.Equal("3", pve["vmsTotal"]);
             Assert.Equal("2", pve["vmsRunning"]);
+            // only the running guests count against the node
+            Assert.Equal("5", pve["allocatedCpus"]);
+            Assert.Equal("4608", pve["allocatedMemoryMiB"]);
 
             var pve2 = snapshot.Hosts.Entries[1].Properties;
             Assert.Equal("offline", pve2["status"]);
@@ -1049,7 +1173,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var inner = Responder(nodes: LoadedNodesBody);
             var calls = 0;
             // The templates read the VM list first; fail only the hosts' read of it.
-            var snapshot = await Read(request => request.RequestUri.AbsolutePath == "/api2/json/cluster/resources" && ++calls == 2
+            var snapshot = await Read(request => request.RequestUri.PathAndQuery == "/api2/json/cluster/resources?type=vm" && ++calls == 2
                 ? new HttpResponseMessage(HttpStatusCode.Forbidden)
                 : inner(request));
 
@@ -1079,10 +1203,16 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             string nodes = null,
             string network = null,
             string isos = null,
-            string vnets = null) =>
+            string vnets = null,
+            string storageResources = null) =>
             request =>
             {
                 var path = request.RequestUri.AbsolutePath;
+
+                if (request.RequestUri.PathAndQuery == "/api2/json/cluster/resources?type=storage")
+                {
+                    return Json(storageResources ?? StorageResourcesBody);
+                }
 
                 if (path.Contains("/storage/") && path.EndsWith("/content"))
                 {

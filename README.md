@@ -17,6 +17,8 @@ In Kubernetes mode each run executes as a Kubernetes Job, which continues while 
 
 Caster discovers the Modules offered in Designer from git repositories or a GitLab group. See [docs/Modules.md](docs/Modules.md) for module sources, repository requirements, and git credentials.
 
+Before a run is applied, Caster checks its size against deployment limits and the room left on the hypervisors. See [docs/Capacity.md](docs/Capacity.md) for the `Capacity` settings and how room is worked out.
+
 ## Testing
 
 The tests are in `test/Caster.Api.Tests`:

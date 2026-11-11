@@ -8,7 +8,6 @@ using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Features.DesignModules;
@@ -65,7 +64,7 @@ public class CreateFromAiDraft
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Design>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Design>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -139,7 +138,7 @@ public class CreateFromAiDraft
                 design.Modules.Add(designModule);
 
             await dbContext.SaveChangesAsync(cancellationToken);
-            return mapper.Map<Design>(design);
+            return design.ToDesign();
         }
     }
 }
