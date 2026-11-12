@@ -37,6 +37,6 @@ Admins give a group Environment Sets and connections on the set's or connection'
 
 ## When changes take effect
 
-Permissions are cached per user for `ClaimsTransformation:CacheExpirationSeconds` (60 by default) when `ClaimsTransformation:EnableCaching` is on, the default. A change to a group's memberships or projects clears the cached permissions of the group's members, as a change to a project's memberships does, so it applies to their next request. The cache is per API instance: with several replicas, the others catch up when their cached permissions expire. Open project pages are told about changes to the sets they get.
+Permissions are cached per user for `ClaimsTransformation:CacheExpirationSeconds` (60 by default) when `ClaimsTransformation:EnableCaching` is on, the default. A change to a group's memberships or projects, including a project created in the group, clears the cached permissions of the group's members once it is saved, as a change to a project's memberships does, so it applies to their next request. The cache is per API instance: with several replicas, the others catch up when their cached permissions expire. Open project pages are told about changes to the sets they get.
 
 Deleting a group leaves its projects and hosts, ungrouped, and removes its memberships and what it carried from them. Groups and their links are never part of a project export.

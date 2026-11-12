@@ -17,7 +17,9 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Domain.Services;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Caster.Api.Features.ProjectGroups.EventHandlers;
 
 namespace Caster.Api.Features.Projects
 {
@@ -58,6 +60,7 @@ namespace Caster.Api.Features.Projects
             CasterContext dbContext,
             TelemetryService telemetryService,
             IIdentityResolver identityResolver,
+            IMemoryCache cache,
             ILogger<Handler> logger) : BaseHandler<Command, Project>
         {
             /// <summary>
@@ -96,6 +99,12 @@ namespace Caster.Api.Features.Projects
                 dbContext.ProjectMemberships.Add(projectMembership);
 
                 await dbContext.SaveChangesAsync(cancellationToken);
+
+                // The group's members get permissions in the new project through its memberships.
+                if (project.ProjectGroupId is { } groupId)
+                {
+                    await cache.ClearMembers(dbContext, [groupId], cancellationToken);
+                }
 
                 return project.ToProject();
             }

@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services.EnvironmentSets;
 using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Features.EnvironmentSets;
 using Caster.Api.Features.ProjectGroups.EventHandlers;
@@ -53,8 +54,11 @@ public class AddProject
             return current is not { } old || old == request.ProjectGroupId || access.CanManage(old);
         }
 
-        public override Task<ProjectGroup> HandleRequest(Command request, CancellationToken cancellationToken) =>
-            dbContext.WithEnvironmentSetLock(async () =>
+        public override async Task<ProjectGroup> HandleRequest(Command request, CancellationToken cancellationToken)
+        {
+            var touched = new List<Guid>();
+
+            var view = await dbContext.WithEnvironmentSetLock(async () =>
             {
                 if (!await dbContext.ProjectGroups.AnyAsync(x => x.Id == request.ProjectGroupId, cancellationToken))
                     throw new EntityNotFoundException<ProjectGroup>();
@@ -72,17 +76,23 @@ public class AddProject
                     changes.ProjectGroupChanges[project.Id] = request.ProjectGroupId;
                     await dbContext.EnsureNoConflicts(changes, cancellationToken);
 
-                    var touched = new List<Guid> { request.ProjectGroupId };
+                    touched.Add(request.ProjectGroupId);
                     if (project.ProjectGroupId is { } left)
                         touched.Add(left);
 
                     project.ProjectGroupId = request.ProjectGroupId;
                     await dbContext.SaveChangesAsync(cancellationToken);
-                    await cache.ClearMembers(dbContext, touched, cancellationToken);
                 }
 
                 return await dbContext.GetView(request.ProjectGroupId, access, cancellationToken);
             }, cancellationToken);
+
+            // After the commit: a member's request inside the transaction would read the old
+            // groups and cache them again.
+            await cache.ClearMembers(dbContext, touched, cancellationToken);
+
+            return view;
+        }
     }
 }
 
@@ -135,7 +145,11 @@ public class AssignSet
         public Guid EnvironmentSetId { get; set; }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, ProjectGroupAccess access) : BaseHandler<Command, ProjectGroup>
+    public class Handler(
+        ICasterAuthorizationService authorizationService,
+        CasterContext dbContext,
+        ISecretSource secretSource,
+        ProjectGroupAccess access) : BaseHandler<Command, ProjectGroup>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize([SystemPermission.ManageEnvironmentSets], cancellationToken);
@@ -146,13 +160,17 @@ public class AssignSet
                 if (!await dbContext.ProjectGroups.AnyAsync(x => x.Id == request.ProjectGroupId, cancellationToken))
                     throw new EntityNotFoundException<ProjectGroup>();
 
-                var setName = await dbContext.EnvironmentSets.Where(x => x.Id == request.EnvironmentSetId)
-                    .Select(x => x.Name).FirstOrDefaultAsync(cancellationToken)
+                var set = await dbContext.EnvironmentSets
+                    .AsNoTracking()
+                    .Include(x => x.Entries)
+                    .SingleOrDefaultAsync(x => x.Id == request.EnvironmentSetId, cancellationToken)
                     ?? throw new EntityNotFoundException<Domain.Models.EnvironmentSet>();
 
                 if (await dbContext.ProjectGroupEnvironmentSets.AnyAsync(
                         x => x.ProjectGroupId == request.ProjectGroupId && x.EnvironmentSetId == request.EnvironmentSetId, cancellationToken))
-                    throw new ConflictException($"Environment Set \"{setName}\" is already assigned to this group.");
+                    throw new ConflictException($"Environment Set \"{set.Name}\" is already assigned to this group.");
+
+                secretSource.EnsureAssignable(set);
 
                 var changes = new ProposedSetChanges();
                 changes.GroupAssignments.Add((request.ProjectGroupId, request.EnvironmentSetId));

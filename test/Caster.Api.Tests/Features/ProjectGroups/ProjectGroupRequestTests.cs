@@ -11,6 +11,7 @@ using Caster.Api.Features.ProjectGroups.EventHandlers;
 using Caster.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using GroupView = Caster.Api.Features.ProjectGroups.ProjectGroup;
 using InventoryConnectionView = Caster.Api.Features.Inventory.InventoryConnection;
@@ -165,6 +166,28 @@ public class ProjectGroupRequestTests(DatabaseFixture fixture, CasterAppFactory 
         Assert.True(await ReadBack(db => db.Projects.AnyAsync(x => x.Name == "New" && x.ProjectGroupId == group.Id, Ct)));
     }
 
+    /// <summary>A project created in a group reaches the group's members at once, though their permissions are cached.</summary>
+    [Fact]
+    public async Task Creating_a_project_in_a_group_forgets_its_members_cached_permissions()
+    {
+        var group = Group();
+        await Seed(group);
+        var creator = await Actor().WithSystemPermissions(SystemPermission.CreateProjects).SeedAsync();
+        var member = await Actor().SeedAsync();
+        var outsider = await Actor().SeedAsync();
+        await Seed(Membership(group, creator.Id, TestData.ProjectRoles.Manager), Membership(group, member.Id, TestData.ProjectRoles.Observer));
+
+        var cache = Factory.Services.GetRequiredService<IMemoryCache>();
+        cache.Set(member.Id, "claims");
+        cache.Set(outsider.Id, "claims");
+
+        await AssertStatus(HttpStatusCode.Created,
+            await Client(creator).PostAsJsonAsync("api/projects", new { name = "New", projectGroupId = group.Id }, Ct));
+
+        Assert.False(cache.TryGetValue(member.Id, out _));
+        Assert.True(cache.TryGetValue(outsider.Id, out _));
+    }
+
     // ---- what a group carries --------------------------------------------------------------------
 
     [Fact]
@@ -203,6 +226,21 @@ public class ProjectGroupRequestTests(DatabaseFixture fixture, CasterAppFactory 
 
         await AssertProblem(HttpStatusCode.Conflict, response);
         Assert.Contains("REGION", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>As for a project: the secret patterns may have changed since the set's entries were saved.</summary>
+    [Fact]
+    public async Task A_set_whose_secret_no_longer_matches_the_patterns_cannot_be_given_to_a_group()
+    {
+        var (group, _) = await SeedGroupWithProject();
+        var set = TestData.EnvironmentSet("Stale");
+        await Seed(set, TestData.SecretEntry(set, "TOKEN", "OTHER_TOKEN"));
+
+        var response = await RootClient.PostAsync($"{Groups}/{group.Id}/environment-sets/{set.Id}", null, Ct);
+
+        await AssertProblem(HttpStatusCode.Conflict, response);
+        Assert.Contains("no longer match the secret patterns", await response.Content.ReadAsStringAsync(Ct));
+        Assert.False(await ReadBack(db => db.ProjectGroupEnvironmentSets.AnyAsync(x => x.ProjectGroupId == group.Id, Ct)));
     }
 
     [Fact]

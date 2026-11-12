@@ -219,19 +219,9 @@ public class EditAssignments
                 }
             }
 
-            // The patterns may have changed since the entries were saved.
             foreach (var set in addedSets.Select(x => sets[x]))
             {
-                var disallowed = set.Entries
-                    .Where(x => x.ValueSource == EnvironmentSetValueSource.Secret && !secretSource.IsAllowed(x.SecretName))
-                    .Select(EnvironmentSetRules.Describe)
-                    .ToList();
-
-                if (disallowed.Count > 0)
-                {
-                    throw new ConflictException(
-                        $"Environment Set \"{set.Name}\" has secrets whose sources no longer match the secret patterns: {string.Join(", ", disallowed)}.");
-                }
+                secretSource.EnsureAssignable(set);
             }
 
             if (proposed.ProjectAssignments.Count > 0 || proposed.GroupAssignments.Count > 0)
