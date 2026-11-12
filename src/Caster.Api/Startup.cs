@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Extensions;
 using Caster.Api.Features.Files;
@@ -106,6 +107,10 @@ namespace Caster.Api
             services.AddOptions()
                 .Configure<FileVersionScrubOptions>(Configuration.GetSection("FileVersions"))
                     .AddScoped(config => config.GetService<IOptionsMonitor<FileVersionScrubOptions>>().CurrentValue);
+
+            services.AddOptions()
+                .Configure<InfrastructureOptions>(Configuration.GetSection("Infrastructure"))
+                    .AddScoped(config => config.GetService<IOptionsMonitor<InfrastructureOptions>>().CurrentValue);
 
 
             services.AddMvc()
@@ -232,6 +237,12 @@ namespace Caster.Api
 
             services.AddSingleton<IRunQueueService, RunQueueService>();
             services.AddSingleton<IHostedService>(x => x.GetService<IRunQueueService>());
+
+            // Read-only infrastructure inventory. Off unless a connection sets Inventory:Enabled.
+            services.AddInventoryServices();
+            services.AddSingleton<InventoryService>();
+            services.AddSingleton<IInventoryService>(x => x.GetService<InventoryService>());
+            services.AddSingleton<IHostedService>(x => x.GetService<InventoryService>());
 
             services.AddScoped<IGetFileQuery, GetFileQuery>();
 
