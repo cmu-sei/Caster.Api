@@ -56,7 +56,34 @@ internal static class TestConfiguration
         ["Terraform:DefaultVersion"] = TerraformVersions[0],
         ["Terraform:RootWorkingDirectory"] = TerraformRootWorkingDirectory,
         ["Terraform:GitlabApiUrl"] = GitlabApiUrl,
+
+        // Two infrastructure connections, so Environment Set entries and projects can name them. The
+        // vSphere one has its inventory on, so it can be a project's default; the hosted inventory
+        // service is removed, so nothing is ever read from either.
+        ["Infrastructure:Connections:0:Name"] = ProxmoxConnection,
+        ["Infrastructure:Connections:0:Provider"] = "proxmox",
+        ["Infrastructure:Connections:0:Url"] = "https://pve.test:8006",
+        ["Infrastructure:Connections:0:ApiToken"] = ProxmoxApiToken,
+        ["Infrastructure:Connections:0:InsecureSkipVerify"] = "true",
+        ["Infrastructure:Connections:1:Name"] = VsphereConnection,
+        ["Infrastructure:Connections:1:Provider"] = "vsphere",
+        ["Infrastructure:Connections:1:Url"] = "https://vcenter.test",
+        ["Infrastructure:Connections:1:Username"] = "caster@vsphere.local",
+        ["Infrastructure:Connections:1:Password"] = VspherePassword,
+        ["Infrastructure:Connections:1:Datacenters:0"] = "DC1",
+        ["Infrastructure:Connections:1:Inventory:Enabled"] = "true",
     };
+
+    /// <summary>The Proxmox connection in <see cref="Values"/>.</summary>
+    public const string ProxmoxConnection = "lab-pve";
+
+    // Not a real token, and not shaped like one: secret scanning matches a token whose secret is a UUID.
+    public const string ProxmoxApiToken = "caster@pve!ci=test-token-not-a-secret";
+
+    /// <summary>The vSphere connection in <see cref="Values"/>.</summary>
+    public const string VsphereConnection = "lab-vcenter";
+
+    public const string VspherePassword = "vc-passw0rd-for-tests";
 
     /// <summary>Deletes what <see cref="TerraformBinaryPath"/> and <see cref="TerraformRootWorkingDirectory"/> created.</summary>
     public static void RemoveTerraformDirectories()

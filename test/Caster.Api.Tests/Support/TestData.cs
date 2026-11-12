@@ -277,5 +277,76 @@ public static class TestData
         };
 
     /// <summary>A fixed creation timestamp. Tests that care about ordering pass their own.</summary>
+    /// <summary>An Environment Set, named uniquely by default because <c>environment_sets.name</c> is uniquely indexed.</summary>
+    public static EnvironmentSet EnvironmentSet(string name = null)
+    {
+        var id = Guid.NewGuid();
+
+        return new EnvironmentSet
+        {
+            Id = id,
+            Name = name ?? $"set-{id:N}"
+        };
+    }
+
+    /// <summary>A plain entry of <paramref name="set"/>.</summary>
+    public static EnvironmentSetEntry PlainEntry(
+        EnvironmentSet set,
+        string targetName,
+        string value,
+        EnvironmentSetEntryKind kind = EnvironmentSetEntryKind.EnvironmentVariable) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            EnvironmentSetId = set.Id,
+            Kind = kind,
+            TargetName = targetName,
+            ValueSource = EnvironmentSetValueSource.Plain,
+            Value = value
+        };
+
+    /// <summary>A secret entry of <paramref name="set"/>, read from the API environment variable <paramref name="secretName"/>.</summary>
+    public static EnvironmentSetEntry SecretEntry(
+        EnvironmentSet set,
+        string targetName,
+        string secretName,
+        EnvironmentSetEntryKind kind = EnvironmentSetEntryKind.EnvironmentVariable) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            EnvironmentSetId = set.Id,
+            Kind = kind,
+            TargetName = targetName,
+            ValueSource = EnvironmentSetValueSource.Secret,
+            SecretName = secretName
+        };
+
+    /// <summary>The assignment of <paramref name="set"/> to <paramref name="project"/>.</summary>
+    /// <summary>A connection entry of <paramref name="set"/>.</summary>
+    public static EnvironmentSetEntry ConnectionEntry(
+        EnvironmentSet set,
+        string targetName,
+        string connectionName,
+        ConnectionField field,
+        EnvironmentSetEntryKind kind = EnvironmentSetEntryKind.EnvironmentVariable) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            EnvironmentSetId = set.Id,
+            Kind = kind,
+            TargetName = targetName,
+            ValueSource = EnvironmentSetValueSource.Connection,
+            ConnectionName = connectionName,
+            ConnectionField = field
+        };
+
+    public static ProjectEnvironmentSet ProjectEnvironmentSet(Project project, EnvironmentSet set) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = project.Id,
+            EnvironmentSetId = set.Id
+        };
+
     public static readonly DateTime DefaultDateCreated = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 }

@@ -87,12 +87,25 @@ namespace Caster.Api.Features.Inventory
         /// </summary>
         public string Error { get; set; }
 
-        internal static InventoryResult From(InventorySnapshot snapshot, InventoryCategory category)
+        /// <summary>
+        /// The connection read, by name. Null from a project's routes when the project has no
+        /// usable connection, in which case nothing is listed.
+        /// </summary>
+        public string Connection { get; set; }
+
+        internal static InventoryResult NoConnection(string reason) => new()
+        {
+            Available = false,
+            Error = reason
+        };
+
+        internal static InventoryResult From(InventorySnapshot snapshot, InventoryCategory category, string connection = null)
         {
             var result = snapshot.Get(category);
 
             return new InventoryResult
             {
+                Connection = connection,
                 Items = result.Entries
                     .Select(x => new InventoryItem
                     {

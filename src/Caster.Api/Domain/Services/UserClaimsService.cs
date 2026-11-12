@@ -192,7 +192,7 @@ namespace Caster.Api.Domain.Services
                 }
                 else
                 {
-                    permissions = role.Permissions.Select(x => x.ToString()).ToList();
+                    permissions = SystemPermissionImplications.Expand(role.Permissions).Select(x => x.ToString()).ToList();
                 }
 
                 foreach (var permission in permissions)

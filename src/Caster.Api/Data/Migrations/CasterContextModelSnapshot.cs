@@ -196,6 +196,80 @@ namespace Caster.Api.Data.Migrations
                     b.ToTable("directories");
                 });
 
+            modelBuilder.Entity("Caster.Api.Domain.Models.EnvironmentSet", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("environment_sets");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.EnvironmentSetEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<int?>("ConnectionField")
+                        .HasColumnType("integer")
+                        .HasColumnName("connection_field");
+
+                    b.Property<string>("ConnectionName")
+                        .HasColumnType("text")
+                        .HasColumnName("connection_name");
+
+                    b.Property<Guid>("EnvironmentSetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("environment_set_id");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("SecretName")
+                        .HasColumnType("text")
+                        .HasColumnName("secret_name");
+
+                    b.Property<string>("TargetName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("target_name");
+
+                    b.Property<string>("Value")
+                        .HasColumnType("text")
+                        .HasColumnName("value");
+
+                    b.Property<int>("ValueSource")
+                        .HasColumnType("integer")
+                        .HasColumnName("value_source");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentSetId", "Kind", "TargetName")
+                        .IsUnique();
+
+                    b.ToTable("environment_set_entries");
+                });
+
             modelBuilder.Entity("Caster.Api.Domain.Models.File", b =>
                 {
                     b.Property<Guid>("Id")
@@ -607,6 +681,64 @@ namespace Caster.Api.Data.Migrations
                     b.ToTable("projects");
                 });
 
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectEnvironmentSet", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<Guid>("EnvironmentSetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("environment_set_id");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentSetId");
+
+                    b.HasIndex("ProjectId", "EnvironmentSetId")
+                        .IsUnique();
+
+                    b.ToTable("project_environment_sets");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectInventoryConnection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("uuid_generate_v4()");
+
+                    b.Property<string>("ConnectionName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("connection_name");
+
+                    b.Property<string>("NormalizedConnectionName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("normalized_connection_name");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedConnectionName");
+
+                    b.HasIndex("ProjectId", "NormalizedConnectionName")
+                        .IsUnique();
+
+                    b.ToTable("project_inventory_connections");
+                });
+
             modelBuilder.Entity("Caster.Api.Domain.Models.ProjectMembership", b =>
                 {
                     b.Property<Guid>("Id")
@@ -831,7 +963,7 @@ namespace Caster.Api.Data.Migrations
                             Description = "Can perform all View actions, but not make any changes.",
                             Immutable = false,
                             Name = "Observer",
-                            Permissions = new[] { 1, 7, 9, 11, 13, 15, 17, 19, 21 }
+                            Permissions = new[] { 1, 7, 9, 11, 13, 15, 17, 19, 21, 22 }
                         });
                 });
 
@@ -1062,6 +1194,17 @@ namespace Caster.Api.Data.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("Caster.Api.Domain.Models.EnvironmentSetEntry", b =>
+                {
+                    b.HasOne("Caster.Api.Domain.Models.EnvironmentSet", "EnvironmentSet")
+                        .WithMany("Entries")
+                        .HasForeignKey("EnvironmentSetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EnvironmentSet");
+                });
+
             modelBuilder.Entity("Caster.Api.Domain.Models.File", b =>
                 {
                     b.HasOne("Caster.Api.Domain.Models.Directory", "Directory")
@@ -1204,6 +1347,36 @@ namespace Caster.Api.Data.Migrations
                     b.Navigation("Partition");
                 });
 
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectEnvironmentSet", b =>
+                {
+                    b.HasOne("Caster.Api.Domain.Models.EnvironmentSet", "EnvironmentSet")
+                        .WithMany("Projects")
+                        .HasForeignKey("EnvironmentSetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Caster.Api.Domain.Models.Project", "Project")
+                        .WithMany("EnvironmentSets")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EnvironmentSet");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("Caster.Api.Domain.Models.ProjectInventoryConnection", b =>
+                {
+                    b.HasOne("Caster.Api.Domain.Models.Project", "Project")
+                        .WithMany("InventoryConnections")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("Caster.Api.Domain.Models.ProjectMembership", b =>
                 {
                     b.HasOne("Caster.Api.Domain.Models.Group", "Group")
@@ -1326,6 +1499,13 @@ namespace Caster.Api.Data.Migrations
                     b.Navigation("Workspaces");
                 });
 
+            modelBuilder.Entity("Caster.Api.Domain.Models.EnvironmentSet", b =>
+                {
+                    b.Navigation("Entries");
+
+                    b.Navigation("Projects");
+                });
+
             modelBuilder.Entity("Caster.Api.Domain.Models.File", b =>
                 {
                     b.Navigation("FileVersions");
@@ -1363,6 +1543,10 @@ namespace Caster.Api.Data.Migrations
             modelBuilder.Entity("Caster.Api.Domain.Models.Project", b =>
                 {
                     b.Navigation("Directories");
+
+                    b.Navigation("EnvironmentSets");
+
+                    b.Navigation("InventoryConnections");
 
                     b.Navigation("Memberships");
                 });

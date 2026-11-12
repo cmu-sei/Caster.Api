@@ -56,6 +56,7 @@ public class TerraformOptions
 
     public KubernetesJobOptions KubernetesJobs { get; set; } = new();
     public EnvironmentVariableOptions EnvironmentVariables { get; set; } = new();
+    public SecretOptions Secrets { get; set; } = new();
 }
 
 public class KubernetesJobOptions
@@ -106,9 +107,35 @@ public class KubernetesJobOptions
 
 public class EnvironmentVariableOptions
 {
+    /// <summary>
+    /// Pass every API environment variable to every run, except those matching
+    /// <see cref="SecretOptions.Patterns"/>. Off by default: the API's environment
+    /// holds its own database connection string, OIDC client secret and GitLab token.
+    /// </summary>
     public bool InheritAll { get; set; }
     public string[] Inherit { get; set; } = [];
     public Dictionary<string, string> Direct { get; set; } = [];
+}
+
+public class SecretOptions
+{
+    /// <summary>
+    /// Regular expressions naming the API environment variables that hold secrets.
+    /// A matching variable never reaches a run through
+    /// <see cref="EnvironmentVariableOptions.Inherit"/> or <see cref="EnvironmentVariableOptions.InheritAll"/>;
+    /// it only reaches the projects an Environment Set gives it to.
+    /// The shipped default (appsettings.json) is <c>^CASTER_SECRET_</c>. No default is set here,
+    /// because the configuration binder appends to an array that already holds values.
+    /// </summary>
+    public string[] Patterns { get; set; } = [];
+
+    /// <summary>
+    /// The shortest secret value Caster will pass to a run. Output is masked by replacing
+    /// every occurrence of a secret, so a short one ("1", "true", "lab") would also replace
+    /// ordinary text, and corrupt the JSON Caster reads from Terraform. A run whose secret is
+    /// shorter fails before Terraform starts. Lowering this risks that corruption.
+    /// </summary>
+    public int MinimumMaskedLength { get; set; } = Caster.Api.Domain.Services.EnvironmentSets.EnvironmentSetRules.DefaultMinimumMaskedLength;
 }
 
 public class ConfigMap

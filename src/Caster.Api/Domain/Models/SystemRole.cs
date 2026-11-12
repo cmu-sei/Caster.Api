@@ -49,7 +49,30 @@ public enum SystemPermission
     ManageModules,
     // Appended, not grouped with the others: stored as ints, so existing roles
     // keep their meaning.
-    ViewInfrastructure
+    ViewInfrastructure,
+    ViewEnvironmentSets,
+    ManageEnvironmentSets,
+    ManageInfrastructure
+}
+
+/// <summary>
+/// Permissions that bring another with them, so every permission can use its own screens.
+/// Only the permissions added with Environment Sets and the inventory; the older ones are
+/// granted separately, as they always were.
+/// </summary>
+public static class SystemPermissionImplications
+{
+    private static readonly Dictionary<SystemPermission, SystemPermission[]> Implied = new()
+    {
+        [SystemPermission.ManageEnvironmentSets] = [SystemPermission.ViewEnvironmentSets],
+        [SystemPermission.ManageInfrastructure] = [SystemPermission.ViewInfrastructure],
+    };
+
+    /// <summary><paramref name="permissions"/> with every permission they imply.</summary>
+    public static IEnumerable<SystemPermission> Expand(IEnumerable<SystemPermission> permissions) =>
+        (permissions ?? [])
+            .SelectMany(x => Implied.TryGetValue(x, out var implied) ? implied.Prepend(x) : [x])
+            .Distinct();
 }
 
 public static class SystemRoleDefaults

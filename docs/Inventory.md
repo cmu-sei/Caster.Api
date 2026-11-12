@@ -1,6 +1,6 @@
 # Infrastructure Inventory
 
-Caster can read what is on the hypervisors it deploys to (VM templates, content library items, ISOs, networks, datastores and hosts) and list it in each Project's Infrastructure panel, with Terraform to copy for each object. It reads vSphere (vCenter) and Proxmox VE. The inventory is off by default, and viewing it needs the `ViewInfrastructure` permission.
+Caster can read what is on the hypervisors it deploys to (VM templates, content library items, ISOs, networks, datastores and hosts) and list it in each Project's Inventory panel, with Terraform to copy for each object. It reads vSphere (vCenter) and Proxmox VE. The inventory is off by default. `ViewInfrastructure` holders see every connection; a project's members (`ViewProject`) see the connections assigned to their project.
 
 ## Connections
 
@@ -39,7 +39,7 @@ As environment variables, the same settings are `Infrastructure__Connections__0_
 - **IsoLocations** says where the connection's ISOs live. For vSphere it's datastore names (`iso-datastore`) or folders (`[iso-datastore] stock`), and it's required: with none, no ISOs are listed. For Proxmox it's storage names (`iso-stock`) or the start of a volid (`local:iso/stock-`), and with none every ISO storage is read.
 - **Datacenters** (vSphere only) limits the read to the named datacenters. Empty reads all of them. Content libraries belong to the whole vCenter, so `Datacenters` doesn't filter them.
 
-The API never returns a connection's url or credentials. Variables under `Infrastructure__` are never passed to Terraform runs, even with `Terraform:EnvironmentVariables:InheritAll` on.
+The API never returns a connection's url or credentials. Variables under `Infrastructure__` are never passed to Terraform runs, even with `Terraform:EnvironmentVariables:InheritAll` on; a run gets a connection's settings only through an Environment Set's connection entries.
 
 ## What is read
 
@@ -47,7 +47,7 @@ The API never returns a connection's url or credentials. Variables under `Infras
 
 `Inventory:Resources` has a setting for each kind of object: `VmTemplates`, `Isos`, `Networks`, `Datastores`, `ContentLibraries` and `Hosts`. All of them are on by default.
 
-- **Enabled: false** skips reading that kind of object. Its endpoint reports it as not enabled, and the Infrastructure panel leaves it out. Data another kind needs is still read, e.g. datastores for the ISO search.
+- **Enabled: false** skips reading that kind of object. Its endpoint reports it as not enabled, and the Inventory panel leaves it out. Data another kind needs is still read, e.g. datastores for the ISO search.
 - **Locations** lists only objects in those places. Every entry ignores case.
   - vSphere: a full inventory path, in the form `govc` uses, matching that folder and everything below it. `/DC1/vm/Templates` matches `/DC1/vm/Templates/linux/ubuntu`. VM templates take a VM folder, datastores a datastore folder or datastore cluster, and hosts a cluster. Networks take a network folder, or a distributed switch's name to list its port groups.
   - Proxmox: a name. VM templates take a node or resource pool, networks a node (for bridges) or SDN zone (for vnets), datastores a storage, and hosts a node.
@@ -55,6 +55,15 @@ The API never returns a connection's url or credentials. Variables under `Infras
 - **Include** and **Exclude** are regular expressions on the object's name, ignoring case. An object is listed when its name matches `Include` (or there is none) and doesn't match `Exclude`.
 
 A setting that can't be used, such as an invalid regular expression or a location in the wrong form, marks the connection as misconfigured. It isn't read, and `GET api/inventory/connections` and every inventory endpoint say why. The API still starts.
+
+## Projects
+
+A connection's inventory reaches a project's Inventory panel only when the connection is assigned to the project: in Administration > Connections, in the project's Environment dialog, through `POST api/assignments` (several changes at once, see [Environment Sets](EnvironmentSets.md#assigning)) or `POST api/projects/{id}/inventory/connections/{name}`. Assigning needs `ManageInfrastructure`, not a project permission, so a project's managers can't give themselves a hypervisor.
+
+* `api/projects/{id}/inventory/...` serves the same lists as `api/inventory/...`, for the project's connections only. A request that names no connection reads the project's first assigned connection, in configuration order, with inventory enabled. A project with none gets an empty result with no connection, never another connection's data.
+* An assignment names the connection as configuration spelled it. A connection that leaves configuration, or is renamed, stays assigned and shows as missing.
+* Assigning a connection gives its inventory, not its credentials. Runs get credentials only from [Environment Sets](EnvironmentSets.md), whose connection entries name a connection on their own.
+* Assignments are not exported.
 
 ## Paths
 

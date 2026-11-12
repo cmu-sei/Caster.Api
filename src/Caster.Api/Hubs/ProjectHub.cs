@@ -136,6 +136,19 @@ public class ProjectHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.RolesAdmin));
     }
 
+    public async Task JoinEnvironmentSetsAdmin()
+    {
+        if (!await _authorizationService.Authorize([SystemPermission.ViewEnvironmentSets], Context.ConnectionAborted))
+            throw new ForbiddenException();
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, nameof(HubGroups.EnvironmentSetsAdmin));
+    }
+
+    public async Task LeaveEnvironmentSetsAdmin()
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.EnvironmentSetsAdmin));
+    }
+
     #region RunOutput
 
     enum OutputType

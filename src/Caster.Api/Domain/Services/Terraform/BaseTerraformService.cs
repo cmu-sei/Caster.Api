@@ -2,10 +2,8 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Exceptions;
@@ -16,12 +14,12 @@ namespace Caster.Api.Domain.Services.Terraform;
 public abstract class BaseTerraformService : ITerraformService
 {
     protected readonly TerraformOptions _options;
-    protected IRegexService _regexService;
+    private readonly ITerraformEnvironmentBuilder _environmentBuilder;
 
-    public BaseTerraformService(TerraformOptions options, IRegexService regexService)
+    public BaseTerraformService(TerraformOptions options, ITerraformEnvironmentBuilder environmentBuilder)
     {
         _options = options;
-        _regexService = regexService;
+        _environmentBuilder = environmentBuilder;
     }
 
     /// <summary>
@@ -190,66 +188,87 @@ public abstract class BaseTerraformService : ITerraformService
     }
 
     /// <summary>
-    /// The API's own environment variables that never reach a run, even with InheritAll on or an
-    /// Inherit pattern that matches them. Infrastructure connections hold the hypervisor
-    /// credentials the inventory reads with.
+    /// API variables a run needs even when they are not inherited. None by default: a
+    /// Kubernetes job gets PATH and HOME from its image.
     /// </summary>
-    private static readonly string[] HeldBackPrefixes = ["Infrastructure__", "Infrastructure:"];
+    protected virtual IEnumerable<string> BaselineEnvironmentVariables => [];
 
-    /// <summary>Whether an API environment variable is kept out of runs. See <see cref="HeldBackPrefixes"/>.</summary>
-    public static bool IsHeldBack(string name) =>
-        HeldBackPrefixes.Any(prefix => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-
-    protected Dictionary<string, string> GetEnvironmentVariables(Workspace workspace)
+    /// <summary>
+    /// Builds the run's environment from the project's Environment Sets and masks their
+    /// secret values in everything the command outputs: the streamed lines, what the
+    /// finalizer saves and the result.
+    /// </summary>
+    protected async Task<TerraformResult> Run(Workspace workspace, IEnumerable<string> argumentList,
+                                              Action<string> outputHandler, bool resume = false,
+                                              Func<string, Task> finalizer = null, bool redirectStandardError = true)
     {
-        var envVars = new Dictionary<string, string>
+        var arguments = argumentList?.ToArray();
+        var command = arguments?.FirstOrDefault();
+
+        var environment = await _environmentBuilder.BuildAsync(
+            workspace, BaselineEnvironmentVariables, ReadsVariables(command, resume));
+
+        // A plan or apply names the sets it used first, so the saved output records them.
+        var sourcesLine = !resume && environment.IsValid && command is "plan" or "apply"
+            ? environment.DescribeSources()
+            : null;
+
+        // The masker is read at each use: a command that reattaches to a running job adds the
+        // values that job was given.
+        Action<string> maskedOutputHandler = outputHandler is null
+            ? null
+            : line => outputHandler(environment.Masker.Apply(line));
+
+        Func<string, Task> maskedFinalizer = finalizer is null
+            ? null
+            : output => finalizer(WithSources(sourcesLine, environment.Masker.Apply(output)));
+
+        if (sourcesLine is not null)
         {
-            { "TF_IN_AUTOMATION", "true" }
+            outputHandler?.Invoke(sourcesLine);
+        }
+
+        var result = await RunCore(workspace, arguments, environment, maskedOutputHandler, resume, maskedFinalizer, redirectStandardError);
+
+        if (result is not null)
+        {
+            result.Output = WithSources(sourcesLine, environment.Masker.Apply(result.Output));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Whether a command reads the configuration's variables, so needs the Terraform-variable
+    /// entries. An apply runs the saved plan, which holds them; init, workspace, show, output
+    /// and state commands don't evaluate them. A resumed command is treated as reading them.
+    /// </summary>
+    public static bool ReadsVariables(string command, bool resume) =>
+        resume || command is "plan" or "import" or "refresh" or null;
+
+    private static string WithSources(string sourcesLine, string output) =>
+        sourcesLine is null ? output : $"{sourcesLine}{Environment.NewLine}{output}";
+
+    /// <summary>
+    /// The result of a command that cannot start because its environment is incomplete
+    /// (<see cref="TerraformEnvironment.Errors"/>). Fails rather than starting without a
+    /// credential, which would let providers fall back to other ambient credentials.
+    /// </summary>
+    protected static TerraformResult EnvironmentFailure(TerraformEnvironment environment, Action<string> outputHandler)
+    {
+        var lines = new List<string> { "Terraform was not started: the project's Environment Sets are incomplete." };
+        lines.AddRange(environment.Errors);
+
+        foreach (var line in lines)
+        {
+            outputHandler?.Invoke(line);
+        }
+
+        return new TerraformResult
+        {
+            ExitCode = -1,
+            Output = string.Join(Environment.NewLine, lines) + Environment.NewLine
         };
-
-        if (!workspace.IsDefault)
-        {
-            envVars.Add("TF_WORKSPACE", workspace.Name);
-        }
-
-        var envVarOptions = _options.EnvironmentVariables;
-
-        var appEnvVars = Environment.GetEnvironmentVariables()
-            .Cast<DictionaryEntry>()
-            .ToDictionary(
-                e => e.Key?.ToString() ?? string.Empty,
-                e => e.Value?.ToString() ?? string.Empty
-            );
-
-        if (!envVarOptions.InheritAll)
-        {
-            Regex[] regexes = _regexService.GetEnvironmentVariableRegexes();
-
-            appEnvVars = appEnvVars.Where(x =>
-            {
-                foreach (var regex in regexes)
-                {
-                    if (regex.IsMatch(x.Key))
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
-            }).ToDictionary();
-        }
-
-        foreach (var appEnvVar in appEnvVars.Where(x => !IsHeldBack(x.Key)))
-        {
-            envVars.Add(appEnvVar.Key, appEnvVar.Value);
-        }
-
-        foreach (var kvp in envVarOptions.Direct)
-        {
-            envVars[kvp.Key] = kvp.Value;
-        }
-
-        return envVars;
     }
 
     public abstract bool EnableOutputTimer { get; }
@@ -265,7 +284,12 @@ public abstract class BaseTerraformService : ITerraformService
 
     public abstract Task<IEnumerable<Guid>> GetActiveWorkspaces();
 
-    protected abstract Task<TerraformResult> Run(Workspace workspace, IEnumerable<string> argumentList,
-                                                 Action<string> outputHandler, bool resume = false,
-                                                 Func<string, Task> finalizer = null, bool redirectStandardError = true);
+    /// <summary>
+    /// Runs one Terraform command with <paramref name="environment"/>. Must not start a new
+    /// process or job when <see cref="TerraformEnvironment.IsValid"/> is false
+    /// (return <see cref="EnvironmentFailure"/>); reattaching to one already running is fine.
+    /// </summary>
+    protected abstract Task<TerraformResult> RunCore(Workspace workspace, IEnumerable<string> argumentList,
+                                                     TerraformEnvironment environment, Action<string> outputHandler,
+                                                     bool resume, Func<string, Task> finalizer, bool redirectStandardError);
 }

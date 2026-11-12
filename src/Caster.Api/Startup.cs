@@ -218,6 +218,13 @@ namespace Caster.Api
             services.AddScoped<ICasterAuthorizationService, AuthorizationService>();
 
             services.AddSingleton<IRegexService, RegexService>();
+            services.AddSingleton<Domain.Services.EnvironmentSets.IApiEnvironment, Domain.Services.EnvironmentSets.ApiEnvironment>();
+            services.AddSingleton<Domain.Services.EnvironmentSets.ISecretSource, Domain.Services.EnvironmentSets.SecretSource>();
+            services.AddSingleton<Domain.Services.Inventory.IInfrastructureConnectionCatalog, Domain.Services.Inventory.InfrastructureConnectionCatalog>();
+            services.AddScoped<Domain.Services.EnvironmentSets.IEntryValues, Domain.Services.EnvironmentSets.EntryValues>();
+            services.AddScoped<Domain.Services.Terraform.ITerraformEnvironmentBuilder, Domain.Services.Terraform.TerraformEnvironmentBuilder>();
+            services.AddScoped<Features.EnvironmentSets.IEnvironmentSetViews, Features.EnvironmentSets.EnvironmentSetViews>();
+            services.AddScoped<Features.Inventory.ProjectInventoryConnections>();
             services.AddSingleton<Domain.Services.IAuthenticationService, Domain.Services.AuthenticationService>();
             services.AddSingleton<ILockService, LockService>();
             services.AddSingleton<IUserIdProvider, SubUserIdProvider>();

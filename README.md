@@ -15,6 +15,8 @@ The toggle is held in memory and resets when Caster.Api restarts.
 
 In Kubernetes mode each run executes as a Kubernetes Job, which continues while Caster.Api restarts. See [docs/Runs.md](docs/Runs.md) for both execution modes and their settings.
 
+Credentials for Terraform runs come from API environment variables that admins assign to projects as Environment Sets, so they never need to be in `.tf` files. See [docs/EnvironmentSets.md](docs/EnvironmentSets.md).
+
 Caster discovers the Modules offered in Designer from git repositories or a GitLab group. See [docs/Modules.md](docs/Modules.md) for module sources, repository requirements, and git credentials.
 
 Caster can list the VM templates, ISOs, networks, datastores and hosts on the vSphere and Proxmox hypervisors it deploys to, with Terraform to copy for each. See [docs/Inventory.md](docs/Inventory.md) for the connection settings and the filters on what is read.
