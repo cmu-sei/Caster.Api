@@ -112,9 +112,10 @@ public class KubernetesTerraformService : BaseTerraformService
             var container = job.Spec?.Template?.Spec?.Containers?.SingleOrDefault()
                 ?? throw new InvalidOperationException("Job does not contain exactly one container.");
 
-            // After an API restart the job may carry values the sets no longer give, such as a
-            // credential rotated mid-run. They are literal in the job spec, so they are masked too.
-            environment.Masker = environment.Masker.With(JobSecretValues(container, environment));
+            // After an API restart the job may carry secrets today's environment no longer gives:
+            // a credential rotated mid-run, or one whose secret, entry or set has gone since. They
+            // are literal in the job spec, so every value that isn't a plain one known today is masked.
+            environment.Masker = environment.Masker.With(JobValuesToMask(container, environment));
 
             var jobArg = container.Args?.FirstOrDefault();
             var expectedArg = argumentList?.FirstOrDefault();
@@ -188,11 +189,21 @@ public class KubernetesTerraformService : BaseTerraformService
         };
     }
 
-    /// <summary>The values the job's container was given for the variables that are secrets now.</summary>
-    public static IEnumerable<string> JobSecretValues(V1Container container, TerraformEnvironment environment) =>
+    /// <summary>
+    /// The values the job's container was given, except those today's environment gives the same
+    /// variable as a plain value. Fails closed: whatever has changed since the job started is masked,
+    /// as nothing records which of its variables were secrets then.
+    /// </summary>
+    public static IEnumerable<string> JobValuesToMask(V1Container container, TerraformEnvironment environment) =>
         (container.Env ?? [])
-            .Where(x => x.Name is not null && environment.SecretNames.Contains(x.Name) && !string.IsNullOrEmpty(x.Value))
+            .Where(x => !string.IsNullOrEmpty(x.Value) && !IsKnownPlainValue(x, environment))
             .Select(x => x.Value);
+
+    private static bool IsKnownPlainValue(V1EnvVar variable, TerraformEnvironment environment) =>
+        variable.Name is not null
+        && !environment.SecretNames.Contains(variable.Name)
+        && environment.Variables.TryGetValue(variable.Name, out var value)
+        && string.Equals(value, variable.Value, StringComparison.Ordinal);
 
     private string GetImage(Workspace workspace)
     {
