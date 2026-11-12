@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.EnvironmentSets;
+using Caster.Api.Domain.Services.ProjectGroups;
 using Caster.Api.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -238,9 +239,16 @@ public class TerraformEnvironmentBuilder(
             return [];
         }
 
+        // The project's own sets and its group's, each once.
+        var setIds = await dbContext.EffectiveSetAssignments()
+            .Where(x => x.ProjectId == projectId.Value)
+            .Select(x => x.EnvironmentSetId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
         return await dbContext.EnvironmentSets
             .AsNoTracking()
-            .Where(x => x.Projects.Any(p => p.ProjectId == projectId.Value))
+            .Where(x => setIds.Contains(x.Id))
             .Include(x => x.Entries)
             .OrderBy(x => x.Name)
             .ToListAsync(cancellationToken);

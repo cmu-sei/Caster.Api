@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using FluentValidation;
 using MediatR;
 using Caster.Api.Data;
 using System.Runtime.Serialization;
@@ -56,6 +57,22 @@ namespace Caster.Api.Features.Hosts
             /// </summary>
             [DataMember]
             public Guid? ProjectId { get; set; }
+
+            /// <summary>
+            /// The Id of the project group to assign this Host to, instead of a Project
+            /// </summary>
+            [DataMember]
+            public Guid? ProjectGroupId { get; set; }
+        }
+
+        public class Validator : AbstractValidator<Command>
+        {
+            public Validator()
+            {
+                RuleFor(x => x)
+                    .Must(x => !(x.ProjectId.HasValue && x.ProjectGroupId.HasValue))
+                    .WithMessage("A Host belongs to a Project or a project group, not both.");
+            }
         }
 
         public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Host>

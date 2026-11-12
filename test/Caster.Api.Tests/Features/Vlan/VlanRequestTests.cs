@@ -498,6 +498,14 @@ public class VlanRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.Equal("No VLANs available", problem.Title);
     }
 
+    /// <summary>A project that doesn't exist is refused, not given a VLAN from the default partition.</summary>
+    [Fact]
+    public async Task AcquireVlan_for_a_project_that_does_not_exist_is_refused()
+    {
+        await AssertProblem(HttpStatusCode.BadRequest,
+            await RootClient.PostAsJsonAsync("api/vlans/actions/acquire", new { projectId = Guid.NewGuid() }, Ct));
+    }
+
     [Fact]
     public async Task ReleaseVlan_by_a_caller_holding_ManageVLANs_frees_the_vlan()
     {

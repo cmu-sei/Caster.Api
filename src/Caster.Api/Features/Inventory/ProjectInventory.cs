@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.Inventory;
+using Caster.Api.Domain.Services.ProjectGroups;
 using Caster.Api.Features.Shared;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
@@ -41,28 +42,51 @@ public class ProjectInventoryConnections(
         if (!await dbContext.Projects.AnyAsync(x => x.Id == projectId, cancellationToken))
             throw new EntityNotFoundException<Project>();
 
-        var assigned = await dbContext.ProjectInventoryConnections
-            .AsNoTracking()
+        // The project's own assignments and its group's.
+        var origins = await dbContext.EffectiveConnectionAssignments()
             .Where(x => x.ProjectId == projectId)
-            .Select(x => x.ConnectionName)
             .ToListAsync(cancellationToken);
+        var groupNames = await dbContext.ProjectGroups
+            .Where(x => origins.Select(o => o.ProjectGroupId).Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
+        var assigned = origins
+            .GroupBy(x => x.NormalizedConnectionName)
+            .Select(x => new
+            {
+                Normalized = x.Key,
+                Name = x.First().ConnectionName,
+                IsDirect = x.Any(o => o.ProjectGroupId == null),
+                Groups = x.Where(o => o.ProjectGroupId.HasValue).Select(o => groupNames.GetValueOrDefault(o.ProjectGroupId.Value)).ToArray()
+            })
+            .ToList();
 
         var configured = inventoryService.GetConnections();
-        var names = assigned.Select(ProjectInventoryConnection.Normalize).ToHashSet();
-        var usable = configured.Where(x => names.Contains(ProjectInventoryConnection.Normalize(x.Name))).ToList();
-        var fallback = usable.FirstOrDefault(x => x.Enabled);
+        var usable = configured
+            .Select(x => (Info: x, Assignment: assigned.FirstOrDefault(a => a.Normalized == ProjectInventoryConnection.Normalize(x.Name))))
+            .Where(x => x.Assignment is not null)
+            .ToList();
+        var fallback = usable.Select(x => x.Info).FirstOrDefault(x => x.Enabled);
 
         var present = usable.Select(x =>
         {
-            var connection = InventoryConnection.From(x);
-            connection.IsDefault = x == fallback;
+            var connection = InventoryConnection.From(x.Info);
+            connection.IsDefault = x.Info == fallback;
+            connection.IsDirect = x.Assignment.IsDirect;
+            connection.ProjectGroups = x.Assignment.Groups;
             return connection;
         });
 
         var missing = assigned
-            .Where(x => !configured.Any(c => ProjectInventoryConnection.Normalize(c.Name) == ProjectInventoryConnection.Normalize(x)))
-            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-            .Select(x => new InventoryConnection { Name = x, Status = InventoryConnectionStatus.Missing });
+            .Where(x => !configured.Any(c => ProjectInventoryConnection.Normalize(c.Name) == x.Normalized))
+            .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(x => new InventoryConnection
+            {
+                Name = x.Name,
+                Status = InventoryConnectionStatus.Missing,
+                IsDirect = x.IsDirect,
+                ProjectGroups = x.Groups
+            });
 
         return present.Concat(missing).ToArray();
     }

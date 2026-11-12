@@ -21,8 +21,17 @@ public class EnvironmentSet
 
     public EnvironmentSetEntry[] Entries { get; set; } = [];
 
-    /// <summary>The projects this set is assigned to.</summary>
+    /// <summary>The projects this set is assigned to directly.</summary>
     public EnvironmentSetProject[] Projects { get; set; } = [];
+
+    /// <summary>The project groups this set is assigned to, reaching every project in each.</summary>
+    public ProjectEnvironmentSetGroup[] ProjectGroups { get; set; } = [];
+}
+
+public class ProjectEnvironmentSetGroup
+{
+    public Guid ProjectGroupId { get; set; }
+    public string Name { get; set; }
 }
 
 public class EnvironmentSetEntry
@@ -76,6 +85,13 @@ public class ProjectEnvironmentSet
     public string Name { get; set; }
     public string Description { get; set; }
     public bool IsComplete { get; set; }
+
+    /// <summary>Whether the set is assigned to the project itself; it can also come through its group.</summary>
+    public bool IsDirect { get; set; }
+
+    /// <summary>The project group the set comes through, if it does.</summary>
+    public ProjectEnvironmentSetGroup[] ProjectGroups { get; set; } = [];
+
     public ProjectEnvironmentSetEntry[] Entries { get; set; } = [];
 }
 

@@ -215,36 +215,76 @@ namespace Caster.Api.Domain.Services
                 .Select(x => x.Id)
                 .ToListAsync();
 
-            // Get Project Permissions
+            // Get Project Permissions: the user's (and their groups') memberships of each project,
+            // and of each project's group, merged into exactly one claim per project, since a
+            // project's claim is looked up by its first match.
             var projectMemberships = await _context.ProjectMemberships
                 .Where(x => x.UserId == userId || (x.GroupId.HasValue && groupIds.Contains(x.GroupId.Value)))
-                .Include(x => x.Role)
-                .GroupBy(x => x.ProjectId)
+                .Select(x => new { x.ProjectId, x.Role.AllPermissions, x.Role.Permissions })
                 .ToListAsync();
 
-            foreach (var group in projectMemberships)
-            {
-                var projectPermissions = new List<ProjectPermission>();
-
-                foreach (var membership in group)
+            var projectGroupMemberships = await _context.ProjectGroupMemberships
+                .Where(x => x.UserId == userId || (x.GroupId.HasValue && groupIds.Contains(x.GroupId.Value)))
+                .Select(x => new
                 {
-                    if (membership.Role.AllPermissions)
-                    {
-                        projectPermissions.AddRange(Enum.GetValues<ProjectPermission>());
-                    }
-                    else
-                    {
-                        projectPermissions.AddRange(membership.Role.Permissions);
-                    }
+                    x.ProjectGroupId,
+                    x.Role.AllPermissions,
+                    x.Role.Permissions,
+                    ProjectIds = x.ProjectGroup.Projects.Select(p => p.Id).ToList()
+                })
+                .ToListAsync();
+
+            var projectPermissions = new Dictionary<Guid, HashSet<ProjectPermission>>();
+
+            void Grant(Guid projectId, bool all, IEnumerable<ProjectPermission> permissions)
+            {
+                if (!projectPermissions.TryGetValue(projectId, out var granted))
+                {
+                    granted = [];
+                    projectPermissions[projectId] = granted;
                 }
 
+                granted.UnionWith(all ? Enum.GetValues<ProjectPermission>() : permissions ?? []);
+            }
+
+            foreach (var membership in projectMemberships)
+            {
+                Grant(membership.ProjectId, membership.AllPermissions, membership.Permissions);
+            }
+
+            foreach (var membership in projectGroupMemberships)
+            {
+                foreach (var projectId in membership.ProjectIds)
+                {
+                    Grant(projectId, membership.AllPermissions, membership.Permissions);
+                }
+            }
+
+            foreach (var (projectId, permissions) in projectPermissions)
+            {
                 var permissionsClaim = new ProjectPermissionsClaim
                 {
-                    ProjectId = group.Key,
-                    Permissions = projectPermissions.Distinct().ToArray()
+                    ProjectId = projectId,
+                    Permissions = permissions.ToArray()
                 };
 
                 claims.Add(new Claim(AuthorizationConstants.ProjectPermissionsClaimType, permissionsClaim.ToString()));
+            }
+
+            // Project group permissions: every member sees the group; a manager (a role with
+            // AllPermissions or ManageProject) manages its memberships and projects.
+            foreach (var group in projectGroupMemberships.GroupBy(x => x.ProjectGroupId))
+            {
+                var manager = group.Any(x => x.AllPermissions || (x.Permissions?.Contains(ProjectPermission.ManageProject) ?? false));
+                var permissionsClaim = new ProjectGroupPermissionsClaim
+                {
+                    ProjectGroupId = group.Key,
+                    Permissions = manager
+                        ? [ProjectGroupPermission.ViewProjectGroup, ProjectGroupPermission.ManageMembership, ProjectGroupPermission.ManageProjects]
+                        : [ProjectGroupPermission.ViewProjectGroup]
+                };
+
+                claims.Add(new Claim(AuthorizationConstants.ProjectGroupPermissionsClaimType, permissionsClaim.ToString()));
             }
 
             // Get Group Permissions for Groups the user is a Manager of

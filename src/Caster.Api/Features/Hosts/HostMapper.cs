@@ -28,8 +28,9 @@ public static partial class HostMapper
 public static partial class HostPatchMapper
 {
     /// <remarks>
-    /// The project is an optional value, mapped by hand: it is written only when the command carries one
-    /// that is not null, so an explicit null is skipped like an omitted member, as AutoMapper's condition did.
+    /// The project and the project group are optional values, mapped by hand: each is written only when the
+    /// command carries one that is not null, so an explicit null is skipped like an omitted member, as
+    /// AutoMapper's condition did.
     /// </remarks>
     public static void ApplyPatchTo(this PartialEdit.Command source, Domain.Models.Host target)
     {
@@ -37,10 +38,14 @@ public static partial class HostPatchMapper
 
         if (source.ProjectId.HasValue && source.ProjectId.Value.HasValue)
             target.ProjectId = source.ProjectId.Value;
+
+        if (source.ProjectGroupId.HasValue && source.ProjectGroupId.Value.HasValue)
+            target.ProjectGroupId = source.ProjectGroupId.Value;
     }
 
     [MapperRequiredMapping(RequiredMappingStrategy.Source)]
     [MapperIgnoreSource(nameof(PartialEdit.Command.Id))]
     [MapperIgnoreSource(nameof(PartialEdit.Command.ProjectId))]
+    [MapperIgnoreSource(nameof(PartialEdit.Command.ProjectGroupId))]
     private static partial void ApplyNonNullMembers(PartialEdit.Command source, Domain.Models.Host target);
 }

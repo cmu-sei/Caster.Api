@@ -72,6 +72,7 @@ A value the list doesn't cover can be a Plain entry. Connections are referred to
 * Environment variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Terraform variable names follow Terraform's identifier rules: letters, digits, `_` and `-`, not starting with a digit.
 * Environment variables starting with `TF_` are refused, because they control Terraform itself (`TF_CLI_ARGS*`, `TF_DATA_DIR`, `TF_WORKSPACE`, ...). `TF_TOKEN_*` (private registry credentials) is allowed. Use the Terraform variable kind instead of `TF_VAR_*`.
 * `HOME` and `PATH` are refused.
+* A project gets its own sets and its [project group](ProjectGroups.md)'s; a set given both ways reaches it once.
 * A target name can come from only one set on a project. Assigning a set is refused if one of its target names already comes from another set on the project, and editing a set is refused if the change would cause that on any project it is assigned to.
 * A secret's source name is checked against the patterns when the entry is saved, when the set is assigned, and again at every run, as the patterns can change.
 * **A secret can't be a Terraform variable**: neither a Secret entry nor a connection credential. Terraform saves variable values in saved plans and state, so provider credentials go in the provider's environment variables, which every preset uses. This is checked on save, in copies and multi-edits, when seeding, and again at run time.
@@ -79,8 +80,8 @@ A value the list doesn't cover can be a Plain entry. Connections are referred to
 
 ### Assigning
 
-* A set is assigned to projects on its page in Administration > Environment Sets, and a project's sets and inventory connections can be added and removed together in the project's Environment dialog.
-* **Assignments** (`POST api/assignments`) adds and removes sets and [inventory connections](Inventory.md) on projects in one request: each change names a project and either a set or a connection. The changes are checked against the final state and saved together, or not at all, so a set can be swapped for one giving the same names. Adding what is already assigned, or removing what isn't, changes nothing. Set changes need `ManageEnvironmentSets`, connection changes `ManageInfrastructure`.
+* A set is assigned to projects and [project groups](ProjectGroups.md) on its page in Administration > Environment Sets. A project's sets and inventory connections can be added and removed together in the project's Environment dialog, and a group's on its page.
+* **Assignments** (`POST api/assignments`) adds and removes sets and [inventory connections](Inventory.md) on projects and project groups in one request: each change names a project or a group, and either a set or a connection. The changes are checked against the final state and saved together, or not at all, so a set can be swapped for one giving the same names. Adding what is already assigned, or removing what isn't, changes nothing. Set changes need `ManageEnvironmentSets`, connection changes `ManageInfrastructure`.
 * `POST` and `DELETE api/projects/{id}/environment-sets/{setId}` assign or remove one set.
 
 ### Copying and editing several sets
@@ -166,7 +167,7 @@ No one can see secret values through Caster. The seeded Observer role gets `View
 
 Environment Sets decide **which project gets which credential**. They do not keep a credential from the project that has it.
 
-* **Project editors can always read their own project's secrets**, through their Terraform: an output, a `local-exec` provisioner, an HTTP data source. Anyone who can edit a project (holders of project `EditProject`, project `ManageProject` who can add editors, and system `EditProjects`) can reach the secrets of the sets assigned to it. Assign a set only to projects whose editors may hold its credentials.
+* **Project editors can always read their own project's secrets**, through their Terraform: an output, a `local-exec` provisioner, an HTTP data source. Anyone who can edit a project (holders of project `EditProject`, project `ManageProject` who can add editors, and system `EditProjects`) can reach the secrets of the sets assigned to it. Assign a set only to projects whose editors may hold its credentials. A set assigned to a [project group](ProjectGroups.md#who-can-do-what) reaches whatever projects and editors the group's managers add.
 * **Process mode gives no isolation between projects.** Terraform runs as the API's user, and can read the API's own environment (every secret, the API's own credentials) and other workspaces' folders. Policy checks on Terraform configuration (planned) reduce the risk but cannot remove it. Use Kubernetes job mode where projects must be kept apart.
 * **Kubernetes job mode** isolates projects' environments. Until workspace volumes are isolated per job (planned), any job can read other workspaces' state and saved plan files, including the Terraform variable values in plan files, from the shared volume. Keep the jobs namespace admin-only.
 * **Credentials are provider environment variables.** Terraform variable values end up in state, outputs and saved plan files, which project members with read-only access can read, so a secret can't be a Terraform variable.

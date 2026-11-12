@@ -21,6 +21,8 @@ Caster discovers the Modules offered in Designer from git repositories or a GitL
 
 Caster can list the VM templates, ISOs, networks, datastores and hosts on the vSphere and Proxmox hypervisors it deploys to, with Terraform to copy for each. See [docs/Inventory.md](docs/Inventory.md) for the connection settings and the filters on what is read.
 
+Project groups let several projects share memberships, Environment Sets, inventory connections, a VLAN partition and hosts. See [docs/ProjectGroups.md](docs/ProjectGroups.md) for what a group gives its projects and who can change it.
+
 ## Testing
 
 The tests are in `test/Caster.Api.Tests`:

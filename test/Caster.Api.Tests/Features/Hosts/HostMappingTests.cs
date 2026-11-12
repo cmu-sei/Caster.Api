@@ -94,6 +94,22 @@ public class HostMappingTests(DatabaseFixture fixture, CasterAppFactory factory)
             (host.Name, host.Datastore, host.MaximumMachines, host.Enabled, host.Development, host.ProjectId));
     }
 
+    /// <summary>The project group is written like the project: only when the command sets one that is not null.</summary>
+    [Fact]
+    public void The_partial_edit_writes_a_project_group_and_skips_an_explicit_null()
+    {
+        var groupId = Guid.NewGuid();
+        var set = Host(Guid.NewGuid());
+        var explicitNull = Host(Guid.NewGuid());
+        explicitNull.ProjectGroupId = groupId;
+
+        ApplyPatch(new PartialEditHost { Id = set.Id, ProjectGroupId = new Optional<Guid?>(groupId) }, set);
+        ApplyPatch(new PartialEditHost { Id = explicitNull.Id, ProjectGroupId = new Optional<Guid?>(null) }, explicitNull);
+
+        Assert.Equal(groupId, set.ProjectGroupId);
+        Assert.Equal(groupId, explicitNull.ProjectGroupId);
+    }
+
     private static HostEntity Host(Guid projectId) => new()
     {
         Id = Guid.NewGuid(),

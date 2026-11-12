@@ -16,7 +16,7 @@ namespace Caster.Api.Features.Assignments;
 public class AssignmentsController(IMediator mediator) : ControllerBase
 {
     /// <summary>
-    /// Add and remove Environment Sets and inventory connections on projects, all at once
+    /// Add and remove Environment Sets and inventory connections on projects and project groups, all at once
     /// </summary>
     /// <remarks>
     /// The changes are checked against the final state and saved together, or not at all. Adding

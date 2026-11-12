@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.EnvironmentSets;
+using Caster.Api.Domain.Services.ProjectGroups;
 using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Features.EnvironmentSets;
@@ -40,6 +41,8 @@ public class EnvironmentSetViews(CasterContext dbContext, IEntryValues entryValu
             .Include(x => x.Entries)
             .Include(x => x.Projects)
                 .ThenInclude(x => x.Project)
+            .Include(x => x.ProjectGroups)
+                .ThenInclude(x => x.ProjectGroup)
             .AsSplitQuery()
             .OrderBy(x => x.Name)
             .ToListAsync(cancellationToken);
@@ -52,9 +55,18 @@ public class EnvironmentSetViews(CasterContext dbContext, IEntryValues entryValu
 
     public async Task<ProjectEnvironmentSet[]> GetProjectSets(Guid projectId, CancellationToken cancellationToken)
     {
+        // Direct and through the project's group: a set assigned both ways is listed once, with both origins.
+        var origins = await dbContext.EffectiveSetAssignments()
+            .Where(x => x.ProjectId == projectId)
+            .ToListAsync(cancellationToken);
+        var setIds = origins.Select(x => x.EnvironmentSetId).Distinct().ToList();
+        var groupNames = await dbContext.ProjectGroups
+            .Where(x => origins.Select(o => o.ProjectGroupId).Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
         var sets = await dbContext.EnvironmentSets
             .AsNoTracking()
-            .Where(x => x.Projects.Any(p => p.ProjectId == projectId))
+            .Where(x => setIds.Contains(x.Id))
             .Include(x => x.Entries)
             .OrderBy(x => x.Name)
             .ToListAsync(cancellationToken);
@@ -85,10 +97,21 @@ public class EnvironmentSetViews(CasterContext dbContext, IEntryValues entryValu
                     })
                     .ToArray();
 
+                var setOrigins = origins.Where(x => x.EnvironmentSetId == set.Id).ToList();
+
                 return new ProjectEnvironmentSet
                 {
                     EnvironmentSetId = set.Id,
                     ProjectId = projectId,
+                    IsDirect = setOrigins.Any(x => x.ProjectGroupId == null),
+                    ProjectGroups = setOrigins
+                        .Where(x => x.ProjectGroupId.HasValue)
+                        .Select(x => new ProjectEnvironmentSetGroup
+                        {
+                            ProjectGroupId = x.ProjectGroupId.Value,
+                            Name = groupNames.GetValueOrDefault(x.ProjectGroupId.Value)
+                        })
+                        .ToArray(),
                     Name = set.Name,
                     Description = set.Description,
                     IsComplete = entries.All(x => x.IsAvailable),
@@ -132,6 +155,10 @@ public class EnvironmentSetViews(CasterContext dbContext, IEntryValues entryValu
             Entries = entries,
             Projects = set.Projects
                 .Select(x => new EnvironmentSetProject { ProjectId = x.ProjectId, Name = x.Project?.Name })
+                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            ProjectGroups = set.ProjectGroups
+                .Select(x => new ProjectEnvironmentSetGroup { ProjectGroupId = x.ProjectGroupId, Name = x.ProjectGroup?.Name })
                 .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                 .ToArray()
         };

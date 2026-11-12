@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using FluentValidation;
 using MediatR;
 using Caster.Api.Data;
 using System.Runtime.Serialization;
@@ -61,6 +62,23 @@ namespace Caster.Api.Features.Hosts
             /// </summary>
             [DataMember]
             public Optional<Guid?> ProjectId { get; set; }
+
+            /// <summary>
+            /// The Id of the project group to assign this Host to. Setting a Project clears the
+            /// group, and setting a group clears the Project.
+            /// </summary>
+            [DataMember]
+            public Optional<Guid?> ProjectGroupId { get; set; }
+        }
+
+        public class Validator : AbstractValidator<Command>
+        {
+            public Validator()
+            {
+                RuleFor(x => x)
+                    .Must(x => !(x.ProjectId.HasValue && x.ProjectId.Value.HasValue && x.ProjectGroupId.HasValue && x.ProjectGroupId.Value.HasValue))
+                    .WithMessage("A Host belongs to a Project or a project group, not both.");
+            }
         }
 
         public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Host>
@@ -76,6 +94,14 @@ namespace Caster.Api.Features.Hosts
                     throw new EntityNotFoundException<Host>();
 
                 request.ApplyPatchTo(host);
+
+                // A Host has one owner: the one just set replaces the other, whether the other was
+                // left out or sent as null. The validator refuses both set at once.
+                if (request.ProjectId.HasValue && request.ProjectId.Value.HasValue)
+                    host.ProjectGroupId = null;
+                else if (request.ProjectGroupId.HasValue && request.ProjectGroupId.Value.HasValue)
+                    host.ProjectId = null;
+
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return host.ToHost();
             }

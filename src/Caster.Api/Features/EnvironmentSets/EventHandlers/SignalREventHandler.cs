@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services.ProjectGroups;
 using Caster.Api.Hubs;
 using Crucible.Common.EntityEvents.Events;
 using MediatR;
@@ -31,7 +32,10 @@ public class EnvironmentSetSignalRHandler(CasterContext db, IEnvironmentSetViews
     INotificationHandler<EntityUpdated<EntryEntity>>,
     INotificationHandler<EntityDeleted<EntryEntity>>,
     INotificationHandler<EntityCreated<ProjectSetEntity>>,
-    INotificationHandler<EntityDeleted<ProjectSetEntity>>
+    INotificationHandler<EntityDeleted<ProjectSetEntity>>,
+    INotificationHandler<EntityCreated<Domain.Models.ProjectGroupEnvironmentSet>>,
+    INotificationHandler<EntityDeleted<Domain.Models.ProjectGroupEnvironmentSet>>,
+    INotificationHandler<EntityUpdated<Domain.Models.Project>>
 {
     private static string AdminGroup => nameof(HubGroups.EnvironmentSetsAdmin);
 
@@ -62,6 +66,27 @@ public class EnvironmentSetSignalRHandler(CasterContext db, IEnvironmentSetViews
 
     public async Task Handle(EntityDeleted<ProjectSetEntity> notification, CancellationToken cancellationToken) =>
         await AssignmentChanged(notification.Entity, cancellationToken);
+
+    public async Task Handle(EntityCreated<Domain.Models.ProjectGroupEnvironmentSet> notification, CancellationToken cancellationToken) =>
+        await GroupLinkChanged(notification.Entity, cancellationToken);
+
+    public async Task Handle(EntityDeleted<Domain.Models.ProjectGroupEnvironmentSet> notification, CancellationToken cancellationToken) =>
+        await GroupLinkChanged(notification.Entity, cancellationToken);
+
+    /// <summary>A project moving between groups gets other sets. Other project edits resend the same list.</summary>
+    public async Task Handle(EntityUpdated<Domain.Models.Project> notification, CancellationToken cancellationToken) =>
+        await SendProjects([notification.Entity.Id], cancellationToken);
+
+    private async Task GroupLinkChanged(Domain.Models.ProjectGroupEnvironmentSet link, CancellationToken cancellationToken)
+    {
+        await SendSet(link.EnvironmentSetId, EnvironmentSetHubMethods.EnvironmentSetUpdated, cancellationToken);
+        await SendProjects(
+            await db.Projects.AsNoTracking()
+                .Where(x => x.ProjectGroupId == link.ProjectGroupId)
+                .Select(x => x.Id)
+                .ToListAsync(cancellationToken),
+            cancellationToken);
+    }
 
     private async Task EntryChanged(Guid setId, CancellationToken cancellationToken)
     {
@@ -103,11 +128,12 @@ public class EnvironmentSetSignalRHandler(CasterContext db, IEnvironmentSetViews
         }
     }
 
+    /// <summary>Every project the set reaches, directly or through a group.</summary>
     private async Task<List<Guid>> AssignedProjects(Guid setId, CancellationToken cancellationToken) =>
-        await db.ProjectEnvironmentSets
-            .AsNoTracking()
+        await db.EffectiveSetAssignments()
             .Where(x => x.EnvironmentSetId == setId)
             .Select(x => x.ProjectId)
+            .Distinct()
             .ToListAsync(cancellationToken);
 }
 

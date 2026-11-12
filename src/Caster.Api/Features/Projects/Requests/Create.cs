@@ -6,6 +6,7 @@ using System.Runtime.Serialization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Caster.Api.Infrastructure.Exceptions;
 using MediatR;
 using System.Collections.Generic;
 using Caster.Api.Data;
@@ -16,7 +17,9 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Domain.Services;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Caster.Api.Features.ProjectGroups.EventHandlers;
 
 namespace Caster.Api.Features.Projects
 {
@@ -42,17 +45,31 @@ namespace Caster.Api.Features.Projects
             /// </summary>
             [DataMember]
             public string Description { get; set; }
+
+            /// <summary>
+            /// The project group to create the project in, if any. Needs ManageProjectGroups or
+            /// being a manager of the group, as well as CreateProjects.
+            /// </summary>
+            [DataMember]
+            public Guid? ProjectGroupId { get; set; }
         }
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
+            ProjectGroups.ProjectGroupAccess projectGroupAccess,
             CasterContext dbContext,
             TelemetryService telemetryService,
             IIdentityResolver identityResolver,
+            IMemoryCache cache,
             ILogger<Handler> logger) : BaseHandler<Command, Project>
         {
+            /// <summary>
+            /// Checked before the project exists: ManageProject on it isn't, since the creator gets
+            /// it with the project.
+            /// </summary>
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermission.CreateProjects], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.CreateProjects], cancellationToken) &&
+                (!request.ProjectGroupId.HasValue || projectGroupAccess.CanManage(request.ProjectGroupId.Value));
 
             public override async Task<Project> HandleRequest(Command request, CancellationToken cancellationToken)
             {
@@ -63,6 +80,12 @@ namespace Caster.Api.Features.Projects
                 if (request.Id.HasValue)
                 {
                     project.Id = request.Id.Value;
+                }
+
+                if (request.ProjectGroupId.HasValue &&
+                    !await dbContext.ProjectGroups.AnyAsync(x => x.Id == request.ProjectGroupId.Value, cancellationToken))
+                {
+                    throw new EntityNotFoundException<Domain.Models.ProjectGroup>();
                 }
 
                 logger.LogInformation("Creating project with ID: {ProjectId}", project.Id);
@@ -76,6 +99,12 @@ namespace Caster.Api.Features.Projects
                 dbContext.ProjectMemberships.Add(projectMembership);
 
                 await dbContext.SaveChangesAsync(cancellationToken);
+
+                // The group's members get permissions in the new project through its memberships.
+                if (project.ProjectGroupId is { } groupId)
+                {
+                    await cache.ClearMembers(dbContext, [groupId], cancellationToken);
+                }
 
                 return project.ToProject();
             }

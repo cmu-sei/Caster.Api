@@ -225,6 +225,7 @@ namespace Caster.Api
             services.AddScoped<Domain.Services.Terraform.ITerraformEnvironmentBuilder, Domain.Services.Terraform.TerraformEnvironmentBuilder>();
             services.AddScoped<Features.EnvironmentSets.IEnvironmentSetViews, Features.EnvironmentSets.EnvironmentSetViews>();
             services.AddScoped<Features.Inventory.ProjectInventoryConnections>();
+            services.AddScoped<Features.ProjectGroups.ProjectGroupAccess>();
             services.AddSingleton<Domain.Services.IAuthenticationService, Domain.Services.AuthenticationService>();
             services.AddSingleton<ILockService, LockService>();
             services.AddSingleton<IUserIdProvider, SubUserIdProvider>();
