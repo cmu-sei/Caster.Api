@@ -432,6 +432,39 @@ public class VlanRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.Null((await StoredVlan(free.Id)).PartitionId);
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(4097)]
+    public async Task AddVlansToPartition_rejects_a_count_outside_1_to_4096_and_moves_nothing(int count)
+    {
+        var (pool, partition) = await SeedPartition();
+        var free = TestData.Vlan(pool, 20);
+        await Seed(free);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageVLANs).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/vlans/partitions/{partition.Id}/actions/vlans/add", new { vlans = count }, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("between 1 and 4096", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Null((await StoredVlan(free.Id)).PartitionId);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    public async Task RemoveVlansFromPartition_rejects_a_count_below_1_and_moves_nothing(int count)
+    {
+        var (pool, partition) = await SeedPartition();
+        var vlan = TestData.Vlan(pool, 30, partition);
+        await Seed(vlan);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageVLANs).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.BadRequest, await Client(actor).PostAsJsonAsync($"api/vlans/partitions/{partition.Id}/actions/vlans/remove", new { vlans = count }, Ct));
+
+        Assert.Equal(partition.Id, (await StoredVlan(vlan.Id)).PartitionId);
+    }
+
     [Fact]
     public async Task RemoveVlansFromPartition_by_a_caller_holding_ManageVLANs_returns_them_to_the_pool()
     {

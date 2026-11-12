@@ -48,6 +48,11 @@ public class RemoveVlansFromPartition
         public Validator(IValidationService validationService)
         {
             RuleFor(x => x.PartitionId).PartitionExists(validationService);
+
+            RuleFor(x => x.Vlans)
+                .InclusiveBetween(1, 4096)
+                .When(x => (x.VlanIds == null || x.VlanIds.Length == 0) && x.Vlans.HasValue)
+                .WithMessage("Remove between 1 and 4096 VLANs.");
         }
     }
 
