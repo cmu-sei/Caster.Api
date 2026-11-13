@@ -237,36 +237,37 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
     }
 
     // ---- PUT api/projects/{id} ----------------------------------------------------------------------
+    // Renaming a project is managing it, like its memberships: EditProject and EditProjects are for its content.
 
     [Fact]
-    public async Task Edit_by_a_member_holding_EditProject_stores_the_new_name()
+    public async Task Edit_by_a_member_holding_ManageProject_stores_the_new_name()
+    {
+        var project = await SeedProject("Before");
+        var actor = await Actor().OnProject(project, [ProjectPermission.ManageProject]).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/projects/{project.Id}", new { name = "After" }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal("After", await StoredName(project.Id));
+    }
+
+    [Fact]
+    public async Task Edit_by_a_caller_holding_ManageProjects_stores_the_new_name()
+    {
+        var project = await SeedProject("Before");
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageProjects).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/projects/{project.Id}", new { name = "After" }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal("After", await StoredName(project.Id));
+    }
+
+    [Fact]
+    public async Task Edit_is_forbidden_for_a_member_holding_only_EditProject()
     {
         var project = await SeedProject("Before");
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
-
-        var response = await Client(actor).PutAsJsonAsync($"api/projects/{project.Id}", new { name = "After" }, Ct);
-
-        await AssertStatus(HttpStatusCode.OK, response);
-        Assert.Equal("After", await StoredName(project.Id));
-    }
-
-    [Fact]
-    public async Task Edit_by_a_caller_holding_EditProjects_stores_the_new_name()
-    {
-        var project = await SeedProject("Before");
-        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
-
-        var response = await Client(actor).PutAsJsonAsync($"api/projects/{project.Id}", new { name = "After" }, Ct);
-
-        await AssertStatus(HttpStatusCode.OK, response);
-        Assert.Equal("After", await StoredName(project.Id));
-    }
-
-    [Fact]
-    public async Task Edit_is_forbidden_for_a_caller_holding_only_ViewProject()
-    {
-        var project = await SeedProject("Before");
-        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
         var response = await Client(actor).PutAsJsonAsync($"api/projects/{project.Id}", new { name = "After" }, Ct);
 
@@ -275,10 +276,34 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
     }
 
     [Fact]
-    public async Task Edit_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
+    public async Task Edit_is_forbidden_for_a_member_holding_the_seeded_Member_role()
     {
         var project = await SeedProject("Before");
-        var actor = await Actor().OnNewProject(ProjectPermission.EditProject).SeedAsync();
+        var actor = await Actor().OnProject(project, roleId: TestData.ProjectRoles.Member).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/projects/{project.Id}", new { name = "After" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal("Before", await StoredName(project.Id));
+    }
+
+    [Fact]
+    public async Task Edit_is_forbidden_for_a_caller_holding_only_EditProjects()
+    {
+        var project = await SeedProject("Before");
+        var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
+
+        var response = await Client(actor).PutAsJsonAsync($"api/projects/{project.Id}", new { name = "After" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.Equal("Before", await StoredName(project.Id));
+    }
+
+    [Fact]
+    public async Task Edit_is_forbidden_for_a_caller_holding_ManageProject_only_on_another_project()
+    {
+        var project = await SeedProject("Before");
+        var actor = await Actor().OnNewProject(ProjectPermission.ManageProject).SeedAsync();
 
         var response = await Client(actor).PutAsJsonAsync($"api/projects/{project.Id}", new { name = "After" }, Ct);
 
@@ -299,60 +324,71 @@ public class ProjectRequestTests(DatabaseFixture fixture, CasterAppFactory facto
 
     // ---- DELETE api/projects/{id} -------------------------------------------------------------------
 
-    /// <summary>A member holding EditProject, and not ManageProject, deletes the whole project.</summary>
     [Fact]
-    public async Task Delete_by_a_member_holding_only_EditProject_removes_the_project()
+    public async Task Delete_by_a_member_holding_ManageProject_removes_the_project()
+    {
+        var project = await SeedProject();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ManageProject]).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/projects/{project.Id}", Ct);
+
+        await AssertStatus(HttpStatusCode.NoContent, response);
+        Assert.False(await ProjectExists(project.Id));
+    }
+
+    [Fact]
+    public async Task Delete_by_a_caller_holding_ManageProjects_removes_the_project()
+    {
+        var project = await SeedProject();
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageProjects).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/projects/{project.Id}", Ct);
+
+        await AssertStatus(HttpStatusCode.NoContent, response);
+        Assert.False(await ProjectExists(project.Id));
+    }
+
+    [Fact]
+    public async Task Delete_is_forbidden_for_a_member_holding_only_EditProject()
     {
         var project = await SeedProject();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/projects/{project.Id}", Ct);
 
-        await AssertStatus(HttpStatusCode.NoContent, response);
-        Assert.False(await ProjectExists(project.Id));
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.True(await ProjectExists(project.Id));
     }
 
     [Fact]
-    public async Task Delete_by_a_caller_holding_EditProjects_removes_the_project()
+    public async Task Delete_is_forbidden_for_a_member_holding_the_seeded_Member_role()
+    {
+        var project = await SeedProject();
+        var actor = await Actor().OnProject(project, roleId: TestData.ProjectRoles.Member).SeedAsync();
+
+        var response = await Client(actor).DeleteAsync($"api/projects/{project.Id}", Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.True(await ProjectExists(project.Id));
+    }
+
+    [Fact]
+    public async Task Delete_is_forbidden_for_a_caller_holding_only_EditProjects()
     {
         var project = await SeedProject();
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/projects/{project.Id}", Ct);
 
-        await AssertStatus(HttpStatusCode.NoContent, response);
-        Assert.False(await ProjectExists(project.Id));
-    }
-
-    [Fact]
-    public async Task Delete_is_forbidden_for_a_caller_holding_only_ViewProject()
-    {
-        var project = await SeedProject();
-        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
-
-        var response = await Client(actor).DeleteAsync($"api/projects/{project.Id}", Ct);
-
         await AssertProblem(HttpStatusCode.Forbidden, response);
         Assert.True(await ProjectExists(project.Id));
     }
 
     [Fact]
-    public async Task Delete_is_forbidden_for_a_caller_holding_EditProject_only_on_another_project()
+    public async Task Delete_is_forbidden_for_a_caller_holding_ManageProject_only_on_another_project()
     {
         var project = await SeedProject();
-        var actor = await Actor().OnNewProject(ProjectPermission.EditProject).SeedAsync();
-
-        var response = await Client(actor).DeleteAsync($"api/projects/{project.Id}", Ct);
-
-        await AssertProblem(HttpStatusCode.Forbidden, response);
-        Assert.True(await ProjectExists(project.Id));
-    }
-
-    [Fact]
-    public async Task Delete_is_forbidden_for_a_caller_holding_only_ManageProjects()
-    {
-        var project = await SeedProject();
-        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageProjects).SeedAsync();
+        var actor = await Actor().OnNewProject(ProjectPermission.ManageProject).SeedAsync();
 
         var response = await Client(actor).DeleteAsync($"api/projects/{project.Id}", Ct);
 

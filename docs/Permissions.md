@@ -37,8 +37,8 @@ Permissions can be applied to Users by grouping them into Roles. There are two t
 
 - Project Roles - When a User is added to a Project, their Project Membership has a Project Role that applies Permissions to that User only for that specific Project. The three available Project Roles are:
 
-  - Member - Can view and edit all objects within the Project.
-  - Manager - Can perform all Project actions, including managing User access to the Project. When creating a new Project, the creator is given the `Manager` Role in that Project.
+  - Member - Can view and edit all objects within the Project, but not rename or delete the Project or manage access to it.
+  - Manager - Can perform all Project actions, including renaming and deleting the Project and managing User access to it. When creating a new Project, the creator is given the `Manager` Role in that Project.
   - Observer - Can view all objects within the Project, but not many any changes.
 
   Custom Project Roles cannot be created.
