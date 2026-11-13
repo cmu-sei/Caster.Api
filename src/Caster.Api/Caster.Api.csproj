@@ -41,4 +41,18 @@
     <PackageReference Include="KubernetesClient" Version="19.0.2" />
     <PackageReference Include="Crucible.Common.ServiceDefaults" Version="0.0.2"/>
   </ItemGroup>
+  <ItemGroup>
+    <!--
+      VimClient depends on dotnet-svcutil.xmlserializer, a build-time code generator that targets
+      netcoreapp2.1 and so depends on the .NET Core 2.1 framework package, Microsoft.NETCore.App
+      2.1.0. That package is the framework itself, which the net10.0 shared framework replaces, so
+      nothing in it is needed here. Restoring for a runtime identifier (the Dockerfile's
+      `-a $TARGETARCH`) brings its runtime.<rid>.* packages along, and they put .NET 2.1's
+      libhostfxr.so, libhostpolicy.so, libsos*.so and libdbgshim.so in the publish output. An
+      app-local libhostfxr.so makes the Caster.Api launcher treat the app as self-contained and look
+      for a libcoreclr.so beside it, so the container exits with "Could not resolve CoreCLR path".
+      Pruning removes the package and everything below it from the restore graph.
+    -->
+    <PrunePackageReference Include="Microsoft.NETCore.App" Version="2.1.0" />
+  </ItemGroup>
 </Project>
