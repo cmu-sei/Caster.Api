@@ -41,4 +41,11 @@
     <PackageReference Include="KubernetesClient" Version="19.0.2" />
     <PackageReference Include="Crucible.Common.ServiceDefaults" Version="0.0.2"/>
   </ItemGroup>
+  <ItemGroup>
+    <!--
+      VimClient pulls in the .NET Core 2.1 framework package. With a runtime identifier (the
+      Dockerfile's -a), it publishes a 2.1 libhostfxr.so that stops the app from starting.
+    -->
+    <PrunePackageReference Include="Microsoft.NETCore.App" Version="2.1.0" />
+  </ItemGroup>
 </Project>
