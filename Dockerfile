@@ -18,7 +18,7 @@ WORKDIR /source/src/Caster.Api
 RUN dotnet publish -a $TARGETARCH --no-restore -o /app /p:Version=${VERSION:-1.0.0} /p:AssemblyVersion=${VERSION:-1.0.0}
 
 # Production Stage
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS prod
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS prod
 ARG commit
 ENV COMMIT=$commit
 ENV DOTNET_HOSTBUILDER__RELOADCONFIGCHANGE=false
