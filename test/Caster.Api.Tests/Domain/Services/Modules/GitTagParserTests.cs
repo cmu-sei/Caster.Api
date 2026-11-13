@@ -98,5 +98,27 @@ namespace Caster.Api.Tests.Domain.Services.Modules
 
             Assert.Equal(GitTagParser.Parse(forward), GitTagParser.Parse(reversed));
         }
+
+        [Fact]
+        public void ParseRemote_ReadsHeadAndTags()
+        {
+            var refs = GitTagParser.ParseRemote([
+                "aaaa\tHEAD",
+                "bbbb\trefs/tags/v1.0.0",
+            ]);
+
+            Assert.Equal("aaaa", refs.HeadSha);
+            Assert.Equal(["v1.0.0"], refs.Tags);
+            Assert.Equal(["refs/tags/v1.0.0 bbbb"], refs.TagRefs);
+        }
+
+        [Fact]
+        public void ParseRemote_EmptyRepository_HasNoHead()
+        {
+            var refs = GitTagParser.ParseRemote([]);
+
+            Assert.Null(refs.HeadSha);
+            Assert.Empty(refs.Tags);
+        }
     }
 }

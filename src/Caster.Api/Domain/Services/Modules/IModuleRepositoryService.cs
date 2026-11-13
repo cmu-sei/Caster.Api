@@ -59,13 +59,19 @@ public interface IModuleRepositoryProvider
     /// Discovers every Module in <paramref name="source"/> and upserts it,
     /// with its versions, variables and outputs.
     /// </summary>
-    Task<bool> SyncModulesAsync(ModuleSourceOptions source, bool forceUpdate, CancellationToken cancellationToken);
+    /// <returns>
+    /// <see cref="ModuleSourceState.Empty"/> or <see cref="ModuleSourceState.Warning"/>
+    /// when the source was read but offers no usable Module; nothing stored is
+    /// changed then. Throws when the source cannot be read.
+    /// </returns>
+    Task<ModuleSyncResult> SyncModulesAsync(ModuleSourceOptions source, bool forceUpdate, CancellationToken cancellationToken);
 
     /// <summary>
     /// Discovers one Module in <paramref name="source"/>.
     /// <paramref name="providerId"/> is whatever remains of the caller's id
     /// after the source has been identified, and may be null to mean "the
-    /// whole source".
+    /// whole source". The caller asked for a Module by name, so finding none
+    /// throws rather than reporting the source as empty.
     /// </summary>
     Task<bool> SyncModuleAsync(ModuleSourceOptions source, string providerId, CancellationToken cancellationToken);
 }

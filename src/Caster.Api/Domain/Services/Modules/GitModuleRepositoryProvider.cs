@@ -16,6 +16,7 @@ using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Caster.Api.Domain.Services.Modules;
 
@@ -34,6 +35,8 @@ public class GitModuleRepositoryProvider(
     CasterContext db,
     IGitCommandRunner git,
     ILockService lockService,
+    ModuleSourceReadCache readCache,
+    IOptionsMonitor<TerraformOptions> terraformOptions,
     ILogger<GitModuleRepositoryProvider> logger) : IModuleRepositoryProvider
 {
     public const string VariablesFileName = "variables.tf.json";
@@ -46,27 +49,82 @@ public class GitModuleRepositoryProvider(
     /// <summary>How long a request waits for another's sync of the same source before serving what is stored.</summary>
     public const int SyncLockTimeoutMilliseconds = 60000;
 
+    /// <summary><see cref="SyncLockTimeoutMilliseconds"/> unless a test needs a timeout it can wait out.</summary>
+    public int SyncLockTimeout { get; init; } = SyncLockTimeoutMilliseconds;
+
     public string Provider => ModuleSourceProviders.Git;
 
-    public Task<bool> SyncModulesAsync(ModuleSourceOptions source, bool forceUpdate, CancellationToken cancellationToken) =>
-        SyncAsync(source, null, forceUpdate, cancellationToken);
+    /// <summary>Shown for a source that has neither tags nor Module roots.</summary>
+    public const string NoModulesMessage = "No Modules yet.";
 
-    public Task<bool> SyncModuleAsync(ModuleSourceOptions source, string providerId, CancellationToken cancellationToken) =>
+    /// <summary>Shown for a source with Module roots on its default branch but no tag to version them.</summary>
+    public const string NoVersionTagsMessage =
+        "Has Modules but no version tags, so none can be used. Tag the repository, e.g. v1.0.0.";
+
+    /// <summary>Shown for a source whose tags are gone while Modules read from them earlier are still stored.</summary>
+    public static string NoVersionTagsAnyMoreMessage(int stored) =>
+        $"No version tags any more; showing the {StoredModules(stored)} stored from earlier.";
+
+    /// <summary>Shown for a source whose tags no longer hold a Module root while Modules read earlier are still stored.</summary>
+    public static string TagsNoLongerHoldModulesMessage(int stored) =>
+        $"Its tags no longer contain Modules; showing the {StoredModules(stored)} stored from earlier.";
+
+    private static string StoredModules(int stored) => stored == 1 ? "1 Module" : $"{stored} Modules";
+
+    /// <summary>Shown for an untagged source whose HEAD names a branch that does not exist.</summary>
+    public const string DefaultBranchUnreadableMessage =
+        "Couldn't read the repository's default branch to look for Modules.";
+
+    /// <summary>Shown for a source that has tags but no Module root in any of them.</summary>
+    public static string NoModuleRootsMessage(ModuleSourceLayout layout) =>
+        layout == ModuleSourceLayout.Subdirectories
+            ? $"No Modules yet. Subdirectories layout: add a folder with a {VariablesFileName} or {OutputsFileName} " +
+              "(.tf files aren't read yet), then tag the repository."
+            : $"No Modules yet. Root layout: add a {VariablesFileName} or {OutputsFileName} at the repository root " +
+              "(.tf files aren't read yet), then tag the repository.";
+
+    /// <remarks>
+    /// A source with no Module to offer yet - no tags, or tags but no Module
+    /// root - is reported as Empty or Warning instead of throwing, because an
+    /// organization seeding empty repositories is not a failure. Nothing stored
+    /// is touched in those cases, the same as when a sync fails.
+    /// </remarks>
+    public async Task<ModuleSyncResult> SyncModulesAsync(ModuleSourceOptions source, bool forceUpdate, CancellationToken cancellationToken) =>
+        await SyncAsync(source, null, forceUpdate, wholeSource: true, cancellationToken);
+
+    /// <remarks>
+    /// The caller named a Module, so a source that has none still throws.
+    /// </remarks>
+    public async Task<bool> SyncModuleAsync(ModuleSourceOptions source, string providerId, CancellationToken cancellationToken)
+    {
         // A single-module request always re-reads, because the caller asked for
         // this one Module by name and expects it refreshed.
-        SyncAsync(source, string.IsNullOrWhiteSpace(providerId) ? null : providerId.Trim('/'), forceUpdate: true, cancellationToken);
+        await SyncAsync(
+            source,
+            string.IsNullOrWhiteSpace(providerId) ? null : providerId.Trim('/'),
+            forceUpdate: true,
+            wholeSource: false,
+            cancellationToken);
 
-    private async Task<bool> SyncAsync(
+        return true;
+    }
+
+    private async Task<ModuleSyncResult> SyncAsync(
         ModuleSourceOptions source,
         string subdirectoryFilter,
         bool forceUpdate,
+        bool wholeSource,
         CancellationToken cancellationToken)
     {
+        // A url with credentials is never cloned, listed, or stored in a
+        // UrlLink: everything below would put it somewhere it can leak.
+        RefuseUnusableUrl(source);
+
         // Every module list request syncs, and a page load sends several at
         // once. Unserialized, they each replace the same version rows and all
         // but one fail on rows the others already deleted. Waiting also means
         // the up-to-date check below sees what the other request stored.
-        using (var lockResult = await lockService.GetModuleSourceLock(source.Name).LockAsync(SyncLockTimeoutMilliseconds))
+        using (var lockResult = await lockService.GetModuleSourceLock(source.Name).LockAsync(SyncLockTimeout))
         {
             if (!lockResult.AcquiredLock)
             {
@@ -74,40 +132,113 @@ public class GitModuleRepositoryProvider(
                     "Module source {Source} is still being synced by another request; serving the stored Modules.",
                     source.Name);
 
-                return true;
+                return ModuleSyncResult.NotRead;
             }
 
-            return await SyncLockedAsync(source, subdirectoryFilter, forceUpdate, cancellationToken);
+            return await SyncLockedAsync(source, subdirectoryFilter, forceUpdate, wholeSource, cancellationToken);
         }
     }
 
-    private async Task<bool> SyncLockedAsync(
+    private void RefuseUnusableUrl(ModuleSourceOptions source)
+    {
+        var check = ModuleSourceUrl.Check(source.Url);
+
+        if (check != ModuleSourceUrlCheck.Usable)
+        {
+            logger.LogWarning(
+                "Refusing module source {Source}: its url {Reason}.",
+                source.Name,
+                check == ModuleSourceUrlCheck.Credentials ? "contains credentials" : "is not a usable git url");
+
+            ModuleSourceUrl.EnsureUsable(source.Url);
+        }
+    }
+
+    private async Task<ModuleSyncResult> SyncLockedAsync(
         ModuleSourceOptions source,
         string subdirectoryFilter,
         bool forceUpdate,
+        bool wholeSource,
         CancellationToken cancellationToken)
     {
         var requestTime = DateTime.UtcNow;
 
-        var tags = GitTagParser.Parse(await git.ListRemoteTagsAsync(source.Url, cancellationToken));
+        if (readCache.NeedsBackfill(source.Name))
+        {
+            await BackfillSourceNameAsync(source, cancellationToken);
+
+            // Only once it has worked: a failed or cancelled backfill is
+            // tried again on the next sync.
+            readCache.MarkBackfilled(source.Name);
+        }
+
+        var remote = GitTagParser.ParseRemote(await git.ListRemoteRefsAsync(source.Url, cancellationToken));
+        var tags = remote.Tags;
+
+        // With no tags and no HEAD, whether any branch exists is what tells a
+        // repository with no commits from one whose HEAD names a missing
+        // branch, so it is part of what the read depends on. Listing branches
+        // is a second ls-remote, so its answer is kept for as long as the
+        // tags and HEAD stay as they are, and asked again only when forced:
+        // a branch HEAD does not name, pushed meanwhile, shows on a forced
+        // sync or after a restart.
+        bool? hasBranches = null;
+
+        if (wholeSource && tags.Count == 0 && remote.HeadSha == null)
+        {
+            var refsKey = Fingerprint(source, remote, hasBranches: null);
+
+            if (forceUpdate || !readCache.TryGetHasBranches(source.Name, refsKey, out var known))
+            {
+                known = await git.HasBranchesAsync(source.Url, cancellationToken);
+                readCache.RecordHasBranches(source.Name, refsKey, known);
+            }
+
+            hasBranches = known;
+        }
+
+        var fingerprint = Fingerprint(source, remote, hasBranches);
+
+        // A source with nothing to store is otherwise re-cloned by every
+        // Module list, because there are no stored versions to compare.
+        if (wholeSource && !forceUpdate && readCache.TryGetEmpty(source.Name, fingerprint, out var cached))
+        {
+            logger.LogDebug(
+                "Module source {Source} is unchanged since it was found to have no Module ({Outcome}); skipping clone.",
+                source.Name,
+                cached);
+
+            return await EmptyResultAsync(source, cached, fromCache: true, requestTime, cancellationToken);
+        }
 
         if (tags.Count == 0)
         {
             // A repo with no tags has no selectable version, so a Design could
-            // never reference it. Saying so beats registering an empty Module.
+            // never reference it, and nothing is registered. For the whole
+            // source that is a state to report, not a failure: Empty for a
+            // freshly seeded repository, Warning when Modules are waiting on a
+            // tag. A caller that named a Module gets the error.
+            if (wholeSource)
+            {
+                var read = await ReadUntaggedAsync(source, remote, hasBranches == true, cancellationToken);
+                readCache.RecordEmpty(source.Name, fingerprint, read);
+
+                return await EmptyResultAsync(source, read, fromCache: false, requestTime, cancellationToken);
+            }
+
             throw new ModuleSyncException(
                 $"Module source '{source.Name}' has no git tags, so it has no versions Caster can offer. " +
                 "Tag the repository, for example 'v1.0.0', and retry.");
         }
 
-        if (!forceUpdate && await IsUpToDateAsync(source, tags, cancellationToken))
+        if (!forceUpdate && await IsUpToDateAsync(source, tags, fingerprint, cancellationToken))
         {
             logger.LogDebug(
                 "Module source {Source} is unchanged at {TagCount} tags; skipping clone.",
                 source.Name,
                 tags.Count);
 
-            return true;
+            return ModuleSyncResult.Ok;
         }
 
         var drafts = new Dictionary<string, ModuleDraft>(StringComparer.Ordinal);
@@ -144,6 +275,14 @@ public class GitModuleRepositoryProvider(
 
         if (drafts.Count == 0)
         {
+            if (wholeSource)
+            {
+                var read = EmptyRead.Of(EmptyReadOutcome.TaggedNoModuleRoots);
+                readCache.RecordEmpty(source.Name, fingerprint, read);
+
+                return await EmptyResultAsync(source, read, fromCache: false, requestTime, cancellationToken);
+            }
+
             throw new ModuleSyncException(
                 $"Module source '{source.Name}' has tags but no Module root containing {VariablesFileName} " +
                 $"or {OutputsFileName}" +
@@ -155,7 +294,12 @@ public class GitModuleRepositoryProvider(
 
         try
         {
-            await PersistAsync(drafts.Values, requestTime, cancellationToken);
+            await PersistAsync(source, drafts.Values, requestTime, cancellationToken);
+
+            if (wholeSource)
+            {
+                await MarkMissingAsync(source, drafts.Keys, requestTime, cancellationToken);
+            }
         }
         catch (DbUpdateException)
         {
@@ -166,7 +310,170 @@ public class GitModuleRepositoryProvider(
             throw;
         }
 
-        return true;
+        if (wholeSource)
+        {
+            readCache.RecordStored(source.Name, fingerprint);
+        }
+
+        return ModuleSyncResult.Ok;
+    }
+
+    /// <summary>
+    /// Everything a cached empty read depends on: where and how the source is
+    /// read, and the refs that read cloned. A tagged source clones its tags,
+    /// so their names and shas count (a force-moved tag is a change) and HEAD
+    /// does not (a push to main is not). An untagged source clones the default
+    /// branch, so HEAD counts, and with no HEAD whether any branch exists.
+    /// </summary>
+    private static string Fingerprint(ModuleSourceOptions source, GitRemoteRefs remote, bool? hasBranches) =>
+        string.Join(
+            "\n",
+            remote.Tags.Count > 0
+                ? [source.Url, source.Layout.ToString(), "tags", .. remote.TagRefs]
+                : [source.Url, source.Layout.ToString(), "head", remote.HeadSha ?? "-", hasBranches?.ToString() ?? "-"]);
+
+    /// <summary>
+    /// The state of an empty read. A fresh one marks the Modules it did not
+    /// find (see <see cref="MarkMissingAsync"/>) and counts them from the same
+    /// query. A cached one has nothing new to mark - the refs, so the Modules
+    /// found, are what they were - and only counts. A HEAD that could not be
+    /// read proves nothing, so it marks and counts nothing.
+    /// </summary>
+    private async Task<ModuleSyncResult> EmptyResultAsync(
+        ModuleSourceOptions source,
+        EmptyRead read,
+        bool fromCache,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        if (read.Outcome == EmptyReadOutcome.UntaggedHeadUnreadable)
+        {
+            return ModuleSyncResult.Warning(DefaultBranchUnreadableMessage);
+        }
+
+        var stored = fromCache
+            ? await SourceModules(source).AsNoTracking().CountAsync(cancellationToken)
+            : await MarkMissingAsync(source, read.DefaultBranchPaths, now, cancellationToken);
+
+        return ToResult(source, read.Outcome, stored);
+    }
+
+    /// <summary>
+    /// Turns an empty read into a state. A source that still has Modules
+    /// stored from an earlier read is not "No Modules yet": those are still
+    /// listed, so it is a Warning that says where they come from.
+    /// </summary>
+    private static ModuleSyncResult ToResult(ModuleSourceOptions source, EmptyReadOutcome outcome, int stored)
+    {
+        if (stored > 0)
+        {
+            return ModuleSyncResult.Warning(outcome == EmptyReadOutcome.TaggedNoModuleRoots
+                ? TagsNoLongerHoldModulesMessage(stored)
+                : NoVersionTagsAnyMoreMessage(stored));
+        }
+
+        return outcome switch
+        {
+            EmptyReadOutcome.UntaggedWithModuleRoots => ModuleSyncResult.Warning(NoVersionTagsMessage),
+            EmptyReadOutcome.TaggedNoModuleRoots => ModuleSyncResult.Empty(NoModuleRootsMessage(source.Layout)),
+            _ => ModuleSyncResult.Empty(NoModulesMessage),
+        };
+    }
+
+    /// <summary>
+    /// What an untagged source holds. No HEAD and no branch is a repository
+    /// with no commits, so Empty without a clone. No HEAD but some branch means
+    /// HEAD names a missing branch, which proves nothing about Modules.
+    /// Otherwise the default branch is cloned to look for Module roots.
+    /// </summary>
+    private async Task<EmptyRead> ReadUntaggedAsync(
+        ModuleSourceOptions source,
+        GitRemoteRefs remote,
+        bool hasBranches,
+        CancellationToken cancellationToken)
+    {
+        if (remote.HeadSha == null)
+        {
+            return EmptyRead.Of(hasBranches
+                ? EmptyReadOutcome.UntaggedHeadUnreadable
+                : EmptyReadOutcome.UntaggedNoModuleRoots);
+        }
+
+        var paths = await ReadDefaultBranchModulePathsAsync(source, cancellationToken);
+
+        return paths.Count > 0
+            ? new EmptyRead(EmptyReadOutcome.UntaggedWithModuleRoots, paths)
+            : EmptyRead.Of(EmptyReadOutcome.UntaggedNoModuleRoots);
+    }
+
+    /// <summary>
+    /// After a whole-source read, stamps <see cref="Module.MissingSince"/> on
+    /// this source's stored Modules that the read did not find, keeping the
+    /// first time a Module went missing, and clears it on those it found.
+    /// Those on the default branch count as found, untagged or not. Nothing is
+    /// deleted. Returns how many Modules the source has stored.
+    /// </summary>
+    private async Task<int> MarkMissingAsync(
+        ModuleSourceOptions source,
+        IEnumerable<string> foundPaths,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var found = foundPaths.ToHashSet(StringComparer.Ordinal);
+
+        var stored = await SourceModules(source).ToListAsync(cancellationToken);
+
+        foreach (var module in stored)
+        {
+            if (found.Contains(module.Path))
+            {
+                module.MissingSince = null;
+            }
+            else
+            {
+                module.MissingSince ??= now;
+            }
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Same reason as in SyncLockedAsync: the context is shared.
+            db.ChangeTracker.Clear();
+            throw;
+        }
+
+        return stored.Count;
+    }
+
+    /// <summary>
+    /// The Module Paths on the default branch, to tell an untagged
+    /// repository that has Modules waiting from one that is simply empty. One
+    /// shallow clone, made only for an untagged source with a readable HEAD,
+    /// and then only when its refs have changed since the last read (see
+    /// <see cref="ModuleSourceReadCache"/>) or the sync is forced.
+    /// </summary>
+    private async Task<IReadOnlyCollection<string>> ReadDefaultBranchModulePathsAsync(
+        ModuleSourceOptions source,
+        CancellationToken cancellationToken)
+    {
+        var workingDirectory = CreateTempDirectory();
+
+        try
+        {
+            await git.CloneDefaultBranchAsync(source.Url, workingDirectory, cancellationToken);
+
+            return IODirectory.Exists(workingDirectory)
+                ? EnumerateModuleRoots(source, workingDirectory, subdirectoryFilter: null).Select(x => x.Path).ToList()
+                : [];
+        }
+        finally
+        {
+            TryDeleteDirectory(workingDirectory);
+        }
     }
 
     /// <summary>
@@ -420,23 +727,95 @@ public class GitModuleRepositoryProvider(
     /// Compared as a union, not Module by Module: a Module added in a later tag
     /// never carries the tags before it, and a per-module tag belongs to one
     /// Module only. A new tag, including one for a Module not yet registered,
-    /// is missing from the union; a deleted tag is left over in it.
+    /// is missing from the union; a deleted tag is left over in it. Modules
+    /// marked missing are left out of it.
+    /// <para>
+    /// A Module marked missing keeps its old versions, so the union can match
+    /// tags that no longer hold it - a force-moved tag - or that only came
+    /// back after an empty read marked it - tags deleted and pushed again. So
+    /// when any Module of the source is marked, the shortcut holds only if
+    /// this instance's last real read was of exactly these refs; otherwise the
+    /// source is read, and that read decides which Modules are missing.
+    /// </para>
     /// </remarks>
     private async Task<bool> IsUpToDateAsync(
         ModuleSourceOptions source,
         IReadOnlyList<string> tags,
+        string fingerprint,
         CancellationToken cancellationToken)
     {
-        var prefix = source.Name + "/";
-
-        var stored = await db.ModuleVersions
+        var stored = await SourceModules(source)
             .AsNoTracking()
-            .Where(v => v.Module.Path == source.Name || v.Module.Path.StartsWith(prefix))
-            .Select(v => v.Name)
-            .Distinct()
+            .Select(m => new { Missing = m.MissingSince != null, Tags = m.Versions.Select(v => v.Name).ToList() })
             .ToListAsync(cancellationToken);
 
-        return stored.ToHashSet(StringComparer.Ordinal).SetEquals(tags);
+        // A marked Module's versions are left over from tags that no longer
+        // hold it; counting them would keep the union from ever matching
+        // again, and the source would be cloned on every list.
+        var storedTags = stored.Where(m => !m.Missing).SelectMany(m => m.Tags).ToHashSet(StringComparer.Ordinal);
+
+        if (!storedTags.SetEquals(tags))
+        {
+            return false;
+        }
+
+        return !stored.Any(m => m.Missing) || readCache.LastReadWas(source.Name, fingerprint);
+    }
+
+    /// <summary>
+    /// The stored Modules read from <paramref name="source"/>, by
+    /// <see cref="Module.SourceName"/>. Path alone cannot tell: a git source
+    /// "terraform" and a Gitlab project "terraform/vpc" share the prefix.
+    /// </summary>
+    private IQueryable<Module> SourceModules(ModuleSourceOptions source)
+    {
+        var name = SourceKey(source);
+
+        return db.Modules.Where(m => m.SourceName == name);
+    }
+
+    /// <summary>What <see cref="Module.SourceName"/> holds for <paramref name="source"/>.</summary>
+    public static string SourceKey(ModuleSourceOptions source) => source.Name;
+
+    /// <summary>
+    /// Gives Modules stored before <see cref="Module.SourceName"/> existed
+    /// their source. One is this source's if its Path is the source name or
+    /// under it and any of:
+    /// <list type="bullet">
+    /// <item>every version points into this source's current url - exactly
+    /// <c>Url</c> for the Root layout, or <c>Url//subdir</c> - which a Gitlab
+    /// version (its project's own clone url plus <c>?ref=</c>) never does;</item>
+    /// <item>it has no versions, so nothing says it is a Gitlab Module;</item>
+    /// <item>no Gitlab source is configured, so the Path prefix cannot collide
+    /// with one, even if the source's url has changed since.</item>
+    /// </list>
+    /// Run until it succeeds once per source per API instance; a no-op once
+    /// every row has its source.
+    /// </summary>
+    private async Task BackfillSourceNameAsync(ModuleSourceOptions source, CancellationToken cancellationToken)
+    {
+        var name = source.Name;
+        var key = SourceKey(source);
+        var prefix = name + "/";
+        var url = source.Url;
+        var subdirectoryUrl = source.Url.TrimEnd('/') + "//";
+        var gitlabConfigured = terraformOptions.CurrentValue?.GitlabSourceConfigured == true;
+
+        var updated = await db.Modules
+            .Where(m => m.SourceName == null &&
+                        (m.Path == name || m.Path.StartsWith(prefix)) &&
+                        (!gitlabConfigured ||
+                         !m.Versions.Any() ||
+                         m.Versions.All(v => v.UrlLink == url || v.UrlLink.StartsWith(subdirectoryUrl))))
+            .ExecuteUpdateAsync(x => x.SetProperty(m => m.SourceName, key), cancellationToken);
+
+        if (updated > 0)
+        {
+            logger.LogInformation(
+                "Recorded module source {Source} on {Count} Module(s) stored before sources were recorded.",
+                name,
+                updated);
+        }
     }
 
     /// <summary>
@@ -445,6 +824,7 @@ public class GitModuleRepositoryProvider(
     /// migration.
     /// </summary>
     private async Task PersistAsync(
+        ModuleSourceOptions source,
         IEnumerable<ModuleDraft> drafts,
         DateTime requestTime,
         CancellationToken cancellationToken)
@@ -467,6 +847,10 @@ public class GitModuleRepositoryProvider(
             module.Name = draft.Name;
             module.Description = draft.Description;
             module.DateModified = requestTime;
+            module.SourceName = SourceKey(source);
+
+            // Found again, by any read, so no longer a leftover.
+            module.MissingSince = null;
 
             await db.SaveChangesAsync(cancellationToken);
 
