@@ -163,17 +163,21 @@ public static class AiTopology
 
     public const string Guidance =
 @"Range topology:
-- Segment the network as a real organization does: a perimeter (firewall or router) between the internet and the inside,
-  a DMZ for what the internet reaches, user LANs, server tiers on their own VLANs, and management kept apart.
-  Add OT/ICS behind its own boundary only when the scenario has industrial systems.
-- Put the attacker outside (on the internet segment or its own) unless the request says insider. The attack path should
-  cross the boundaries the defenders are meant to watch, ending at the critical assets.
-- Give each participant team its workstations, on a segment of their own or the one they defend.
-- Name the key cyber terrain and the critical assets, and put them where the scenario needs them.
+- Build what the request asks for, no more. Do not add segments, machines, an attacker or an attack path the request does not
+  call for; a request for one machine or one network is that machine or network.
+- Where the request describes an organization or a range, segment it as a real organization does: a perimeter (firewall or
+  router) between the internet and the inside, a DMZ for what the internet reaches, user LANs, server tiers on their own VLANs,
+  and management kept apart. Add OT/ICS behind its own boundary only when the scenario has industrial systems.
+- Only when the request or the files include an attacker: put the attacker outside (on the internet segment or its own) unless
+  the request says insider, and give the attack path in topology, crossing the boundaries the defenders are meant to watch and
+  ending at the critical assets. With no attacker, leave the attack path empty.
+- Where there are participant teams, give each its workstations, on a segment of their own or the one they defend.
+- Where the scenario has key cyber terrain or critical assets, name them and put them where the scenario needs them.
 - Give each segment its own RFC 1918 block, with no two overlapping, and addresses inside it. Use RFC 5737 addresses
   only for a simulated internet.
 - Only routers, firewalls and security tools sit on more than one segment.
-- Describe what you build in topology: every segment, machine and attack step, matching the Terraform.";
+- Describe what you build in topology: every segment and machine, and every attack step if there is an attacker, matching
+  the Terraform.";
 
     public static JsonObject BuildToolSchema()
     {
@@ -190,7 +194,7 @@ public static class AiTopology
         return new JsonObject
         {
             ["type"] = "object",
-            ["description"] = "The range the draft builds: segments, machines and the attack path.",
+            ["description"] = "The range the draft builds: segments and machines, and the attack path when there is an attacker.",
             ["properties"] = new JsonObject
             {
                 ["segments"] = new JsonObject
@@ -251,7 +255,7 @@ public static class AiTopology
                 ["attackPath"] = new JsonObject
                 {
                     ["type"] = "array",
-                    ["description"] = "The attacker's steps in order, from the entry point to the objective.",
+                    ["description"] = "The attacker's steps in order, from the entry point to the objective. Empty when there is no attacker.",
                     ["items"] = new JsonObject
                     {
                         ["type"] = "object",
@@ -443,7 +447,7 @@ public static class AiTopology
 
         var inside = plan.Segments.Where(s => s.Role is not (AiSegmentRole.Internet or AiSegmentRole.Attacker)).ToList();
         if (inside.Count == 1 && plan.Machines.Count > FlatNetworkMachines)
-            yield return $"All {plan.Machines.Count} machines share {inside[0].Name}. A flat network gives the attacker no boundary to cross; consider a DMZ, user and server segments.";
+            yield return $"All {plan.Machines.Count} machines share {inside[0].Name}. A flat network has no boundary between its machines; consider a DMZ, user and server segments if that matters for the scenario.";
     }
 
     private static IEnumerable<string> AttackProblems(AiTopologyPlan plan)

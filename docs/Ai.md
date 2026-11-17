@@ -90,12 +90,12 @@ The review says when a draft was not checked and why: the inventory is not enabl
 
 ## Reviewing a draft
 
-A draft comes back with a summary, notes and warnings. Both kinds of draft are also returned with a topology plan: the segments, the machines and the attack path. The server checks the plan for:
+A draft comes back with a summary, notes and warnings. Both kinds of draft are also returned with a topology plan: the segments and the machines, and an attack path when there is an attacker. Crucible serves defensive exercises, purple teaming and plain software testing, so the models are told to build what the request asks for: no attacker or attack path unless the request or the existing files include one, and no perimeter, DMZ or server tiers unless the request describes an organization. The server checks the plan for:
 
 - overlapping or public addresses, and addresses outside their segment,
 - reused VLANs,
 - machines that bypass segmentation,
-- an attacker beside the critical assets,
+- an attacker beside the critical assets, when the plan has an attacker,
 - disk beyond what the datastores have free.
 
 Each machine's size is taken from the plan, or from its template's size in the inventory. A machine with neither is left out of the totals, and the review says how many are unsized.
