@@ -297,10 +297,10 @@ public static class AiTerraformDraftBuilder
         // a name the Directory's workspace creates is not missing from the inventory
         var hypervisor = hypervisors?.Count == 1 ? hypervisors[0] : null;
         var replaced = draft.Files.Where(d => d.ExistingFileId.HasValue).Select(d => d.ExistingFileId.Value).ToHashSet();
-        var created = files.Where(f => !replaced.Contains(f.Id) && IsHcl(f.Name)).Select(f => f.Content)
+        var contents = files.Where(f => !replaced.Contains(f.Id) && IsHcl(f.Name)).Select(f => f.Content)
             .Concat(draft.Files.Where(d => IsHcl(d.Name)).Select(d => d.Content))
-            .SelectMany(AiTerraformReferences.CreatedNetworks)
-            .ToHashSet(StringComparer.Ordinal);
+            .ToList();
+        var created = contents.SelectMany(AiTerraformReferences.CreatedNetworks).ToHashSet(StringComparer.Ordinal);
 
         draft.Topology = AiTopology.Parse(input);
         if (draft.Topology == null && (expected != null || draft.Files.Any(d => IsHcl(d.Name) && Machine.IsMatch(StripComments(d.Content)))))
@@ -312,7 +312,7 @@ public static class AiTerraformDraftBuilder
                 .Where(d => IsHcl(d.Name))
                 .SelectMany(d => AiTerraformReferences.NameUses(d.Name, d.Content))
                 .Select(u => u.Hypervisor == null ? u with { Hypervisor = hypervisor } : u)
-                .Concat(AiTopology.NameUses(draft.Topology, hypervisor))
+                .Concat(AiTopology.NameUses(draft.Topology, hypervisor, contents.Any(AiTerraformReferences.CreatesNetworks)))
                 .Where(u => u.Kind != AiInventoryKind.Network || !created.Contains(u.Name));
             inventory.Check(uses, draft.Warnings);
             draft.Inventory = inventory.Grounding;

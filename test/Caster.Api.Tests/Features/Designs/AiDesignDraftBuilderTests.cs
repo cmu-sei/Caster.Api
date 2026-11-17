@@ -218,6 +218,32 @@ namespace Caster.Api.Tests.Features.Designs
         }
 
         [Fact]
+        public void Review_Does_Not_Check_Segment_Networks_A_Network_Module_Creates()
+        {
+            var network = Module("crucible-modules/proxmox-network", "bpg/proxmox");
+            network.Versions.Single().Variables.Add(new ModuleVariable { Name = "vnet_name", VariableType = "string" });
+            network.Versions.Single().Outputs.Add(new ModuleOutput { Name = "vnet_id" });
+            var catalog = AiDesignDraftBuilder.SelectCatalog([network], Sources, null, [Hypervisors.Proxmox]);
+            var inventory = AiInventory.Load(AiInventoryTests.Service(("default", InfrastructureProviders.Proxmox, AiInventoryTests.Proxmox())), [Hypervisors.Proxmox]);
+
+            using var input = JsonDocument.Parse($$"""
+                {
+                  "designName": "lab",
+                  "modules": [{ "moduleId": "{{network.Id}}", "name": "red", "values": { "vnet_name": "training-red" } }],
+                  "topology": {
+                    "segments": [{ "name": "red", "role": "Attacker", "network": "SDN vnet in zone crucible (created by the proxmox-network module)" }],
+                    "machines": []
+                  }
+                }
+                """);
+
+            var draft = AiDesignDraftBuilder.Review(input.RootElement, catalog, null, inventory, [Hypervisors.Proxmox]);
+
+            Assert.Empty(draft.Inventory.Unknown);
+            Assert.DoesNotContain(draft.Warnings, w => w.Contains("not in the Proxmox inventory"));
+        }
+
+        [Fact]
         public void BuildSystemPrompt_Carries_The_Topology_Guidance_And_The_Inventory()
         {
             var catalog = AiDesignDraftBuilder.SelectCatalog([Module("crucible-modules/vm", "bpg/proxmox")], Sources, null, null);

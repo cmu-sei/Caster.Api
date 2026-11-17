@@ -205,7 +205,7 @@ public static class AiTopology
                             ["role"] = Enum<AiSegmentRole>("What the segment is for."),
                             ["cidr"] = Str("IPv4 network, e.g. 10.10.20.0/24."),
                             ["vlanId"] = Int("VLAN ID, 1-4094, when the segment is a VLAN."),
-                            ["network"] = Str("The hypervisor network it uses or creates (bridge, vnet or port group)."),
+                            ["network"] = Str("The name of the hypervisor network it uses or creates (bridge, vnet or port group), e.g. vmbr1. Only the name, no description; empty when not known."),
                             ["keyTerrain"] = Bool("True for key cyber terrain."),
                             ["purpose"] = Str("One line on what the segment is for.")
                         },
@@ -319,14 +319,17 @@ public static class AiTopology
 
     /// <summary>
     /// The names the plan says must exist on the hypervisor: machine templates and segment networks.
-    /// A segment network the files create is left out by the caller.
+    /// A segment network the files create is left out by the caller. When the draft creates networks,
+    /// no segment network is checked: the plan cannot say which segments those are, and the files' own names are checked.
     /// </summary>
-    public static IEnumerable<AiNameUse> NameUses(AiTopologyPlan plan, string hypervisor)
+    public static IEnumerable<AiNameUse> NameUses(AiTopologyPlan plan, string hypervisor, bool draftCreatesNetworks = false)
     {
         if (plan == null)
             yield break;
         foreach (var m in plan.Machines.Where(m => IsLiteral(m.Template)))
             yield return new AiNameUse(AiInventoryKind.Template, m.Template, $"topology machine {m.Name}", hypervisor, ByVmId: m.Template.All(char.IsDigit));
+        if (draftCreatesNetworks)
+            yield break;
         foreach (var s in plan.Segments.Where(s => IsLiteral(s.Network)))
             yield return new AiNameUse(AiInventoryKind.Network, s.Network, $"topology segment {s.Name}", hypervisor);
     }
