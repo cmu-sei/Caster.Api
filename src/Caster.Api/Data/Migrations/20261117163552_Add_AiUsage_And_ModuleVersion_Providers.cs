@@ -1,8 +1,3 @@
-/*
-Copyright 2021 Carnegie Mellon University. All Rights Reserved. 
- Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
-*/
-
 ﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -11,11 +6,17 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Caster.Api.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class AddAiUsage : Migration
+    public partial class Add_AiUsage_And_ModuleVersion_Providers : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<string>(
+                name: "providers",
+                table: "module_versions",
+                type: "text",
+                nullable: true);
+
             migrationBuilder.CreateTable(
                 name: "ai_usages",
                 columns: table => new
@@ -55,6 +56,10 @@ namespace Caster.Api.Data.Migrations
         {
             migrationBuilder.DropTable(
                 name: "ai_usages");
+
+            migrationBuilder.DropColumn(
+                name: "providers",
+                table: "module_versions");
         }
     }
 }
