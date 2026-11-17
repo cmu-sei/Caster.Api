@@ -31,10 +31,13 @@ namespace Caster.Api.Tests.Unit.AiDraft;
 public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(fixture)
 {
     private readonly IAiModelClient _model = Substitute.For<IAiModelClient>();
+    private readonly AiTaskContext _task = new();
     private readonly ICasterAuthorizationService _authorization = Substitute.For<ICasterAuthorizationService>();
     private readonly IInventoryService _inventory = AiInventoryTests.Service(("default", InfrastructureProviders.Proxmox, AiInventoryTests.Proxmox()));
     private string _system;
     private string _prompt;
+    // the task the model call was made for, which picks its provider and model
+    private string _calledFor;
 
     private const string ProxmoxProvider = "terraform {\n  required_providers {\n    proxmox = { source = \"bpg/proxmox\" }\n  }\n}\n";
 
@@ -54,6 +57,7 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
             {
                 _system = call.ArgAt<string>(0);
                 _prompt = call.ArgAt<string>(1);
+                _calledFor = _task.Task;
                 return JsonDocument.Parse(json).RootElement.Clone();
             });
     }
@@ -80,8 +84,10 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
         MayViewHosts(true);
         Answers(Answer);
 
-        var draft = await new FilesDraftWithAi.Handler(_authorization, Db, _model, new AiOptions { Enabled = true }, new TerraformOptions(), _inventory)
+        var draft = await new FilesDraftWithAi.Handler(_authorization, Db, _model, new AiOptions { Enabled = true }, new TerraformOptions(), _inventory, _task)
             .HandleRequest(new FilesDraftWithAi.Command { DirectoryId = directory.Id, Prompt = "a web server in a DMZ" }, Ct);
+
+        Assert.Equal(AiTasks.Terraform, _calledFor);
 
         Assert.Contains("## Proxmox connection \"default\"", _system);
         Assert.Contains("- ubuntu-22 (vmid 9000", _system);
@@ -171,8 +177,10 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
             Attacker = new AiBriefAttacker { EntryPoint = "kali" }
         };
 
-        var draft = await new DraftWithAiFromBrief.Handler(_authorization, Db, _model, new AiOptions { Enabled = true }, new TerraformOptions(), _inventory)
+        var draft = await new DraftWithAiFromBrief.Handler(_authorization, Db, _model, new AiOptions { Enabled = true }, new TerraformOptions(), _inventory, _task)
             .HandleRequest(new DraftWithAiFromBrief.Command { DirectoryId = directory.Id, Brief = brief, Instructions = "Reuse the range's provider." }, Ct);
+
+        Assert.Equal(AiTasks.Brief, _calledFor);
 
         Assert.Contains("Scenario: Water utility", _prompt);
         Assert.Contains("- scada (role Ot, key terrain)", _prompt);
@@ -199,8 +207,10 @@ public class AiDraftGroundingTests(DatabaseFixture fixture) : DatabaseTestBase(f
         Answers($$$"""{"designName":"lab","summary":"s","modules":[{"moduleId":"{{{module.Id}}}","name":"web","values":{"template_id":"9100"}}]}""");
         var terraform = new TerraformOptions { EnvironmentVariables = new EnvironmentVariableOptions { Direct = new() { ["PROXMOX_VE_ENDPOINT"] = "https://pve.test:8006" } } };
 
-        var draft = await new DesignsDraftWithAi.Handler(_authorization, Db, _model, new AiOptions { Enabled = true }, terraform, _inventory)
+        var draft = await new DesignsDraftWithAi.Handler(_authorization, Db, _model, new AiOptions { Enabled = true }, terraform, _inventory, _task)
             .HandleRequest(new DesignsDraftWithAi.Command { DirectoryId = directory.Id, Prompt = "a web server" }, Ct);
+
+        Assert.Equal(AiTasks.Design, _calledFor);
 
         Assert.Contains("- ubuntu-22 (vmid 9000", _system);
         Assert.Equal("9100", Assert.Single(draft.Inventory.Unknown).Name);

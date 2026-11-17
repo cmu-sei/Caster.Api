@@ -65,7 +65,7 @@ public class DraftWithAi
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService) : BaseHandler<Command, AiDesignDraft>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask) : BaseHandler<Command, AiDesignDraft>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -86,6 +86,7 @@ public class DraftWithAi
                     : $"There are no module versions for {string.Join(" or ", hypervisors)} that Terraform runs can download.");
 
             var inventory = await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken);
+            aiTask.Use(AiTasks.Design);
             var input = await aiModelClient.InvokeToolAsync(
                 AiDesignDraftBuilder.BuildSystemPrompt(catalog, hypervisors, inventory.BuildPromptSection()),
                 AiDesignDraftBuilder.BuildUserPrompt(request.Prompt, request.DesignName),
