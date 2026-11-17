@@ -131,6 +131,48 @@ public class OpenAiModelClientTests
         Assert.Null(JsonNode.Parse(handler.Bodies[1])["reasoning_effort"]);
     }
 
+    /// <summary>Every call is recorded against its model, in the Messages API's terms, as a Bedrock call is.</summary>
+    [Fact]
+    public async Task InvokeTool_records_what_the_call_used()
+    {
+        var usage = Substitute.For<IAiUsageRecorder>();
+        var (client, _) = Client(usage, Stream(
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"summary\":\"ok\",\"files\":[]}"}}]},"finish_reason":"tool_calls"}]}""",
+            """{"choices":[],"usage":{"prompt_tokens":140,"completion_tokens":106,"prompt_tokens_details":{"cached_tokens":40}}}"""));
+
+        await client.InvokeToolAsync(Model, "Draft.", "A range.", "draft_terraform", "Submit it", Schema(), CancellationToken.None);
+
+        await usage.Received(1).RecordAsync("test-model", Arg.Is<JsonElement>(m => Reports(m, "tool_use", 100, 106, 40)), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>A call cut off at the output limit returns no draft but is billed, so it is recorded all the same.</summary>
+    [Fact]
+    public async Task InvokeTool_records_a_call_that_ran_out_of_output_tokens()
+    {
+        var usage = Substitute.For<IAiUsageRecorder>();
+        var (client, _) = Client(usage, Stream(
+            """{"choices":[{"delta":{"content":"Thinking"},"finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":4000}}"""));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.InvokeToolAsync(Model, "Draft.", "A range.", "draft_terraform", "Submit it", Schema(), CancellationToken.None));
+
+        await usage.Received(1).RecordAsync("test-model", Arg.Is<JsonElement>(m => Reports(m, "max_tokens", 10, 4000, 0)), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>A request the server refused never reached the model; only the call sent again is recorded.</summary>
+    [Fact]
+    public async Task InvokeTool_records_only_the_call_the_model_answered()
+    {
+        var usage = Substitute.For<IAiUsageRecorder>();
+        var (client, _) = Client(usage,
+            new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("""{"error":{"message":"Unrecognized request argument: reasoning_effort"}}""") },
+            Stream("""{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"summary\":\"ok\",\"files\":[]}"}}]},"finish_reason":"tool_calls"}]}"""));
+
+        await client.InvokeToolAsync(Model, "Draft.", "A range.", "draft_terraform", "Submit it", Schema(), CancellationToken.None);
+
+        await usage.Received(1).RecordAsync(Arg.Any<string>(), Arg.Any<JsonElement>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task InvokeTool_needs_a_base_url()
     {
@@ -199,7 +241,7 @@ public class OpenAiModelClientTests
         };
         var task = new AiTaskContext();
         task.Use(AiTasks.Brief);
-        var router = new AiModelRouter(options, task, new BedrockAiModelClient(options, NullLogger<BedrockAiModelClient>.Instance), openAi);
+        var router = new AiModelRouter(options, task, new BedrockAiModelClient(options, Substitute.For<IAiUsageRecorder>(), NullLogger<BedrockAiModelClient>.Instance), openAi);
 
         var input = await router.InvokeToolAsync("Draft.", "A range.", "draft_terraform", "Submit it", Schema(), CancellationToken.None);
 
@@ -226,7 +268,7 @@ public class OpenAiModelClientTests
         };
         var task = new AiTaskContext();
         task.Use(AiTasks.Design);
-        var router = new AiModelRouter(options, task, new BedrockAiModelClient(options, NullLogger<BedrockAiModelClient>.Instance), openAi);
+        var router = new AiModelRouter(options, task, new BedrockAiModelClient(options, Substitute.For<IAiUsageRecorder>(), NullLogger<BedrockAiModelClient>.Instance), openAi);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             router.InvokeToolAsync("Draft.", "A range.", "draft_design", "Submit it", Schema(), CancellationToken.None));
@@ -273,7 +315,7 @@ public class OpenAiModelClientTests
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient());
         var output = Environment.GetEnvironmentVariable("CASTER_LIVE_OPENAI_OUT");
-        var client = new OpenAiModelClient(factory, new AiOptions { TimeoutSeconds = 600 },
+        var client = new OpenAiModelClient(factory, new AiOptions { TimeoutSeconds = 600 }, Substitute.For<IAiUsageRecorder>(),
             string.IsNullOrEmpty(output) ? NullLogger<OpenAiModelClient>.Instance : new FileLogger(output + ".log"));
         var model = new AiTaskModel
         {
@@ -309,13 +351,22 @@ public class OpenAiModelClientTests
         Assert.Contains(draft.Files, f => f.Content.Contains("resource \"proxmox_"));
     }
 
-    private static (OpenAiModelClient, Handler) Client(params HttpResponseMessage[] responses)
+    private static (OpenAiModelClient, Handler) Client(params HttpResponseMessage[] responses) =>
+        Client(Substitute.For<IAiUsageRecorder>(), responses);
+
+    private static (OpenAiModelClient, Handler) Client(IAiUsageRecorder usage, params HttpResponseMessage[] responses)
     {
         var handler = new Handler(responses);
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(handler, disposeHandler: false));
-        return (new OpenAiModelClient(factory, new AiOptions { TimeoutSeconds = 30 }, NullLogger<OpenAiModelClient>.Instance), handler);
+        return (new OpenAiModelClient(factory, new AiOptions { TimeoutSeconds = 30 }, usage, NullLogger<OpenAiModelClient>.Instance), handler);
     }
+
+    private static bool Reports(JsonElement message, string stopReason, int input, int output, int cacheRead) =>
+        message.GetProperty("stop_reason").GetString() == stopReason
+        && message.GetProperty("usage").GetProperty("input_tokens").GetInt32() == input
+        && message.GetProperty("usage").GetProperty("output_tokens").GetInt32() == output
+        && message.GetProperty("usage").GetProperty("cache_read_input_tokens").GetInt32() == cacheRead;
 
     private static HttpResponseMessage Stream(params string[] chunks)
     {

@@ -34,18 +34,27 @@ namespace Caster.Api.Domain.Services
         Task<JsonElement> InvokeToolAsync(AiTaskModel model, string system, string prompt, string toolName, string toolDescription, JsonObject inputSchema, CancellationToken ct);
     }
 
-    /// <summary>The AI task a request's model calls are made for, one of <see cref="AiTasks"/>; scoped to the request</summary>
+    /// <summary>
+    /// The AI task a request's model calls are made for, one of <see cref="AiTasks"/>, and the Directory they draft in;
+    /// scoped to the request. Each call is recorded against the Directory's Project.
+    /// </summary>
     public interface IAiTaskContext
     {
         string Task { get; }
-        void Use(string task);
+        Guid? DirectoryId { get; }
+        void Use(string task, Guid? directoryId = null);
     }
 
     public class AiTaskContext : IAiTaskContext
     {
         public string Task { get; private set; }
+        public Guid? DirectoryId { get; private set; }
 
-        public void Use(string task) => Task = task;
+        public void Use(string task, Guid? directoryId = null)
+        {
+            Task = task;
+            DirectoryId = directoryId;
+        }
     }
 
     /// <summary>
@@ -94,11 +103,13 @@ Describe adversary activity as defenders, reporters and officials would see and 
 malware, or step-by-step attack instructions; the scenario does not need them.";
 
         private readonly AiOptions _options;
+        private readonly IAiUsageRecorder _usage;
         private readonly ILogger<BedrockAiModelClient> _logger;
 
-        public BedrockAiModelClient(AiOptions options, ILogger<BedrockAiModelClient> logger)
+        public BedrockAiModelClient(AiOptions options, IAiUsageRecorder usage, ILogger<BedrockAiModelClient> logger)
         {
             _options = options;
+            _usage = usage;
             _logger = logger;
         }
 
@@ -231,6 +242,8 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
                 toolName, modelId, StopReason(result),
                 result.TryGetProperty("stop_details", out var details) ? details.GetRawText() : null,
                 result.TryGetProperty("usage", out var usage) ? usage.GetRawText() : null);
+            // each call is billed, the declined one a fallback model retries included
+            await _usage.RecordAsync(modelId, result, ct);
             return result;
         }
 

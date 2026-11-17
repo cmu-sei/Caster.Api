@@ -72,6 +72,14 @@ internal static class TestConfiguration
         ["Infrastructure:Connections:1:Password"] = VspherePassword,
         ["Infrastructure:Connections:1:Datacenters:0"] = "DC1",
         ["Infrastructure:Connections:1:Inventory:Enabled"] = "true",
+        // Shipped empty, which leaves every AI usage estimate null: GET projects/{id}/ai-usage could then not
+        // show a cost. Two models no server uses: one keyed by its id, one as an environment variable would key it.
+        ["Ai:Prices:test-model:InputPerMillion"] = "2",
+        ["Ai:Prices:test-model:OutputPerMillion"] = "10",
+        ["Ai:Prices:test-model:CacheReadPerMillion"] = "0.2",
+        ["Ai:Prices:test-model:CacheWritePerMillion"] = "2.5",
+        ["Ai:Prices:us_test_env_model_1_0:InputPerMillion"] = "1",
+        ["Ai:Prices:us_test_env_model_1_0:OutputPerMillion"] = "5",
     };
 
     /// <summary>The Proxmox connection in <see cref="Values"/>.</summary>

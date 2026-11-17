@@ -26,12 +26,14 @@ namespace Caster.Api.Domain.Services
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly AiOptions _options;
+        private readonly IAiUsageRecorder _usage;
         private readonly ILogger<OpenAiModelClient> _logger;
 
-        public OpenAiModelClient(IHttpClientFactory httpClientFactory, AiOptions options, ILogger<OpenAiModelClient> logger)
+        public OpenAiModelClient(IHttpClientFactory httpClientFactory, AiOptions options, IAiUsageRecorder usage, ILogger<OpenAiModelClient> logger)
         {
             _httpClientFactory = httpClientFactory;
             _options = options;
+            _usage = usage;
             _logger = logger;
         }
 
@@ -83,6 +85,8 @@ namespace Caster.Api.Domain.Services
             var usage = answer.ToUsageMessage();
             _logger.LogInformation("AI draft {Tool} on {Model} stopped with {StopReason}: {Usage}",
                 toolName, model.ModelId, answer.FinishReason, usage.GetProperty("usage").GetRawText());
+            // recorded before the answer is checked: a call cut off or filtered is billed too
+            await _usage.RecordAsync(model.ModelId, usage, ct);
 
             if (answer.FinishReason == "length")
                 throw new InvalidOperationException("The model ran out of output tokens before it finished. Ask for a smaller draft, or give this task a model with a larger output limit.");
