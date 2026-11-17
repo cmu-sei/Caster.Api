@@ -21,7 +21,7 @@ namespace Caster.Api.Infrastructure.Options
         // answers are streamed, so this can be well past what one unstreamed request finishes in
         public int MaxTokens { get; set; } = 64000;
         public int TimeoutSeconds { get; set; } = 600;
-        // the model each task uses where it is not the default above, keyed by task: design, terraform, brief (see AiTasks).
+        // the model each task uses where it is not the default above, keyed by task: design, terraform, brief, assist (see AiTasks).
         // Any field left empty is the default's.
         public Dictionary<string, AiTaskModel> Models { get; set; } = new Dictionary<string, AiTaskModel>();
         // how hard a model thinks before it answers: low, medium, high, xhigh or max; empty for the model's own default.
@@ -51,7 +51,9 @@ namespace Caster.Api.Infrastructure.Options
                 BaseUrl = own?.BaseUrl,
                 ApiKey = own?.ApiKey,
                 MaxTokens = own?.MaxTokens > 0 ? own.MaxTokens : MaxTokens,
-                Effort = Pick(own?.Effort, Effort)
+                Effort = Pick(own?.Effort, Effort),
+                // Ask AI's small change schema fits strict tool use; the drafts' file-heavy schemas are left as they were
+                Strict = own?.Strict ?? string.Equals(task, AiTasks.Assist, StringComparison.OrdinalIgnoreCase)
             };
 
             static string Pick(string value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
@@ -67,6 +69,8 @@ namespace Caster.Api.Infrastructure.Options
         public const string Terraform = "terraform";
         // Terraform drafted in a Directory from a structured scenario brief
         public const string Brief = "brief";
+        // changes to a Directory's files and workspaces proposed in the Ask AI panel
+        public const string Assist = "assist";
     }
 
     /// <summary>Where one task's model calls go</summary>
@@ -84,6 +88,9 @@ namespace Caster.Api.Infrastructure.Options
         public int MaxTokens { get; set; }
         // low, medium, high, xhigh or max; empty for the default
         public string Effort { get; set; }
+        // constrain the answer to the tool's schema (Bedrock strict tool use); asked again without it when Bedrock
+        // refuses the schema. Empty for the task's default: on for assist, off for the rest.
+        public bool? Strict { get; set; }
     }
 
     /// <summary>A model's price in US dollars per million tokens of each kind</summary>
