@@ -122,6 +122,29 @@ public class AiTerraformDraftBuilderTests
     }
 
     [Fact]
+    public void Review_lists_the_models_assumptions_apart_from_its_warnings()
+    {
+        var draft = Review("""{"summary":"s","files":[{"name":"n.tf","content":"# n"}],"assumptions":["Reuses var.attacker_template for the second attacker.","  ","Puts it on red-net."],"notes":["Set var.node."]}""");
+
+        Assert.Equal(["Reuses var.attacker_template for the second attacker.", "Puts it on red-net."], draft.Assumptions);
+        Assert.DoesNotContain(draft.Warnings, w => w.Contains("attacker_template") || w.Contains("red-net"));
+        Assert.Contains("Set var.node.", draft.Warnings);
+    }
+
+    [Fact]
+    public void Review_without_assumptions_leaves_the_list_empty()
+    {
+        Assert.Empty(Review("""{"summary":"s","files":[{"name":"n.tf","content":"# n"}]}""").Assumptions);
+    }
+
+    [Fact]
+    public void BuildToolSchema_asks_for_assumptions_and_the_prompt_says_what_they_are()
+    {
+        Assert.True(AiTerraformDraftBuilder.BuildToolSchema()["properties"]!.AsObject().ContainsKey("assumptions"));
+        Assert.Contains("In assumptions, list each decision the request did not settle", AiTerraformDraftBuilder.BuildSystemPrompt([], null, []));
+    }
+
+    [Fact]
     public void Review_of_no_files_says_so()
     {
         var draft = Review("""{"summary":"nothing to do","files":[]}""");

@@ -25,6 +25,11 @@ public class AiDesignDraft
     public List<AiDraftModule> Modules { get; set; } = [];
 
     /// <summary>
+    /// What the model decided that the request did not say, one plain sentence each: what it chose and why.
+    /// </summary>
+    public List<string> Assumptions { get; set; } = [];
+
+    /// <summary>
     /// What was dropped or changed from the model's answer, and what still needs a planner's attention.
     /// </summary>
     public List<string> Warnings { get; set; } = [];
@@ -187,6 +192,8 @@ public static class AiDesignDraftBuilder
         sb.AppendLine("- For any other type, give an HCL expression: 2, true, [\"a\", \"b\"], { key = \"value\" }, or module.<name>.<output> directly.");
         sb.AppendLine("- Only reference outputs listed for a module you include, and never a module's own outputs.");
         sb.AppendLine("- Prefer the fewest modules that meet the request. Say in the summary what the planner still has to decide.");
+        sb.AppendLine("- In assumptions, list each decision the request did not settle, one plain sentence each: what you chose and why, for");
+        sb.AppendLine("  example a size, address range, segment or module. Leave it empty when the request settled everything.");
         if (hypervisors?.Count == 1)
         {
             sb.AppendLine($"- The design builds on {hypervisors[0]}. Every catalog module either targets it or works on any hypervisor.");
@@ -283,6 +290,12 @@ public static class AiDesignDraftBuilder
             {
                 ["designName"] = new JsonObject { ["type"] = "string" },
                 ["summary"] = new JsonObject { ["type"] = "string", ["description"] = "What the design builds and what the planner still has to decide." },
+                ["assumptions"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["description"] = "Each decision the request did not settle, as one plain sentence saying what you chose and why. Empty when the request settled everything.",
+                    ["items"] = new JsonObject { ["type"] = "string" }
+                },
                 ["modules"] = new JsonObject
                 {
                     ["type"] = "array",
@@ -320,6 +333,10 @@ public static class AiDesignDraftBuilder
             DesignName = !string.IsNullOrWhiteSpace(designName) ? designName.Trim() : GetString(input, "designName") ?? "AI draft",
             Summary = GetString(input, "summary")
         };
+        if (input.TryGetProperty("assumptions", out var assumptions) && assumptions.ValueKind == JsonValueKind.Array)
+            draft.Assumptions.AddRange(assumptions.EnumerateArray()
+                .Where(a => a.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(a.GetString()))
+                .Select(a => a.GetString().Trim()));
         var byId = catalog.ToDictionary(c => c.Module.Id);
         var kept = new List<(AiDraftModule Draft, ModuleVersion Version, List<Domain.Models.ModuleValue> Values)>();
 

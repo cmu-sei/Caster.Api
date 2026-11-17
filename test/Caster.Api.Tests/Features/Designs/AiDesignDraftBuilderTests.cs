@@ -129,6 +129,37 @@ namespace Caster.Api.Tests.Features.Designs
         }
 
         [Fact]
+        public void Review_Lists_The_Models_Assumptions_Apart_From_Its_Warnings()
+        {
+            var vm = Module("crucible-modules/proxmox-vm", "bpg/proxmox");
+            vm.Versions.Single().Variables.Add(new ModuleVariable { Name = "name", VariableType = "string" });
+            var catalog = AiDesignDraftBuilder.SelectCatalog([vm], Sources, null, null);
+
+            using var input = JsonDocument.Parse($$"""
+                {
+                  "designName": "office",
+                  "assumptions": ["Uses one Proxmox hypervisor, the only one configured.", " "],
+                  "modules": [ { "moduleId": "{{vm.Id}}", "name": "ws1", "values": { "name": "ws1" } } ]
+                }
+                """);
+
+            var draft = AiDesignDraftBuilder.Review(input.RootElement, catalog, null);
+
+            Assert.Equal(["Uses one Proxmox hypervisor, the only one configured."], draft.Assumptions);
+            Assert.DoesNotContain(draft.Warnings, w => w.Contains("only one configured"));
+        }
+
+        [Fact]
+        public void BuildToolSchema_Asks_For_Assumptions_And_The_Prompt_Says_What_They_Are()
+        {
+            var vm = Module("crucible-modules/proxmox-vm", "bpg/proxmox");
+            var catalog = AiDesignDraftBuilder.SelectCatalog([vm], Sources, null, null);
+
+            Assert.Contains("\"assumptions\"", AiDesignDraftBuilder.BuildToolSchema(catalog).ToJsonString());
+            Assert.Contains("In assumptions, list each decision the request did not settle", AiDesignDraftBuilder.BuildSystemPrompt(catalog));
+        }
+
+        [Fact]
         public void Review_Gives_A_Required_Value_Left_Out_A_Placeholder()
         {
             var vm = Module("crucible-modules/proxmox-vm", "bpg/proxmox");

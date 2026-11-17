@@ -23,6 +23,11 @@ public class AiTerraformDraft
     public List<AiTerraformFile> Files { get; set; } = [];
 
     /// <summary>
+    /// What the model decided that the request did not say, one plain sentence each: what it chose and why.
+    /// </summary>
+    public List<string> Assumptions { get; set; } = [];
+
+    /// <summary>
     /// What was dropped or changed from the model's answer, and what still needs a designer's attention.
     /// </summary>
     public List<string> Warnings { get; set; } = [];
@@ -129,6 +134,9 @@ public static class AiTerraformDraftBuilder
         sb.AppendLine("- Use fictional addressing (RFC 1918 and RFC 5737 ranges) unless the context already sets the addresses.");
         sb.AppendLine("- Write HCL a person can maintain: one purpose per file, comments only where intent is not obvious.");
         sb.AppendLine("- In the summary, say what you changed and what the designer still has to decide.");
+        sb.AppendLine("- In assumptions, list each decision the request did not settle, one plain sentence each: what you chose and why, for");
+        sb.AppendLine("  example a template, size, address range, segment or module. Leave it empty when the request settled everything. Put in");
+        sb.AppendLine("  notes only what the designer must do or check before applying.");
         sb.AppendLine();
         sb.AppendLine(AiTopology.Guidance);
         if (ProviderEnvironmentSection(providerVariables) is { Length: > 0 } providerSection)
@@ -219,10 +227,16 @@ public static class AiTerraformDraftBuilder
                     ["required"] = new JsonArray("name", "content")
                 }
             },
+            ["assumptions"] = new JsonObject
+            {
+                ["type"] = "array",
+                ["description"] = "Each decision the request did not settle, as one plain sentence saying what you chose and why. Empty when the request settled everything.",
+                ["items"] = new JsonObject { ["type"] = "string" }
+            },
             ["notes"] = new JsonObject
             {
                 ["type"] = "array",
-                ["description"] = "Variables to set, guesses made, and changes needed in read-only files.",
+                ["description"] = "What the designer must do or check before applying: variables to set, and changes needed in read-only files.",
                 ["items"] = new JsonObject { ["type"] = "string" }
             },
             [AiTopology.ToolProperty] = AiTopology.BuildToolSchema()
@@ -285,6 +299,11 @@ public static class AiTerraformDraftBuilder
                 draft.Files.Add(file);
             }
         }
+
+        if (input.TryGetProperty("assumptions", out var assumptions) && assumptions.ValueKind == JsonValueKind.Array)
+            draft.Assumptions.AddRange(assumptions.EnumerateArray()
+                .Where(a => a.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(a.GetString()))
+                .Select(a => a.GetString().Trim()));
 
         if (input.TryGetProperty("notes", out var notes) && notes.ValueKind == JsonValueKind.Array)
             draft.Warnings.AddRange(notes.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()));
