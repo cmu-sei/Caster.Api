@@ -30,6 +30,7 @@ public static partial class DesignModuleMapper
     private const string RecordEqualityContract = "EqualityContract";
 
     [MapperIgnoreTarget(nameof(DesignModule.Values))]
+    [MapperIgnoreTarget(nameof(DesignModule.Placeholders))]
     public static partial DesignModule ToDesignModule(this Domain.Models.DesignModule source);
 
     [MapperRequiredMapping(RequiredMappingStrategy.Source)]
@@ -64,6 +65,7 @@ public static partial class DesignModuleProjectionMapper
     public static partial IQueryable<DesignModule> ProjectToDesignModule(this IQueryable<Domain.Models.DesignModule> query);
 
     [MapperIgnoreTarget(nameof(DesignModule.Values))]
+    [MapperIgnoreTarget(nameof(DesignModule.Placeholders))]
     [MapperIgnoreTarget(nameof(DesignModule.ValuesJson))]
     private static partial DesignModule MapToDesignModule(Domain.Models.DesignModule source);
 }
@@ -75,6 +77,7 @@ public static partial class DesignModuleWithValuesProjectionMapper
     public static partial IQueryable<DesignModule> ProjectToDesignModuleWithValues(this IQueryable<Domain.Models.DesignModule> query);
 
     [MapperIgnoreTarget(nameof(DesignModule.Values))]
+    [MapperIgnoreTarget(nameof(DesignModule.Placeholders))]
     [MapPropertyFromSource(nameof(DesignModule.ValuesJson), Use = nameof(ReadValuesJson))]
     private static partial DesignModule MapToDesignModule(Domain.Models.DesignModule source);
 
