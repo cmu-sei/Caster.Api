@@ -4,9 +4,9 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using FluentValidation;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Authorization;
@@ -57,9 +57,25 @@ namespace Caster.Api.Features.Hosts
             /// </summary>
             [DataMember]
             public Guid? ProjectId { get; set; }
+
+            /// <summary>
+            /// The Id of the project group to assign this Host to, instead of a Project
+            /// </summary>
+            [DataMember]
+            public Guid? ProjectGroupId { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Host>
+        public class Validator : AbstractValidator<Command>
+        {
+            public Validator()
+            {
+                RuleFor(x => x)
+                    .Must(x => !(x.ProjectId.HasValue && x.ProjectGroupId.HasValue))
+                    .WithMessage("A Host belongs to a Project or a project group, not both.");
+            }
+        }
+
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Host>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageHosts], cancellationToken);
@@ -71,9 +87,9 @@ namespace Caster.Api.Features.Hosts
                 if (host == null)
                     throw new EntityNotFoundException<Host>();
 
-                mapper.Map(request, host);
+                request.ApplyTo(host);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Host>(host);
+                return host.ToHost();
             }
         }
     }

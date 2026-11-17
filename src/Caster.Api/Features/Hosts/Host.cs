@@ -41,5 +41,11 @@ namespace Caster.Api.Features.Hosts
         /// The Project this Host is assigned to, if any
         /// </summary>
         public Guid? ProjectId { get; set; }
+
+        /// <summary>
+        /// The project group this Host serves, if any. A Host has at most one owner, a Project or
+        /// a project group.
+        /// </summary>
+        public Guid? ProjectGroupId { get; set; }
     }
 }

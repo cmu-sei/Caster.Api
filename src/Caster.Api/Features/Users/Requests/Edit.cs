@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
@@ -30,7 +29,7 @@ namespace Caster.Api.Features.Users
             public string RoleId { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, User>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, User>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageUsers], cancellationToken);
@@ -42,9 +41,9 @@ namespace Caster.Api.Features.Users
                 if (user == null)
                     throw new EntityNotFoundException<User>();
 
-                mapper.Map(request, user);
+                request.ApplyTo(user);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<User>(user);
+                return user.ToUser();
             }
         }
     }

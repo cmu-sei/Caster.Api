@@ -273,6 +273,8 @@ public class VlanRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         var actor = await Actor().WithSystemPermissions(SystemPermission.ManageVLANs).SeedAsync();
 
         await AssertStatus(HttpStatusCode.OK, await Client(actor).PatchAsJsonAsync($"api/vlans/partitions/{partition.Id}", new { name = "patched" }, Ct));
+
+        Assert.Equal("patched", (await StoredPartition(partition.Id)).Name);
     }
 
     [Fact]
@@ -430,6 +432,39 @@ public class VlanRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
         Assert.Null((await StoredVlan(free.Id)).PartitionId);
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(4097)]
+    public async Task AddVlansToPartition_rejects_a_count_outside_1_to_4096_and_moves_nothing(int count)
+    {
+        var (pool, partition) = await SeedPartition();
+        var free = TestData.Vlan(pool, 20);
+        await Seed(free);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageVLANs).SeedAsync();
+
+        var response = await Client(actor).PostAsJsonAsync($"api/vlans/partitions/{partition.Id}/actions/vlans/add", new { vlans = count }, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("between 1 and 4096", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Null((await StoredVlan(free.Id)).PartitionId);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    public async Task RemoveVlansFromPartition_rejects_a_count_below_1_and_moves_nothing(int count)
+    {
+        var (pool, partition) = await SeedPartition();
+        var vlan = TestData.Vlan(pool, 30, partition);
+        await Seed(vlan);
+        var actor = await Actor().WithSystemPermissions(SystemPermission.ManageVLANs).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.BadRequest, await Client(actor).PostAsJsonAsync($"api/vlans/partitions/{partition.Id}/actions/vlans/remove", new { vlans = count }, Ct));
+
+        Assert.Equal(partition.Id, (await StoredVlan(vlan.Id)).PartitionId);
+    }
+
     [Fact]
     public async Task RemoveVlansFromPartition_by_a_caller_holding_ManageVLANs_returns_them_to_the_pool()
     {
@@ -494,6 +529,14 @@ public class VlanRequestTests(DatabaseFixture fixture, CasterAppFactory factory)
 
         var problem = await AssertProblem(HttpStatusCode.Conflict, response);
         Assert.Equal("No VLANs available", problem.Title);
+    }
+
+    /// <summary>A project that doesn't exist is refused, not given a VLAN from the default partition.</summary>
+    [Fact]
+    public async Task AcquireVlan_for_a_project_that_does_not_exist_is_refused()
+    {
+        await AssertProblem(HttpStatusCode.BadRequest,
+            await RootClient.PostAsJsonAsync("api/vlans/actions/acquire", new { projectId = Guid.NewGuid() }, Ct));
     }
 
     [Fact]

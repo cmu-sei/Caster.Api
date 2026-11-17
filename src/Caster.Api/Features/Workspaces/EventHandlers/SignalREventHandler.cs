@@ -4,8 +4,6 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Crucible.Common.EntityEvents.Events;
 using MediatR;
@@ -15,8 +13,8 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Caster.Api.Features.Workspaces.EventHandlers;
 
-public class WorkspaceCreatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    WorkspaceBaseSignalRHandler(_db, _mapper, _projectHub),
+public class WorkspaceCreatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    WorkspaceBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityCreated<Domain.Models.Workspace>>
 {
     public async Task Handle(EntityCreated<Domain.Models.Workspace> notification, CancellationToken cancellationToken)
@@ -25,8 +23,8 @@ public class WorkspaceCreatedSignalRHandler(CasterContext _db, IMapper _mapper, 
     }
 }
 
-public class WorkspaceUpdatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    WorkspaceBaseSignalRHandler(_db, _mapper, _projectHub),
+public class WorkspaceUpdatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    WorkspaceBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityUpdated<Domain.Models.Workspace>>
 {
     public async Task Handle(EntityUpdated<Domain.Models.Workspace> notification, CancellationToken cancellationToken)
@@ -49,13 +47,13 @@ public class WorkspaceDeletedSignalRHandler(CasterContext _db, IHubContext<Proje
     }
 }
 
-public class WorkspaceBaseSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub)
+public class WorkspaceBaseSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub)
 {
     protected async Task Handle(Domain.Models.Workspace entity, string method, string[] modifiedProperties, CancellationToken cancellationToken)
     {
         var workspace = await _db.Workspaces
            .Where(d => d.Id == entity.Id)
-           .ProjectTo<Workspace>(_mapper.ConfigurationProvider)
+           .ProjectToWorkspace()
            .FirstOrDefaultAsync();
 
         var projectId = await _db.Directories

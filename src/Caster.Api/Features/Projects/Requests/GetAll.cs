@@ -5,9 +5,7 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
@@ -26,7 +24,7 @@ namespace Caster.Api.Features.Projects
             public bool OnlyMine { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Project[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Project[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
@@ -51,7 +49,7 @@ namespace Caster.Api.Features.Projects
                 }
 
                 return await query
-                    .ProjectTo<Project>(mapper.ConfigurationProvider)
+                    .ProjectToProject()
                     .ToArrayAsync(cancellationToken);
             }
         }

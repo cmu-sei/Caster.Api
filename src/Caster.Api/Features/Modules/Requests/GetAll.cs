@@ -4,10 +4,8 @@
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
@@ -53,7 +51,6 @@ namespace Caster.Api.Features.Modules
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext,
             IModuleRepositoryService moduleRepositoryService,
             ILogger<GetAll> logger) : BaseHandler<Query, Module[]>
@@ -110,8 +107,8 @@ namespace Caster.Api.Features.Modules
                     query = query.Include(x => x.Versions);
                 }
 
-                var modules = await query
-                    .ProjectTo<Module>(mapper.ConfigurationProvider, request.IncludeVersionCount ? (dest => dest.VersionsCount) : null)
+                // The versions are never projected: the Include calls above have no effect on a projection.
+                var modules = await (request.IncludeVersionCount ? query.ProjectToModuleWithVersionCount() : query.ProjectToModule())
                     .ToArrayAsync(cancellationToken);
 
                 foreach (var module in modules.Where(m => m.Versions != null))

@@ -41,11 +41,16 @@ namespace Caster.Api.Tests.Domain.Services.Terraform
                 RootWorkingDirectory = _rootPath
             };
 
+            var environmentBuilder = Substitute.For<ITerraformEnvironmentBuilder>();
+            environmentBuilder
+                .BuildAsync(Arg.Any<Workspace>(), Arg.Any<System.Collections.Generic.IEnumerable<string>>(), Arg.Any<bool>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(new TerraformEnvironment());
+
             _sut = new ProcessTerraformService(
                 _options,
                 Substitute.For<ILogger<ProcessTerraformService>>(),
                 new MemoryCache(new MemoryCacheOptions()),
-                Substitute.For<IRegexService>());
+                environmentBuilder);
         }
 
         public void Dispose()

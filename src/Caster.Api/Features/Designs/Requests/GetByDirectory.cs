@@ -14,7 +14,6 @@ using Caster.Api.Features.Shared;
 using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 
@@ -37,7 +36,7 @@ public class GetByDirectory
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Design[]>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Design[]>
     {
         public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -48,7 +47,7 @@ public class GetByDirectory
                 .Where(x => x.DirectoryId == request.DirectoryId)
                 .ToArrayAsync();
 
-            return mapper.Map<Design[]>(designs);
+            return designs.Select(x => x.ToDesign()).ToArray();
         }
     }
 }

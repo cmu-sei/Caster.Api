@@ -1,0 +1,105 @@
+// Copyright 2021 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System.Collections.Generic;
+using Caster.Api.Infrastructure.Options;
+
+namespace Caster.Api.Domain.Services.Inventory;
+
+/// <summary>
+/// Last line of defence so a provider error string can never carry a configured
+/// credential out to an api response or a log line, nor the connection's address out
+/// to an api response. Shared by every provider so there is exactly one redaction rule
+/// to audit.
+/// </summary>
+public static class InventoryRedaction
+{
+    public const string Mask = "***";
+
+    /// <summary>
+    /// Replaces every configured secret in <paramref name="message"/> with
+    /// <see cref="Mask"/>, and the connection's url and host with its name, as project
+    /// members read these messages. <paramref name="extraSecrets"/> covers values that only
+    /// exist for the duration of a read, such as a Proxmox auth ticket.
+    /// </summary>
+    public static string Redact(string message, InfrastructureConnectionOptions options, params string[] extraSecrets)
+    {
+        if (string.IsNullOrEmpty(message))
+            return message;
+
+        foreach (var secret in Secrets(options, extraSecrets))
+        {
+            message = message.Replace(secret, Mask);
+        }
+
+        var name = string.IsNullOrWhiteSpace(options?.Name) ? "the connection" : options.Name;
+
+        foreach (var address in Addresses(options))
+        {
+            message = message.Replace(address, name, System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        return message;
+    }
+
+    /// <summary>
+    /// An exception as one redacted line, its type and message, for logging. The
+    /// exception itself isn't logged: its message, inner exceptions and stack can
+    /// all carry what was sent to the provider.
+    /// </summary>
+    public static string Describe(System.Exception exception, InfrastructureConnectionOptions options, params string[] extraSecrets) =>
+        exception is null ? null : $"{exception.GetType().Name}: {Redact(exception.Message, options, extraSecrets)}";
+
+    /// <summary>
+    /// The url as configured, then the host with and without its port, longest first. A host
+    /// without a dot (a bare name such as "pve") is left alone, as it may be an ordinary word.
+    /// </summary>
+    private static IEnumerable<string> Addresses(InfrastructureConnectionOptions options)
+    {
+        var url = options?.Url?.Trim().TrimEnd('/');
+
+        if (string.IsNullOrEmpty(url))
+            yield break;
+
+        yield return url;
+
+        if (System.Uri.TryCreate(url, System.UriKind.Absolute, out var uri) && uri.Host.Contains('.'))
+        {
+            yield return uri.Authority;
+            yield return uri.Host;
+        }
+    }
+
+    private static IEnumerable<string> Secrets(InfrastructureConnectionOptions options, string[] extraSecrets)
+    {
+        if (!string.IsNullOrEmpty(options?.Password))
+        {
+            yield return options.Password;
+        }
+
+        if (!string.IsNullOrEmpty(options?.ApiToken))
+        {
+            // The whole token first, then the secret half on its own, so a message
+            // that only echoed the secret is still covered.
+            yield return options.ApiToken;
+
+            var separator = options.ApiToken.IndexOf('=');
+
+            if (separator >= 0 && separator < options.ApiToken.Length - 1)
+            {
+                yield return options.ApiToken[(separator + 1)..];
+            }
+        }
+
+        if (extraSecrets == null)
+            yield break;
+
+        foreach (var secret in extraSecrets)
+        {
+            if (!string.IsNullOrEmpty(secret))
+            {
+                yield return secret;
+            }
+        }
+    }
+}

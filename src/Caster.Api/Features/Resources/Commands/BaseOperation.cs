@@ -2,7 +2,6 @@
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
 using System.Threading.Tasks;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Options;
@@ -19,7 +18,6 @@ using MediatR;
 namespace Caster.Api.Features.Resources
 {
     public abstract class BaseOperationHandler<TRequest, TResponse>(
-        IMapper mapper,
         CasterContext dbContext,
         ILockService lockService,
         TerraformOptions terraformOptions,
@@ -116,10 +114,15 @@ namespace Caster.Api.Features.Resources
                 await dbContext.SaveChangesAsync();
                 workspace.CleanupFileSystem(terraformOptions.RootWorkingDirectory);
             }
+            else
+            {
+                // A failed init (an incomplete Environment Set, for one) is reported rather than answered with no error.
+                errors.Add(initResult.Output);
+            }
 
             return new ResourceCommandResult
             {
-                Resources = mapper.Map<Resource[]>(workspace.GetState().GetResources(), opts => opts.ExcludeMembers(nameof(Resource.Attributes))),
+                Resources = workspace.GetState().GetResources().ToResourcesWithoutAttributes(),
                 Errors = errors.ToArray(),
                 Outputs = outputs
             };

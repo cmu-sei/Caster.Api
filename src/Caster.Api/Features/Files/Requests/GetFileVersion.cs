@@ -5,10 +5,8 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Authorization;
@@ -29,7 +27,7 @@ namespace Caster.Api.Features.Files
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, FileVersion>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, FileVersion>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.FileVersion>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -37,7 +35,7 @@ namespace Caster.Api.Features.Files
             public override async Task<FileVersion> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 var fileVersion = await dbContext.FileVersions
-                    .ProjectTo<FileVersion>(mapper.ConfigurationProvider, dest => dest.Content)
+                    .ProjectToFileVersionWithContent()
                     .SingleOrDefaultAsync(e => e.Id == request.Id, cancellationToken);
 
                 if (fileVersion == null)

@@ -14,7 +14,6 @@ using FluentValidation;
 using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Models;
-using AutoMapper;
 using Caster.Api.Data;
 
 namespace Caster.Api.Features.DesignModules;
@@ -45,21 +44,21 @@ public class Create
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, DesignModule>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, DesignModule>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Design>(request.DesignId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
         public override async Task<DesignModule> HandleRequest(Command request, CancellationToken cancellationToken)
         {
-            var designModule = mapper.Map<Domain.Models.DesignModule>(request);
+            var designModule = request.ToEntity();
 
             await DesignModuleValidation.EnsureComplete(dbContext, designModule, cancellationToken);
 
             dbContext.DesignModules.Add(designModule);
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            return mapper.Map<DesignModule>(designModule);
+            return designModule.ToDesignModule();
         }
     }
 }

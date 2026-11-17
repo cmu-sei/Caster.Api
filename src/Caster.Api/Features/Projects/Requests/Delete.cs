@@ -7,7 +7,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Exceptions;
 using System.Runtime.Serialization;
@@ -15,7 +14,6 @@ using System.Security.Claims;
 using System.Security.Principal;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Identity;
 using Caster.Api.Features.Shared;
@@ -38,7 +36,7 @@ namespace Caster.Api.Features.Projects
             CasterContext dbContext) : BaseHandler<Command>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
+                await authorizationService.Authorize<Domain.Models.Project>(request.Id, [SystemPermission.ManageProjects], [ProjectPermission.ManageProject], cancellationToken);
 
             public override async Task HandleRequest(Command request, CancellationToken cancellationToken)
             {

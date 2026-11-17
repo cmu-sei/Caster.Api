@@ -7,7 +7,6 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
@@ -55,7 +54,7 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Partition>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Partition>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
@@ -76,12 +75,12 @@ namespace Caster.Api.Features.Vlan
                 }
 
                 // Create partition
-                var partition = mapper.Map<Domain.Models.Partition>(command);
+                var partition = command.ToEntity();
                 partition.Vlans = vlans;
                 dbContext.Partitions.Add(partition);
                 await dbContext.SaveChangesAsync(cancellationToken);
 
-                return mapper.Map<Partition>(partition);
+                return partition.ToPartition();
             }
         }
     }

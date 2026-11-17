@@ -15,6 +15,35 @@ namespace Caster.Api.Infrastructure.Options
         public List<User> Users { get; set; }
         public List<Group> Groups { get; set; }
         public SeedVlans Vlans { get; set; }
+
+        /// <summary>
+        /// Environment Sets to create at startup. A set is added only if no set has its name;
+        /// an existing set is never changed. Never assigned to projects. Seeds name secret
+        /// sources, never secret values.
+        /// </summary>
+        public List<SeedEnvironmentSet> EnvironmentSets { get; set; }
+    }
+
+    public class SeedEnvironmentSet
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public List<SeedEnvironmentSetEntry> Entries { get; set; } = [];
+    }
+
+    public class SeedEnvironmentSetEntry : Features.EnvironmentSets.IEnvironmentSetEntryFields
+    {
+        public EnvironmentSetEntryKind Kind { get; set; }
+        public string TargetName { get; set; }
+        public EnvironmentSetValueSource ValueSource { get; set; }
+        public string SecretName { get; set; }
+        public string Value { get; set; }
+
+        /// <summary>For a connection entry: the infrastructure connection's Name.</summary>
+        public string ConnectionName { get; set; }
+
+        /// <summary>For a connection entry: what it takes from the connection, e.g. ApiToken.</summary>
+        public ConnectionField? ConnectionField { get; set; }
     }
 
     public class SeedVlans

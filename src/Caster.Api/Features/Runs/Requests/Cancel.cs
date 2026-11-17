@@ -5,7 +5,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
@@ -14,7 +13,6 @@ using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using System.Linq;
-using AutoMapper.QueryableExtensions;
 using System.Text.Json.Serialization;
 using Caster.Api.Features.Shared;
 
@@ -41,7 +39,6 @@ namespace Caster.Api.Features.Runs
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext,
             ITerraformService terraformService,
             IRunQueueService runQueueService) : BaseHandler<Command, Run>
@@ -70,7 +67,7 @@ namespace Caster.Api.Features.Runs
                 }
 
                 return await dbContext.Runs
-                    .ProjectTo<Run>(mapper.ConfigurationProvider)
+                    .ProjectToRun()
                     .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken);
             }
 

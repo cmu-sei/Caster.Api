@@ -39,6 +39,12 @@ public interface ICasterAuthorizationService
     IEnumerable<SystemPermission> GetSystemPermissions();
     IEnumerable<ProjectPermissionsClaim> GetProjectPermissions(Guid? projectId = null);
     IEnumerable<GroupPermissionsClaim> GetGroupPermissions(Guid? groupId = null);
+
+    /// <summary>The user's permissions on one project group, from their memberships of it. Empty when they have none.</summary>
+    ProjectGroupPermission[] GetProjectGroupPermissions(Guid projectGroupId);
+
+    /// <summary>The project groups the user is a member of.</summary>
+    IEnumerable<Guid> GetProjectGroupIds();
 }
 
 public class AuthorizationService(
@@ -108,6 +114,21 @@ public class AuthorizationService(
 
         return permissions;
     }
+
+    public ProjectGroupPermission[] GetProjectGroupPermissions(Guid projectGroupId) =>
+        ProjectGroupClaims()
+            .Where(x => x.ProjectGroupId == projectGroupId)
+            .SelectMany(x => x.Permissions)
+            .Distinct()
+            .ToArray();
+
+    public IEnumerable<Guid> GetProjectGroupIds() =>
+        ProjectGroupClaims().Select(x => x.ProjectGroupId).Distinct().ToList();
+
+    private IEnumerable<ProjectGroupPermissionsClaim> ProjectGroupClaims() =>
+        identityResolver.GetClaimsPrincipal().Claims
+            .Where(x => x.Type == AuthorizationConstants.ProjectGroupPermissionsClaimType)
+            .Select(x => ProjectGroupPermissionsClaim.FromString(x.Value));
 
     public IEnumerable<GroupPermissionsClaim> GetGroupPermissions(Guid? groupId = null)
     {

@@ -66,7 +66,7 @@ namespace Caster.Api.Features.Files
         /// <summary>
         /// Only System Admins can make changes to this file while this property is true
         /// </summary>
-        public bool AdministrativelyLocked { get; private set; }
+        public bool AdministrativelyLocked { get; internal set; }
     }
 }
 

@@ -8,8 +8,6 @@ using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Authorization;
@@ -41,7 +39,6 @@ namespace Caster.Api.Features.Files
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext,
             IIdentityResolver identityResolver) : BaseHandler<Command, FileVersion[]>
         {
@@ -83,7 +80,7 @@ namespace Caster.Api.Features.Files
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return await dbContext.FileVersions
                     .Where(fileVersion => fileVersion.Tag == request.Tag && request.FileIds.Contains(fileVersion.FileId))
-                    .ProjectTo<FileVersion>(mapper.ConfigurationProvider)
+                    .ProjectToFileVersion()
                     .ToArrayAsync(cancellationToken);
             }
 

@@ -74,10 +74,15 @@ public class PlayerSyncServiceTests(DatabaseFixture fixture)
             RedirectStandardError = true,
             UseShellExecute = false
         };
+        // The test assembly is a Microsoft.Testing.Platform app, so these are its options: one method, no
+        // colour and no progress lines.
         start.ArgumentList.Add(typeof(PlayerSyncServiceTests).Assembly.Location);
-        start.ArgumentList.Add("-method");
+        start.ArgumentList.Add("--filter-method");
         start.ArgumentList.Add($"{typeof(PlayerSyncServiceTests).FullName}.{method}");
-        start.ArgumentList.Add("-noColor");
+        start.ArgumentList.Add("--ansi");
+        start.ArgumentList.Add("off");
+        start.ArgumentList.Add("--progress");
+        start.ArgumentList.Add("off");
         start.Environment[ChildFlag] = "1";
         if (connectionString != null)
             start.Environment[DatabaseFlag] = connectionString;
@@ -116,15 +121,14 @@ public class PlayerSyncServiceTests(DatabaseFixture fixture)
     private static async Task CaptureOutput(StreamReader reader, ConcurrentQueue<string> output, TaskCompletionSource completion)
     {
         string line;
-        var failed = false;
         while ((line = await ReadLineDeliberatelyWithoutCancellation(reader)) != null)
         {
             output.Enqueue(line);
             if (line == Completed)
                 completion.TrySetResult();
-            else if (line.Contains("[FAIL]", StringComparison.Ordinal))
-                failed = true;
-            else if (failed && line.Contains("TEST EXECUTION SUMMARY", StringComparison.Ordinal))
+            // A child that completes exits before the platform prints its summary, so a summary means the
+            // test failed, or no test matched the filter.
+            else if (line.StartsWith("Test run summary:", StringComparison.Ordinal))
                 completion.TrySetException(new InvalidOperationException($"Player sync child failed. Output:{Environment.NewLine}{string.Join(Environment.NewLine, output)}"));
         }
     }

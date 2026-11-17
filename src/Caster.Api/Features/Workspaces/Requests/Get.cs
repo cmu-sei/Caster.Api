@@ -5,10 +5,8 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Authorization;
@@ -29,7 +27,7 @@ namespace Caster.Api.Features.Workspaces
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Workspace>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Workspace>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Workspace>(request.Id, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -37,7 +35,7 @@ namespace Caster.Api.Features.Workspaces
             public override async Task<Workspace> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 var workspace = await dbContext.Workspaces
-                    .ProjectTo<Workspace>(mapper.ConfigurationProvider)
+                    .ProjectToWorkspace()
                     .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken);
 
                 if (workspace == null)
