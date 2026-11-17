@@ -51,6 +51,29 @@ A task's settings are `Provider`, `ModelId`, `FallbackModelId`, `Region`, `BaseU
 - A Terraform draft returns every file it changes in full, so a local model needs a `MaxTokens` that its server allows alongside the prompt.
 - **Strict** constrains a task's answer to its tool's schema, with Bedrock's strict tool use. It is on by default for `assist` and off for the drafts, whose file-heavy schemas are large. A schema Bedrock finds too large is asked again without it.
 
+### Choosing models
+
+The default model runs every task. A task rarely needs the same model and effort as the others, so it is worth giving each its own:
+
+| Task | Starting point | Why |
+| --- | --- | --- |
+| `design` | A smaller model (Haiku), `low` or `medium` effort | It only picks catalog modules and fills in their values, against a tight schema. |
+| `terraform` | A mid-size model (Sonnet), `medium` or `high` effort | It writes whole files, and a mistake fails the plan. |
+| `brief` | Sonnet or a larger model (Opus), `high` effort | It has the largest input and needs real topology reasoning. |
+| `assist` | Sonnet, `medium` effort | It is interactive, so speed matters. Raise the effort to fix failed runs. |
+
+These are starting points to try, not measured results. Set `Ai:Prices` and compare tasks and models in the project's AI usage panel, which shows tokens and estimated cost for each task, before committing to a change. Swapping a smaller model into `design` is the safest first experiment.
+
+```json
+"Ai": {
+  "ModelId": "us.anthropic.claude-sonnet-5-5",
+  "Models": {
+    "design": { "ModelId": "us.anthropic.claude-haiku-5-5", "Effort": "low" },
+    "brief": { "ModelId": "us.anthropic.claude-opus-5-5", "Effort": "high" }
+  }
+}
+```
+
 ## What the model sees
 
 - **Design drafts** see the module catalog: each Module with a version, its variables and outputs, its source and the hypervisor it works on.
