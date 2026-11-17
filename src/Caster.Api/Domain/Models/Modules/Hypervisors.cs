@@ -75,4 +75,32 @@ public static class Hypervisors
             .Select(e => e.Hypervisor)
             .ToArray();
     }
+
+    // the environment variables the hypervisor providers read their endpoint and credentials from
+    private static readonly string[] ProviderVariablePrefixes = ["PROXMOX_VE_", "VSPHERE_"];
+
+    /// <summary>
+    /// The names, never the values, of the provider environment variables Terraform runs get, resolved as
+    /// <see cref="Configured"/> resolves them. A provider block can leave these settings out.
+    /// </summary>
+    public static string[] ProviderVariables(TerraformOptions options, IDictionary<string, string> environment = null)
+    {
+        environment ??= System.Environment.GetEnvironmentVariables()
+            .Cast<System.Collections.DictionaryEntry>()
+            .ToDictionary(e => e.Key.ToString(), e => e.Value?.ToString());
+        var env = options?.EnvironmentVariables ?? new EnvironmentVariableOptions();
+        var inherit = (env.Inherit ?? []).Select(p => new Regex(p)).ToArray();
+        var direct = env.Direct ?? [];
+
+        var inherited = environment
+            .Where(e => !direct.ContainsKey(e.Key) && (env.InheritAll || inherit.Any(r => r.IsMatch(e.Key))))
+            .Select(e => (e.Key, e.Value));
+        return direct.Select(d => (d.Key, d.Value))
+            .Concat(inherited)
+            .Where(e => !string.IsNullOrWhiteSpace(e.Value) && ProviderVariablePrefixes.Any(p => e.Key.StartsWith(p, StringComparison.Ordinal)))
+            .Select(e => e.Key)
+            .Distinct()
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
 }

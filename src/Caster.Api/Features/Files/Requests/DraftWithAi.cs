@@ -104,7 +104,7 @@ public class DraftWithAi
             var inventory = await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken);
             var catalog = await LoadCatalog(cancellationToken);
             var input = await aiModelClient.InvokeToolAsync(
-                AiTerraformDraftBuilder.BuildSystemPrompt(catalog, inventory.BuildPromptSection()),
+                AiTerraformDraftBuilder.BuildSystemPrompt(catalog, inventory.BuildPromptSection(), Domain.Models.Hypervisors.ProviderVariables(terraformOptions)),
                 AiTerraformDraftBuilder.BuildUserPrompt(prompt, files, await LoadDesigns(directoryId, cancellationToken), focus),
                 AiTerraformDraftBuilder.ToolName,
                 AiTerraformDraftBuilder.ToolDescription,

@@ -137,6 +137,25 @@ public class AiAssistBuilderTests
         Assert.EndsWith("Planner's request:\nnow this\n", prompt.Replace("\r\n", "\n"));
     }
 
+    [Fact]
+    public void The_prompt_names_the_provider_variables_the_runs_set()
+    {
+        var state = State();
+        state = new AiAssistState
+        {
+            DirectoryId = state.DirectoryId,
+            DirectoryName = state.DirectoryName,
+            Files = state.Files,
+            Workspaces = state.Workspaces,
+            ProviderVariables = ["PROXMOX_VE_API_TOKEN", "PROXMOX_VE_ENDPOINT"]
+        };
+
+        var prompt = AiAssistBuilder.BuildUserPrompt("fix the plan", [], state);
+
+        Assert.Contains("the providers read them on their own: PROXMOX_VE_API_TOKEN, PROXMOX_VE_ENDPOINT.", prompt);
+        Assert.DoesNotContain("environment variables for every", AiAssistBuilder.BuildUserPrompt("fix the plan", [], State()));
+    }
+
     private static int FreeText(JsonNode node) => node switch
     {
         JsonObject obj when obj["type"] is JsonValue type && type.GetValue<string>() == "string" && !obj.ContainsKey("enum") => 1,

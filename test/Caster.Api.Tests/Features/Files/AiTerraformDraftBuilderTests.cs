@@ -225,6 +225,17 @@ public class AiTerraformDraftBuilderTests
     }
 
     [Fact]
+    public void BuildSystemPrompt_names_the_provider_variables_the_runs_set()
+    {
+        var prompt = AiTerraformDraftBuilder.BuildSystemPrompt([], null, ["PROXMOX_VE_API_TOKEN", "PROXMOX_VE_ENDPOINT"]);
+
+        Assert.Contains("Caster sets these environment variables for every Terraform run", prompt);
+        Assert.Contains("PROXMOX_VE_API_TOKEN, PROXMOX_VE_ENDPOINT", prompt);
+        Assert.Contains("provider \"proxmox\" {}", prompt);
+        Assert.DoesNotContain("environment variables for every", AiTerraformDraftBuilder.BuildSystemPrompt([], null, []));
+    }
+
+    [Fact]
     public void BuildToolSchema_offers_the_topology_plan()
     {
         Assert.True(AiTerraformDraftBuilder.BuildToolSchema()["properties"]!.AsObject().ContainsKey(AiTopology.ToolProperty));
