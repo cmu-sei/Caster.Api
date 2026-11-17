@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Features.Shared;
 using Caster.Api.Features.Shared.Services;
@@ -64,7 +65,7 @@ public class DraftWithAi
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions) : BaseHandler<Command, AiDesignDraft>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService) : BaseHandler<Command, AiDesignDraft>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -84,16 +85,19 @@ public class DraftWithAi
                     ? "There are no module versions that Terraform runs can download. Import modules first."
                     : $"There are no module versions for {string.Join(" or ", hypervisors)} that Terraform runs can download.");
 
+            var inventory = await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken);
             var input = await aiModelClient.InvokeToolAsync(
-                AiDesignDraftBuilder.BuildSystemPrompt(catalog, hypervisors),
+                AiDesignDraftBuilder.BuildSystemPrompt(catalog, hypervisors, inventory.BuildPromptSection()),
                 AiDesignDraftBuilder.BuildUserPrompt(request.Prompt, request.DesignName),
                 AiDesignDraftBuilder.ToolName,
                 AiDesignDraftBuilder.ToolDescription,
                 AiDesignDraftBuilder.BuildToolSchema(catalog),
                 cancellationToken);
 
-            var draft = AiDesignDraftBuilder.Review(input, catalog, request.DesignName);
+            var draft = AiDesignDraftBuilder.Review(input, catalog, request.DesignName, inventory, hypervisors);
             draft.Warnings.InsertRange(0, warnings);
+            if (inventory.Grounding.Connections.Any(c => c.Truncated))
+                draft.Warnings.Add("The inventory was too large to show the model in full, so it may not have seen every template or network.");
             return draft;
         }
 
