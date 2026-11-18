@@ -12,8 +12,10 @@ public static class AiAssistOps
     public const string FileAdd = "file.add";
     public const string FileEdit = "file.edit";
     public const string WorkspaceVersion = "workspace.version";
+    // a workspace's own file, usually its variable values; only one a person made, and that holds no credential
+    public const string WorkspaceFileEdit = "workspace.file.edit";
 
-    public static readonly string[] All = [FileAdd, FileEdit, WorkspaceVersion];
+    public static readonly string[] All = [FileAdd, FileEdit, WorkspaceVersion, WorkspaceFileEdit];
 }
 
 /// <summary>What caused the failed plan or apply the planner asked about</summary>
@@ -38,18 +40,18 @@ public class AiAssistMessage
 }
 
 /// <summary>
-/// One change Ask AI proposes: a file to add, a file to replace, or a workspace's Terraform version to set.
+/// One change Ask AI proposes: a file to add, a file to replace, a workspace's own file to replace, or a workspace's Terraform version to set.
 /// Applying it sends it back as it was proposed; Caster checks it again against the Directory as it is then.
 /// </summary>
 public class AiAssistChange
 {
-    /// <summary>file.add, file.edit or workspace.version</summary>
+    /// <summary>file.add, file.edit, workspace.file.edit or workspace.version</summary>
     public string Op { get; set; }
 
     /// <summary>What the change does, written by Caster from the change itself</summary>
     public string Label { get; set; }
 
-    /// <summary>For file.edit, the Directory's file to replace</summary>
+    /// <summary>For file.edit, the Directory's file to replace; for workspace.file.edit, the workspace's file</summary>
     public Guid? FileId { get; set; }
 
     public string FileName { get; set; }
@@ -63,7 +65,7 @@ public class AiAssistChange
     /// <summary>For file.edit, the hash of the content the change was proposed against. The file is not replaced if it has changed since.</summary>
     public string ExistingContentHash { get; set; }
 
-    /// <summary>For workspace.version, the workspace</summary>
+    /// <summary>For workspace.version and workspace.file.edit, the workspace</summary>
     public Guid? WorkspaceId { get; set; }
 
     public string WorkspaceName { get; set; }

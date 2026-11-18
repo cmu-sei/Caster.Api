@@ -99,6 +99,9 @@ public static class AiTerraformDraftBuilder
         @"^\s*([A-Za-z0-9_]*(password|secret|token|api_key|access_key|private_key)[A-Za-z0-9_]*)\s*=\s*""(?!\$\{)[^""]{4,}""",
         RegexOptions.Multiline | RegexOptions.IgnoreCase);
 
+    /// <summary>Whether a file sets a credential-like argument, such as a password or token, to a literal string.</summary>
+    public static bool HoldsLiteralSecret(string content) => !string.IsNullOrEmpty(content) && LiteralSecret.IsMatch(content);
+
     /// <summary>
     /// Tells the model which provider settings Caster's runs set in the environment, by name only, so it writes
     /// provider blocks without them rather than declaring required variables. Empty when there are none.

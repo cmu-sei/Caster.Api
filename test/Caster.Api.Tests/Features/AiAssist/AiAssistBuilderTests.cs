@@ -111,6 +111,87 @@ public class AiAssistBuilderTests
         Assert.Contains("file.delete: left out, Ask AI cannot make this kind of change.", result.Warnings);
     }
 
+    private static readonly Guid VarsId = Guid.NewGuid();
+    private static readonly Guid GeneratedId = Guid.NewGuid();
+    private static readonly Guid SecretId = Guid.NewGuid();
+
+    /// <summary>A directory with a workspace holding a values file, a Blueprint-generated one and one that sets a password.</summary>
+    private static AiAssistState StateWithWorkspaceFiles()
+    {
+        var state = State();
+        var files = new List<AiContextFile>
+        {
+            new(VarsId, "variables.auto.tfvars", "workstations = 2\n", "dev", false),
+            new(GeneratedId, "blueprint-1234.auto.tfvars", "team = \"red\"\n", "dev", false),
+            new(SecretId, "secrets.auto.tfvars", "admin_password = \"hunter22\"\n", "dev", false)
+        };
+        files = files.Select(f => f with { Editable = AiAssistState.WorkspaceFileLock(f) == null }).ToList();
+        state.Workspaces.Clear();
+        state.Workspaces.Add(new AiAssistWorkspace(Guid.NewGuid(), "dev", null, files, null));
+        return state;
+    }
+
+    [Fact]
+    public void A_workspace_file_a_person_made_can_be_changed_and_one_that_is_generated_or_holds_a_credential_cannot()
+    {
+        var state = StateWithWorkspaceFiles();
+
+        var result = AiAssistBuilder.Read(Parse("""
+            {"reply":"r","cause":"none","changes":[
+              {"op":"workspace.file.edit","workspace":"dev","file":"variables.auto.tfvars","content":"workstations = 4\n"},
+              {"op":"workspace.file.edit","workspace":"dev","file":"blueprint-1234.auto.tfvars","content":"team = \"blue\"\n"},
+              {"op":"workspace.file.edit","workspace":"dev","file":"secrets.auto.tfvars","content":"admin_password = \"x\"\n"},
+              {"op":"workspace.file.edit","workspace":"dev","file":"new.auto.tfvars","content":"a = 1\n"},
+              {"op":"workspace.file.edit","workspace":"dev","file":"variables.auto.tfvars","content":"workstations = 2\n"},
+              {"op":"workspace.file.edit","workspace":"qa","file":"variables.auto.tfvars","content":"workstations = 9\n"}]}
+            """), state);
+
+        var change = Assert.Single(result.Changes);
+        Assert.Equal("Edit variables.auto.tfvars in dev", change.Label);
+        Assert.Equal(VarsId, change.FileId);
+        Assert.Equal(state.Workspaces[0].Id, change.WorkspaceId);
+        Assert.Equal("workstations = 2\n", change.ExistingContent);
+        Assert.Equal(AiTerraformDraftBuilder.ContentHash("workstations = 2\n"), change.ExistingContentHash);
+        Assert.Contains(result.Warnings, w => w.Contains("blueprint-1234.auto.tfvars cannot be changed here: Blueprint generates it"));
+        Assert.Contains(result.Warnings, w => w.Contains("secrets.auto.tfvars cannot be changed here: it sets a credential"));
+        Assert.Contains(result.Warnings, w => w.Contains("dev has no file named new.auto.tfvars"));
+        Assert.Contains(result.Warnings, w => w.Contains("the file is unchanged"));
+        Assert.Contains(result.Warnings, w => w.Contains("the directory has no workspace named qa"));
+    }
+
+    [Fact]
+    public void Changing_a_workspace_file_to_set_a_literal_credential_is_warned_about()
+    {
+        var result = AiAssistBuilder.Read(Parse("""
+            {"reply":"r","cause":"none","changes":[
+              {"op":"workspace.file.edit","workspace":"dev","file":"variables.auto.tfvars","content":"api_token = \"abcdef123\"\n"}]}
+            """), StateWithWorkspaceFiles());
+
+        Assert.Single(result.Changes);
+        Assert.Contains(result.Warnings, w => w.Contains("api_token is set to a literal value"));
+    }
+
+    [Fact]
+    public void The_schema_offers_workspace_file_edits_only_when_a_workspace_file_can_be_changed()
+    {
+        var withFiles = AiAssistBuilder.BuildSchema(StateWithWorkspaceFiles())["properties"]["changes"]["items"]["properties"].AsObject();
+        var without = AiAssistBuilder.BuildSchema(State())["properties"]["changes"]["items"]["properties"].AsObject();
+
+        Assert.Contains(AiAssistOps.WorkspaceFileEdit, withFiles["op"]["enum"].AsArray().Select(v => v.GetValue<string>()));
+        Assert.DoesNotContain(AiAssistOps.WorkspaceFileEdit, without["op"]["enum"].AsArray().Select(v => v.GetValue<string>()));
+        Assert.Equal(4, FreeText(BedrockAiModelClient.StrictSchema(AiAssistBuilder.BuildSchema(StateWithWorkspaceFiles()))));
+    }
+
+    [Fact]
+    public void The_prompt_marks_each_workspace_file_editable_or_read_only_with_why()
+    {
+        var prompt = AiAssistBuilder.BuildUserPrompt("raise it to 4", [], StateWithWorkspaceFiles());
+
+        Assert.Contains("=== variables.auto.tfvars (editable, this workspace's own file) ===", prompt);
+        Assert.Contains("=== blueprint-1234.auto.tfvars (read-only, this workspace's own file: Blueprint generates it) ===", prompt);
+        Assert.Contains("=== secrets.auto.tfvars (read-only, this workspace's own file: it sets a credential) ===", prompt);
+    }
+
     [Fact]
     public void A_question_comes_before_any_change()
     {

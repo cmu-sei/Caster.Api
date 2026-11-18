@@ -208,6 +208,120 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         Assert.Equal(Main, (await db.Files.SingleAsync(f => f.Id == main.Id, Ct)).Content);
     }
 
+    // ---- a workspace's own files ---------------------------------------------------------------------
+
+    private const string Vars = "workstations = 2\n";
+
+    private async Task<(Project Project, Directory Directory, Workspace Workspace, File Values, File Generated)> SeedWorkspaceFiles()
+    {
+        var (project, _, directory, _, workspace) = await SeedDirectory();
+        var values = TestData.File(directory, "variables.auto.tfvars", Vars);
+        values.Workspace = workspace;
+        var generated = TestData.File(directory, "blueprint-1234.auto.tfvars", "team = \"red\"\n");
+        generated.Workspace = workspace;
+        await Seed(values, generated);
+        return (project, directory, workspace, values, generated);
+    }
+
+    private const string EditValues = """
+        {"reply":"Raised.","cause":"none","changes":[
+          {"op":"workspace.file.edit","workspace":"dev","file":"variables.auto.tfvars","content":"workstations = 4\n"}]}
+        """;
+
+    /// <summary>A workspace's values file is replaced through the file requests, as a person's save is, and is not left locked.</summary>
+    [Fact]
+    public async Task Apply_replaces_a_workspace_file_the_planner_kept()
+    {
+        var (project, directory, workspace, values, _) = await SeedWorkspaceFiles();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var proposal = await ProposeOne(actor, directory, EditValues);
+
+        var applied = await ApplyChanges(actor, directory, proposal.Changes.ToArray());
+
+        var result = Assert.Single(applied.Results);
+        Assert.True(result.Applied, result.Error);
+        Assert.Equal("Edit variables.auto.tfvars in dev", result.Label);
+        await using var db = NewContext();
+        var stored = await db.Files.SingleAsync(f => f.Id == values.Id, Ct);
+        Assert.Equal(("workstations = 4\n", actor.Id, (Guid?)null, workspace.Id), (stored.Content, stored.ModifiedById, stored.LockedById, stored.WorkspaceId));
+        Assert.Equal(1, await db.FileVersions.CountAsync(v => v.FileId == values.Id, Ct));
+    }
+
+    [Fact]
+    public async Task Apply_reports_a_workspace_file_changed_since_the_proposal_and_does_not_replace_it()
+    {
+        var (project, directory, _, values, _) = await SeedWorkspaceFiles();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var proposal = await ProposeOne(actor, directory, EditValues);
+        await using (var db = NewContext())
+        {
+            (await db.Files.SingleAsync(f => f.Id == values.Id, Ct)).Content = "workstations = 8\n";
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var applied = await ApplyChanges(actor, directory, proposal.Changes.ToArray());
+
+        var result = Assert.Single(applied.Results);
+        Assert.False(result.Applied);
+        Assert.Contains("has changed since this was proposed", result.Error);
+        await using var check = NewContext();
+        Assert.Equal("workstations = 8\n", (await check.Files.SingleAsync(f => f.Id == values.Id, Ct)).Content);
+    }
+
+    /// <summary>The apply request comes from a client, so a Blueprint-generated file is refused there too, not only when proposed.</summary>
+    [Fact]
+    public async Task Apply_refuses_a_blueprint_generated_workspace_file_even_when_sent_directly()
+    {
+        var (project, directory, workspace, _, generated) = await SeedWorkspaceFiles();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var change = new AiAssistChange
+        {
+            Op = AiAssistOps.WorkspaceFileEdit,
+            FileId = generated.Id,
+            FileName = generated.Name,
+            WorkspaceId = workspace.Id,
+            WorkspaceName = "dev",
+            Content = "team = \"blue\"\n",
+            ExistingContentHash = AiTerraformDraftBuilder.ContentHash(generated.Content)
+        };
+
+        var applied = await ApplyChanges(actor, directory, change);
+
+        var result = Assert.Single(applied.Results);
+        Assert.False(result.Applied);
+        Assert.Contains("Blueprint generates it", result.Error);
+        await using var db = NewContext();
+        Assert.Equal("team = \"red\"\n", (await db.Files.SingleAsync(f => f.Id == generated.Id, Ct)).Content);
+    }
+
+    /// <summary>A file id from another workspace of the directory, or from a directory file, is not a workspace file.</summary>
+    [Fact]
+    public async Task Apply_does_not_treat_a_directory_file_as_a_workspace_file()
+    {
+        var (project, directory, workspace, _, _) = await SeedWorkspaceFiles();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        await using var seed = NewContext();
+        var main = await seed.Files.SingleAsync(f => f.DirectoryId == directory.Id && f.WorkspaceId == null && f.Name == "main.tf", Ct);
+        var change = new AiAssistChange
+        {
+            Op = AiAssistOps.WorkspaceFileEdit,
+            FileId = main.Id,
+            FileName = "main.tf",
+            WorkspaceId = workspace.Id,
+            WorkspaceName = "dev",
+            Content = "# replaced\n",
+            ExistingContentHash = AiTerraformDraftBuilder.ContentHash(main.Content)
+        };
+
+        var applied = await ApplyChanges(actor, directory, change);
+
+        var result = Assert.Single(applied.Results);
+        Assert.False(result.Applied);
+        Assert.Contains("is no longer a file of dev", result.Error);
+        await using var db = NewContext();
+        Assert.Equal(Main, (await db.Files.SingleAsync(f => f.Id == main.Id, Ct)).Content);
+    }
+
     [Fact]
     public async Task Apply_reports_a_name_taken_and_a_version_moved_since_the_proposal()
     {
@@ -276,6 +390,15 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         Ai.Model.Answers(directory.Id, answer);
         var proposal = await Ask(actor, directory, "change things");
         Assert.Equal(3, proposal.Changes.Count);
+        return proposal;
+    }
+
+    // a proposal of one change, where Propose expects the three of Everything
+    private async Task<AiAssistResult> ProposeOne(TestActor actor, Directory directory, string answer)
+    {
+        Ai.Model.Answers(directory.Id, answer);
+        var proposal = await Ask(actor, directory, "change a value");
+        Assert.Single(proposal.Changes);
         return proposal;
     }
 

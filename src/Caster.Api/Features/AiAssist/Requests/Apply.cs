@@ -82,6 +82,7 @@ public class Apply
                     {
                         AiAssistOps.FileAdd => await AddFile(request.DirectoryId, change, outcome, cancellationToken),
                         AiAssistOps.FileEdit => await EditFile(request.DirectoryId, change, userId, outcome, cancellationToken),
+                        AiAssistOps.WorkspaceFileEdit => await EditWorkspaceFile(request.DirectoryId, change, userId, outcome, cancellationToken),
                         AiAssistOps.WorkspaceVersion => await SetVersion(request.DirectoryId, change, outcome, cancellationToken),
                         _ => "Ask AI cannot make this kind of change."
                     };
@@ -113,13 +114,33 @@ public class Apply
             return null;
         }
 
-        private async Task<string> EditFile(Guid directoryId, AiAssistChange change, Guid userId, AiAssistChangeResult outcome, CancellationToken ct)
+        private async Task<string> EditFile(Guid directoryId, AiAssistChange change, Guid userId, AiAssistChangeResult outcome, CancellationToken ct) =>
+            await ReplaceFile(DirectoryFiles(directoryId), $"{change.FileName} is no longer a file of this directory. Ask again.", change, userId, outcome, ct);
+
+        private async Task<string> EditWorkspaceFile(Guid directoryId, AiAssistChange change, Guid userId, AiAssistChangeResult outcome, CancellationToken ct)
+        {
+            var workspaceId = change.WorkspaceId;
+            if (!workspaceId.HasValue)
+                return $"{change.WorkspaceName ?? "The workspace"} is no longer a workspace of this directory. Ask again.";
+            outcome.WorkspaceId = workspaceId;
+            var scope = dbContext.Files.AsNoTracking().Where(f => f.DirectoryId == directoryId && f.WorkspaceId == workspaceId);
+            // the rules that kept it from being proposed are checked again here: this request is sent by a client, and the file may have changed
+            var current = change.FileId.HasValue
+                ? await scope.Where(f => f.Id == change.FileId.Value).Select(f => new { f.Name, f.Content }).SingleOrDefaultAsync(ct)
+                : null;
+            if (current != null && AiAssistState.WorkspaceFileLock(new AiContextFile(change.FileId.Value, current.Name, current.Content, change.WorkspaceName, false)) is string reason)
+                return $"{current.Name} cannot be changed by Ask AI: {reason}.";
+            return await ReplaceFile(scope, $"{change.FileName} is no longer a file of {change.WorkspaceName ?? "this workspace"}. Ask again.", change, userId, outcome, ct);
+        }
+
+        // the editor's own save of a file: under the lock, and only if the file is as it was proposed against
+        private async Task<string> ReplaceFile(IQueryable<Domain.Models.File> scope, string missing, AiAssistChange change, Guid userId, AiAssistChangeResult outcome, CancellationToken ct)
         {
             var file = change.FileId.HasValue
-                ? await DirectoryFiles(directoryId).Where(f => f.Id == change.FileId.Value).Select(f => new { f.Id, f.Name, f.LockedById }).SingleOrDefaultAsync(ct)
+                ? await scope.Where(f => f.Id == change.FileId.Value).Select(f => new { f.Id, f.Name, f.LockedById }).SingleOrDefaultAsync(ct)
                 : null;
             if (file == null)
-                return $"{change.FileName} is no longer a file of this directory. Ask again.";
+                return missing;
             outcome.FileId = file.Id;
             if (file.LockedById.HasValue && file.LockedById != userId)
                 return $"{file.Name} is being edited by another user.";

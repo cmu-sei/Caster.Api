@@ -91,6 +91,8 @@ public class AiAssistState
             .Where(f => f.DirectoryId == directoryId && f.WorkspaceId != null)
             .Select(f => new { f.WorkspaceId, File = new AiContextFile(f.Id, f.Name, f.Content, f.Workspace.Name, false) })
             .ToListAsync(ct);
+        // a workspace's own file can be changed when a person made it and it holds no credential
+        workspaceFiles = workspaceFiles.Select(f => new { f.WorkspaceId, File = f.File with { Editable = WorkspaceFileLock(f.File) == null } }).ToList();
 
         var shown = new List<AiAssistWorkspace>();
         foreach (var workspace in workspaces)
@@ -139,6 +141,27 @@ public class AiAssistState
             DefaultVersion = terraformOptions.DefaultVersion,
             ProviderVariables = Hypervisors.ProviderVariables(terraformOptions)
         };
+    }
+
+    /// <summary>Most of a workspace's own file Ask AI is shown, and so the most it can replace.</summary>
+    public const int MaxWorkspaceFileCharacters = 4_000;
+
+    // Blueprint writes one of these for each workspace it makes, and writes it again
+    private static readonly Regex BlueprintFile = new(@"^blueprint-.+\.auto\.tfvars$", RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Why Ask AI may not change a workspace's own file, or null when it may: Blueprint generates it, it sets a
+    /// credential to a literal value, or it is too long to be shown in full.
+    /// </summary>
+    public static string WorkspaceFileLock(AiContextFile file)
+    {
+        if (BlueprintFile.IsMatch(file.Name ?? ""))
+            return "Blueprint generates it";
+        if (AiTerraformDraftBuilder.HoldsLiteralSecret(file.Content))
+            return "it sets a credential";
+        if ((file.Content?.Length ?? 0) > MaxWorkspaceFileCharacters)
+            return "it is too long to show in full";
+        return null;
     }
 
     private static string DescribeDesign(Design design)
@@ -210,16 +233,18 @@ How Caster runs Terraform:
 - Each workspace runs the Terraform version it is set to, or Caster's default when none is set.
 
 You can propose these changes: add a file to the directory; replace an editable file of the directory with its complete new
-content; set a workspace's Terraform version to one Caster has. You cannot delete or rename files, change a parent directory's
-files, a workspace's own files or a Design, run a plan or apply, or change anything outside Caster; when the planner asks for one
-of those, say so in reply and say what they can do instead.
+content; replace an editable file of a workspace (its own values, usually .tfvars) with its complete new content; set a
+workspace's Terraform version to one Caster has. You cannot delete or rename files, change a parent directory's files, a
+workspace's file marked read-only or a Design, run a plan or apply, or change anything outside Caster; when the planner asks for
+one of those, say so in reply and say what they can do instead.
 
 Rules:
 - Answer only by calling the tool, once. Put a short reply to the planner in reply: what you found, what you propose and why, in
   plain words.
 - Change only what the planner asked for, plus what that needs. Leave out files you do not change.
 - A file you change is given whole, every line of it, not only the lines that change. Keep what you do not need to change as it is.
-- Only the files marked editable can be changed. A file marked as not shown in full cannot be changed.
+- Only the files marked editable can be changed. A file marked as not shown in full cannot be changed. To change a workspace's
+  file, name the workspace and the file; a value that differs between workspaces belongs in that workspace's own file.
 - If the request is ambiguous in a way that changes the result, ask one short question in question and propose no changes.
 - Never write credentials, tokens or keys. Declare a variable (sensitive = true) and say in reply what must be set.
 - Use fictional addressing (RFC 1918 and RFC 5737 ranges) unless the files already set the addresses.
@@ -261,8 +286,11 @@ did not ask about a failure.
             sb.AppendLine($"- {workspace.Name}{(workspace.Id == state.WorkspaceId ? " (the planner is working in this one)" : "")}: Terraform version {version}");
             foreach (var file in workspace.Files.OrderBy(f => f.Name))
             {
-                sb.AppendLine($"  === {file.Name} (read-only, this workspace's own file) ===");
-                sb.AppendLine(Indent(AiAssistState.Shorten(file.Content ?? "", 4_000)));
+                var lockedFor = file.Editable ? null : AiAssistState.WorkspaceFileLock(file);
+                sb.AppendLine(file.Editable
+                    ? $"  === {file.Name} (editable, this workspace's own file) ==="
+                    : $"  === {file.Name} (read-only, this workspace's own file: {lockedFor}) ===");
+                sb.AppendLine(Indent(AiAssistState.Shorten(file.Content ?? "", AiAssistState.MaxWorkspaceFileCharacters)));
             }
             if (workspace.LastRun is AiAssistRun run)
             {
@@ -340,16 +368,22 @@ did not ask about a failure.
     public static JsonObject BuildSchema(AiAssistState state)
     {
         var canSetVersion = state.Workspaces.Count > 0 && state.Versions.Length > 0;
-        var ops = canSetVersion ? AiAssistOps.All : [AiAssistOps.FileAdd, AiAssistOps.FileEdit];
+        var canEditWorkspaceFile = state.Workspaces.Any(w => w.Files.Any(f => f.Editable));
+        var ops = new List<string> { AiAssistOps.FileAdd, AiAssistOps.FileEdit };
+        if (canEditWorkspaceFile)
+            ops.Add(AiAssistOps.WorkspaceFileEdit);
+        if (canSetVersion)
+            ops.Add(AiAssistOps.WorkspaceVersion);
         var change = new JsonObject
         {
             ["op"] = new JsonObject { ["type"] = "string", ["enum"] = Enum(ops) },
-            ["file"] = new JsonObject { ["type"] = "string", ["description"] = "For a file change, the file's name, e.g. network.tf." },
+            ["file"] = new JsonObject { ["type"] = "string", ["description"] = "For a file change, the file's name, e.g. network.tf. For workspace.file.edit, the workspace file's name." },
             ["content"] = new JsonObject { ["type"] = "string", ["description"] = "For a file change, the file's complete new content." }
         };
+        if (canSetVersion || canEditWorkspaceFile)
+            change["workspace"] = new JsonObject { ["type"] = "string", ["enum"] = Enum(state.Workspaces.Select(w => w.Name)), ["description"] = "For workspace.version and workspace.file.edit, the workspace." };
         if (canSetVersion)
         {
-            change["workspace"] = new JsonObject { ["type"] = "string", ["enum"] = Enum(state.Workspaces.Select(w => w.Name)), ["description"] = "For workspace.version, the workspace." };
             change["version"] = new JsonObject { ["type"] = "string", ["enum"] = Enum(state.Versions), ["description"] = "For workspace.version, the Terraform version to set." };
         }
         return new JsonObject
@@ -409,7 +443,12 @@ did not ask about a failure.
                 .Where(c => c.Op is AiAssistOps.FileAdd or AiAssistOps.FileEdit)
                 .Select(c => new AiTerraformFile { Name = c.FileName, Content = c.Content, ExistingFileId = c.FileId })
                 .ToList();
-            result.Warnings.AddRange(drafted.SelectMany(AiTerraformDraftBuilder.Problems));
+            // a workspace's file is checked for what it sets, but declares nothing to clash with the directory's
+            var workspaceDrafted = result.Changes
+                .Where(c => c.Op == AiAssistOps.WorkspaceFileEdit)
+                .Select(c => new AiTerraformFile { Name = c.FileName, Content = c.Content, ExistingFileId = c.FileId })
+                .ToList();
+            result.Warnings.AddRange(drafted.Concat(workspaceDrafted).SelectMany(AiTerraformDraftBuilder.Problems));
             result.Warnings.AddRange(AiTerraformDraftBuilder.DuplicateDeclarations(state.Files, drafted));
         }
         return result;
@@ -424,6 +463,7 @@ did not ask about a failure.
         var kept = new List<AiAssistChange>();
         var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var workspaces = new HashSet<Guid>();
+        var workspaceFiles = new HashSet<Guid>();
         foreach (var change in proposed)
         {
             string problem;
@@ -433,6 +473,11 @@ did not ask about a failure.
                 case AiAssistOps.FileEdit:
                     problem = ProposeFile(state, change);
                     if (problem == null && !files.Add(change.FileName))
+                        problem = "it changes the same file twice";
+                    break;
+                case AiAssistOps.WorkspaceFileEdit:
+                    problem = ProposeWorkspaceFile(state, change);
+                    if (problem == null && !workspaceFiles.Add(change.FileId.Value))
                         problem = "it changes the same file twice";
                     break;
                 case AiAssistOps.WorkspaceVersion:
@@ -488,6 +533,30 @@ did not ask about a failure.
         return null;
     }
 
+    private static string ProposeWorkspaceFile(AiAssistState state, AiAssistChange change)
+    {
+        var name = change.FileName?.Trim();
+        change.FileName = name;
+        var workspace = state.Workspaces.SingleOrDefault(w => w.Name == change.WorkspaceName);
+        change.WorkspaceId = workspace?.Id;
+        change.Label = Label(change);
+        if (workspace == null)
+            return $"the directory has no workspace named {change.WorkspaceName}";
+        var existing = workspace.Files.SingleOrDefault(f => f.Name == name);
+        if (existing == null)
+            return $"{workspace.Name} has no file named {name}; Ask AI changes a workspace's files that exist, and does not add one";
+        if (AiAssistState.WorkspaceFileLock(existing) is string reason)
+            return $"{name} cannot be changed here: {reason}";
+        if (change.Content == null)
+            return "it has no content";
+        if (existing.Content == change.Content)
+            return "the file is unchanged";
+        change.FileId = existing.Id;
+        change.ExistingContent = existing.Content;
+        change.ExistingContentHash = AiTerraformDraftBuilder.ContentHash(existing.Content);
+        return null;
+    }
+
     private static string ProposeVersion(AiAssistState state, AiAssistChange change)
     {
         var workspace = state.Workspaces.SingleOrDefault(w => w.Name == change.WorkspaceName);
@@ -508,6 +577,7 @@ did not ask about a failure.
     {
         AiAssistOps.FileAdd => $"Add {change.FileName}",
         AiAssistOps.FileEdit => $"Edit {change.FileName}",
+        AiAssistOps.WorkspaceFileEdit => $"Edit {change.FileName} in {change.WorkspaceName ?? "a workspace"}",
         AiAssistOps.WorkspaceVersion => $"Set {change.WorkspaceName ?? "a workspace"} to Terraform {change.TerraformVersion}" +
             (string.IsNullOrEmpty(change.ExistingTerraformVersion) ? " (now Caster's default)" : $" (now {change.ExistingTerraformVersion})"),
         _ => change.Op ?? "A change"

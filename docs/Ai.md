@@ -78,7 +78,7 @@ These are starting points to try, not measured results. Set `Ai:Prices` and comp
 
 - **Design drafts** see the module catalog: each Module with a version, its variables and outputs, its source and the hypervisor it works on.
 - **Terraform drafts** see the Directory's files, its parents' files and the enabled Designs. They may change only the Directory's own files, and say in their notes what a read-only file would need.
-- **Ask AI** sees the Directory's files and its parents', its workspaces with their Terraform versions and own files, the latest run's plan or apply output when it failed, and the enabled Designs.
+- **Ask AI** sees the Directory's files and its parents', its workspaces with their Terraform versions and own files (each marked editable or read-only, with the reason), the latest run's plan or apply output when it failed, and the enabled Designs.
 - **Provider settings.** The drafts and Ask AI are told the names, never the values, of the provider settings that Caster's runs set in the environment (for example `PROXMOX_VE_ENDPOINT`), so they leave those out of provider blocks and declare no variables for them.
 - **Credentials** are never put in a prompt, and a draft is told never to write one into a file.
 
@@ -101,6 +101,25 @@ A draft comes back with a summary, notes and warnings. Both kinds of draft are a
 Each machine's size is taken from the plan, or from its template's size in the inventory. A machine with neither is left out of the totals, and the review says how many are unsized.
 
 A Design draft may leave a value it cannot know as a placeholder, which starts with `REPLACE_WITH_`. A Design with placeholders can be created, but not enabled: enabling it, or enabling a module in an enabled Design, is refused until each placeholder has a value.
+
+### What Ask AI may change
+
+Ask AI proposes these changes, and the planner keeps or drops each one:
+
+- add a file to the Directory;
+- replace a file of the Directory;
+- replace a file of one of the Directory's workspaces, which is usually that workspace's variable values (`.tfvars`);
+- set a workspace's Terraform version to one Caster has.
+
+It cannot delete or rename a file, change a parent Directory's files, or change a Design.
+
+A workspace's own file can be replaced, never added, and only when a person made it and it is safe to show a model. Ask AI leaves a workspace file alone, and says why, when:
+
+- **Blueprint generates it.** Blueprint writes a `blueprint-<id>.auto.tfvars` for each workspace it makes, and writes it again, so an edit would be overwritten or would fight it.
+- **It sets a credential.** A password, secret, token or key set to a literal value.
+- **It is too long to show in full.** The model is shown up to 4,000 characters of a workspace file, and cannot replace a file it has not seen whole.
+
+These rules are checked twice: when the change is proposed, and again against the file as it is when the planner applies it, because the apply request comes from a client. A workspace file is saved the way the editor saves it, under the file's lock and with the same "changed since" check as any other file: if someone saved it after the proposal, it is not replaced.
 
 ## Usage and cost
 
