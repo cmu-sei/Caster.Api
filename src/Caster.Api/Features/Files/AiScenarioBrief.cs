@@ -30,11 +30,6 @@ public class AiScenarioBrief
     public string Title { get; set; }
     public string Summary { get; set; }
 
-    /// <summary>
-    /// Where the brief came from, for the planner's reference. Not used to draft.
-    /// </summary>
-    public AiBriefSource Source { get; set; }
-
     public List<AiBriefOrganization> Organizations { get; set; } = [];
 
     /// <summary>
@@ -59,21 +54,6 @@ public class AiScenarioBrief
     /// Limits the range must keep to, e.g. "No more than 30 machines".
     /// </summary>
     public List<string> Constraints { get; set; } = [];
-}
-
-public class AiBriefSource
-{
-    /// <summary>
-    /// The application that wrote the brief, e.g. Blueprint.
-    /// </summary>
-    public string Application { get; set; }
-
-    /// <summary>
-    /// The application's ID of what the brief describes, e.g. a MSEL ID.
-    /// </summary>
-    public string Reference { get; set; }
-
-    public string Name { get; set; }
 }
 
 public class AiBriefOrganization
