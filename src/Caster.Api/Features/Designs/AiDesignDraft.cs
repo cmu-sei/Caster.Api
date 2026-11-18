@@ -217,7 +217,9 @@ public static class AiDesignDraftBuilder
         foreach (var entry in catalog)
         {
             sb.AppendLine();
-            sb.AppendLine($"## {entry.Module.Name} (moduleId {entry.Module.Id}, version {entry.Version.Name}, hypervisor {entry.Hypervisor ?? "any"})");
+            // a module on both hypervisors is not generic: it is offered only to a draft on both, and says so
+            var required = Hypervisors.RequiredBy(entry.Version.Providers);
+            sb.AppendLine($"## {entry.Module.Name} (moduleId {entry.Module.Id}, version {entry.Version.Name}, hypervisor {(required.Length == 0 ? "any" : string.Join(" and ", required))})");
             if (!string.IsNullOrWhiteSpace(entry.Module.Description))
                 sb.AppendLine(entry.Module.Description.Trim());
             sb.AppendLine("Variables:");

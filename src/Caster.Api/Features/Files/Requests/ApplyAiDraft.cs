@@ -108,6 +108,9 @@ public class ApplyAiDraft
                             throw new FileConflictException();
                         // the file was loaded before its lock was taken: read it again, so a save that landed in between is seen
                         await dbContext.Entry(file).ReloadAsync(cancellationToken);
+                        // a file deleted in the meantime is detached by the reload: the draft no longer applies whole
+                        if (dbContext.Entry(file).State == EntityState.Detached)
+                            throw new ConflictException($"{change.Name} is no longer a file of this Directory. Draft again.");
                         if (AiTerraformDraftBuilder.ContentHash(file.Content) != change.ExistingContentHash)
                             throw new ConflictException($"{file.Name} has changed since the draft was written. Draft again.");
                         if (file.LockedById.HasValue && file.LockedById != userId)

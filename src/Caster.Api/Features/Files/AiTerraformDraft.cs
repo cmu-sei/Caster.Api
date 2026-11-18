@@ -68,7 +68,8 @@ public class AiTerraformFile
 /// <summary>
 /// A file the model is shown: the Directory's own, which it may change, or one it only reads.
 /// </summary>
-public record AiContextFile(Guid Id, string Name, string Content, string DirectoryName, bool Editable);
+/// <param name="ReadOnlyReason">Why this Directory's own file may not be changed, such as that it sets a credential; null otherwise.</param>
+public record AiContextFile(Guid Id, string Name, string Content, string DirectoryName, bool Editable, string ReadOnlyReason = null);
 
 /// <summary>
 /// Builds the prompt and tool schema for drafting raw Terraform in a Directory, and checks the
@@ -296,6 +297,13 @@ public static class AiTerraformDraftBuilder
                 if (!names.Add(name))
                 {
                     draft.Warnings.Add($"Dropped the second file named {name}.");
+                    continue;
+                }
+
+                // this Directory's own file the model may not change: dropped, not mistaken for a parent's file of the same name
+                if (files.FirstOrDefault(f => f.ReadOnlyReason != null && f.Name == name) is { } locked)
+                {
+                    draft.Warnings.Add($"Dropped {name}: it {locked.ReadOnlyReason}, so it cannot be changed here.");
                     continue;
                 }
 

@@ -134,6 +134,19 @@ public class AiTerraformDraftBuilderTests
         Assert.Contains("=== secrets.tf (read-only, from lab; credential values are hidden) ===", prompt);
     }
 
+    /// <summary>The directory's own credential file is not mistaken for a parent's file of the same name, and is not drafted.</summary>
+    [Fact]
+    public void Review_drops_a_file_the_model_rewrites_when_the_directorys_own_copy_sets_a_credential()
+    {
+        var own = new AiContextFile(Guid.NewGuid(), "provider.tf", "password = \"Pr0d-Secret!\"\n", "lab", false, "sets a credential");
+
+        var draft = AiTerraformDraftBuilder.Review(JsonDocument.Parse("""{"summary":"s","files":[{"name":"provider.tf","content":"# changed\n"},{"name":"vm.tf","content":"# vm\n"}]}""").RootElement, [own]);
+
+        Assert.Equal(["vm.tf"], draft.Files.Select(f => f.Name));
+        Assert.Contains("Dropped provider.tf: it sets a credential, so it cannot be changed here.", draft.Warnings);
+        Assert.DoesNotContain(draft.Warnings, w => w.Contains("parent directory"));
+    }
+
     [Fact]
     public void Redaction_leaves_a_file_with_no_literal_credential_as_it_is()
     {

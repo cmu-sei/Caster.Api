@@ -34,6 +34,20 @@ namespace Caster.Api.Tests.Features.Designs
         ];
 
         [Fact]
+        public void BuildSystemPrompt_Says_A_Module_On_Both_Hypervisors_Is_Not_Generic()
+        {
+            var both = Module("crucible-modules/hybrid", "bpg/proxmox", "hashicorp/vsphere");
+            var generic = Module("crucible-modules/label");
+            var catalog = AiDesignDraftBuilder.SelectCatalog([both, generic], Sources, null, ["Proxmox", "vSphere"]);
+
+            var prompt = AiDesignDraftBuilder.BuildSystemPrompt(catalog, ["Proxmox", "vSphere"]);
+
+            Assert.Contains("hybrid (moduleId ", prompt);
+            Assert.Contains("hypervisor Proxmox and vSphere)", prompt);
+            Assert.Contains("hypervisor any)", prompt);
+        }
+
+        [Fact]
         public void SelectCatalog_Offers_A_Module_On_Both_Hypervisors_Only_To_A_Draft_On_Both()
         {
             var both = Module("crucible-modules/hybrid", "bpg/proxmox", "hashicorp/vsphere");

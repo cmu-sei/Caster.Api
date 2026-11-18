@@ -148,6 +148,45 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         Assert.Contains(proposal.Warnings, w => w.Contains("creds.tf sets a credential, so it cannot be changed here"));
     }
 
+    /// <summary>
+    /// Files over the prompt budget are cut. The values are hidden before the cut, so a cut that falls inside a quoted
+    /// credential cannot leave the start of it in the prompt.
+    /// </summary>
+    [Fact]
+    public async Task Ask_hides_a_credential_in_a_file_cut_to_the_prompt_budget()
+    {
+        var (project, _, directory, _, _) = await SeedDirectory();
+        // 1,974 characters of filler (141 whole lines), then a password whose value straddles character 2,000, then enough to pass the budget
+        var filler = string.Concat(Enumerable.Repeat("# filler line\n", 141));
+        var big = filler + "admin_password = \"Pr0d-Secret-Value\"\n" + new string('#', AiAssistState.MaxFileCharacters + 5_000) + "\n";
+        await Seed(TestData.File(directory, "big-creds.tf", big));
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
+
+        await Ask(actor, directory, "what is in here", """{"reply":"r","cause":"none","changes":[]}""");
+
+        var prompt = Ai.Model.Calls.Last(c => c.DirectoryId == directory.Id).Prompt;
+        Assert.DoesNotContain("Pr0d-S", prompt);
+        Assert.Contains("are not shown", prompt);
+    }
+
+    /// <summary>The model answering with a change to a credential file of this directory is dropped for what it is, for either kind of change.</summary>
+    [Fact]
+    public async Task Ask_drops_any_change_to_a_credential_file_of_the_directory_and_says_why()
+    {
+        var (project, _, directory, _, _) = await SeedDirectory();
+        await Seed(TestData.File(directory, "creds.tf", "admin_password = \"Pr0d-Secret!\"\n"));
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
+
+        var proposal = await Ask(actor, directory, "change creds.tf", """
+            {"reply":"r","cause":"none","changes":[
+              {"op":"file.add","file":"creds.tf","content":"x = 1\n"},
+              {"op":"file.edit","file":"creds.tf","content":"x = 2\n"}]}
+            """);
+
+        Assert.Empty(proposal.Changes);
+        Assert.Equal(2, proposal.Warnings.Count(w => w.Contains("creds.tf sets a credential, so it cannot be changed here")));
+    }
+
     [Fact]
     public async Task Ask_refuses_a_workspace_of_another_directory()
     {

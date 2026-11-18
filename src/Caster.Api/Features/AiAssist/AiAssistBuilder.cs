@@ -77,7 +77,10 @@ public class AiAssistState
             .Select(f => new AiContextFile(f.Id, f.Name, f.Content, f.Directory.Name, f.DirectoryId == directoryId))
             .ToListAsync(ct);
         // a file that sets a credential is shown without its value, so it cannot be replaced: the placeholder would overwrite it
-        files = files.Select(f => f with { Editable = f.Editable && !AiTerraformDraftBuilder.HoldsLiteralSecret(f.Content) }).ToList();
+        // the values are hidden here, before the files are cut to the budget: a cut inside a quoted value would leave nothing to match
+        files = files.Select(f => AiTerraformDraftBuilder.HoldsLiteralSecret(f.Content)
+            ? f with { Editable = false, ReadOnlyReason = f.Editable ? "sets a credential" : null, Content = AiTerraformDraftBuilder.ForModel(f.Content) }
+            : f).ToList();
 
         var workspaces = await db.Workspaces
             .AsNoTracking()
@@ -512,18 +515,15 @@ did not ask about a failure.
         if (change.Content == null)
             return "it has no content";
 
+        // this Directory's own file that sets a credential is shown without its value, so no change to it is taken
+        if (state.Files.FirstOrDefault(f => f.ReadOnlyReason != null && f.Name == name) is { } locked)
+            return $"{name} {locked.ReadOnlyReason}, so it cannot be changed here";
         // the name decides: a file of this Directory is replaced, any other name is added
         var existing = state.Editable.SingleOrDefault(f => f.Name == name);
         if (existing == null)
         {
             if (state.Files.Any(f => !f.Editable && f.Name == name) && change.Op == AiAssistOps.FileEdit)
-            {
-                var locked = state.Files.First(f => !f.Editable && f.Name == name);
-                // this directory's own file is read-only only when it sets a credential, which the model is shown without
-                return locked.DirectoryName == state.DirectoryName
-                    ? $"{name} sets a credential, so it cannot be changed here"
-                    : $"{name} belongs to the parent directory {locked.DirectoryName}; open Ask AI on that directory to change it";
-            }
+                return $"{name} belongs to the parent directory {state.Files.First(f => !f.Editable && f.Name == name).DirectoryName}; open Ask AI on that directory to change it";
             change.Op = AiAssistOps.FileAdd;
             change.FileId = null;
             change.ExistingContent = null;
