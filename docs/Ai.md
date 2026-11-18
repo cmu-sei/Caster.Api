@@ -135,13 +135,13 @@ The estimated cost uses `Ai:Prices`, in US dollars per million tokens, keyed by 
 | `GET directories/{id}/designs/ai-draft/options` | Whether AI is enabled and which hypervisors runs can build on | `EditProject` |
 | `POST directories/{id}/designs/ai-draft` | Draft a Design | `EditProject` |
 | `POST directories/{id}/designs/ai-draft/create` | Create a disabled Design from a reviewed draft | `EditProject` |
-| `POST directories/{id}/files/ai-draft` | Draft Terraform | `EditProject` |
-| `POST directories/{id}/files/ai-draft/brief` | Draft Terraform from a scenario brief | `EditProject` |
+| `POST directories/{id}/files/ai-draft` | Draft Terraform | `EditProject` and `ViewProject` |
+| `POST directories/{id}/files/ai-draft/brief` | Draft Terraform from a scenario brief | `EditProject` and `ViewProject` |
 | `POST directories/{id}/files/ai-draft/apply` | Save a reviewed Terraform draft | `EditProject`, and `LockFiles` to replace a locked file |
-| `POST directories/{id}/ai-assist` | Ask AI: a reply and proposed changes | `EditProject` |
+| `POST directories/{id}/ai-assist` | Ask AI: a reply and proposed changes | `EditProject` and `ViewProject` |
 | `POST directories/{id}/ai-assist/apply` | Make the proposed changes the planner kept | `EditProject` |
 | `GET projects/{id}/ai-usage` | A project's AI usage and estimated cost | `ViewProject` |
 
-The system-wide permission for each is `EditProjects`, `LockFiles` and `ViewProjects`.
+The system-wide permission for each is `EditProjects`, `LockFiles` and `ViewProjects`. The drafts of Terraform and Ask AI send the Directory's files to the model and return them in the answer, so they need `ViewProject` as well as `EditProject`: a caller who cannot read the files by hand cannot read them through the model.
 
 Saving a Terraform draft is all or nothing: every file is saved or none is. A file that is replaced must not have changed since the draft, and must not be held by another user. Applying Ask AI changes checks each change again against the Directory as it is now, and does not replace a file that has changed since the proposal. It reports whether each change was applied, and why not.

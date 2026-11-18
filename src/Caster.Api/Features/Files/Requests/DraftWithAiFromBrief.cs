@@ -121,7 +121,9 @@ public class DraftWithAiFromBrief
     public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext, IAiModelClient aiModelClient, AiOptions aiOptions, TerraformOptions terraformOptions, IInventoryService inventoryService, IAiTaskContext aiTask) : BaseHandler<Command, AiTerraformDraft>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
+            await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken)
+            // the model is sent the Directory's files and the answer returns them, so the caller must be able to read them by hand
+            && await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
         public override Task<AiTerraformDraft> HandleRequest(Command request, CancellationToken cancellationToken)
         {

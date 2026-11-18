@@ -67,9 +67,11 @@ public class Ask
         ITerraformService terraformService,
         IAiTaskContext aiTask) : BaseHandler<Command, AiAssistResult>
     {
-        // whoever can change the Directory's files may ask; nobody else reaches the model
+        // whoever can read and change the Directory's files may ask; nobody else reaches the model
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
+            await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken)
+            // the model is sent the Directory's files and the answer returns them, so the caller must be able to read them by hand
+            && await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
 
         public override async Task<AiAssistResult> HandleRequest(Command request, CancellationToken cancellationToken)
         {

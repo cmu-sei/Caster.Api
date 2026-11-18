@@ -40,7 +40,7 @@ public class AiTerraformDraftCatalogTests(DatabaseFixture fixture, AiAppFactory 
             Seed("proxmox-net", "bpg/proxmox"),
             Seed("vsphere-net", "hashicorp/vsphere"),
             Seed("generic-label"));
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         Ai.Model.Answers(directory.Id, Answer);
 
         var response = await Client(actor).PostAsJsonAsync($"api/directories/{directory.Id}/files/ai-draft", new { prompt = "add a network" }, Ct);
@@ -67,5 +67,23 @@ public class AiTerraformDraftCatalogTests(DatabaseFixture fixture, AiAppFactory 
         Assert.Contains("## proxmox-net:", system);
         Assert.Contains("## vsphere-net:", system);
         Assert.Contains("## generic-label:", system);
+    }
+
+    /// <summary>The draft sends the directory's files to the model and returns them as a diff, so a caller who cannot read them by hand is refused.</summary>
+    [Theory]
+    [InlineData("files/ai-draft", """{"prompt":"add a network"}""")]
+    [InlineData("files/ai-draft/brief", """{"brief":{"title":"Lab","segments":[{"name":"lan","cidr":"10.0.0.0/24"}]}}""")]
+    public async Task Draft_is_forbidden_for_an_editor_who_cannot_view_the_project_without_a_model_call(string route, string body)
+    {
+        var project = TestData.Project();
+        var directory = TestData.Directory(project, "lab");
+        await Seed(project, directory, TestData.File(directory, "main.tf", "# secret layout\n"));
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        Ai.Model.Answers(directory.Id, Answer);
+
+        var response = await Client(actor).PostAsync($"api/directories/{directory.Id}/{route}", new System.Net.Http.StringContent(body, System.Text.Encoding.UTF8, "application/json"), Ct);
+
+        await AssertProblem(System.Net.HttpStatusCode.Forbidden, response);
+        Assert.DoesNotContain(Ai.Model.Calls, c => c.DirectoryId == directory.Id);
     }
 }

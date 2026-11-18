@@ -37,7 +37,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Ask_returns_labelled_changes_and_saves_nothing()
     {
         var (project, _, directory, main, workspace) = await SeedDirectory();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         Ai.Model.Answers(directory.Id, """
             {"reply":"Adding a network and moving dev to 1.5.7.","cause":"none","changes":[
               {"op":"file.edit","file":"main.tf","content":"# new main\n"},
@@ -83,7 +83,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
             TestData.Plan(failedRun, PlanStatus.Failed, "\u001b[31mError: Reserved argument name in module block\u001b[0m\n  on main.tf line 3, in module \"web\":"),
             TestData.Plan(appliedRun, PlanStatus.Planned, "Plan: 3 to add"),
             TestData.Apply(appliedRun, ApplyStatus.Applied, "Apply complete! Resources: 3 added"));
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         Ai.Model.Answers(directory.Id, """
             {"reply":"The code is fine: count in a module block needs Terraform 0.13 or later, and dev runs 0.12.29.","cause":"environment",
              "changes":[{"op":"workspace.version","workspace":"dev","version":"1.5.7"}]}
@@ -114,6 +114,20 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         Assert.DoesNotContain(Ai.Model.Calls, c => c.DirectoryId == directory.Id);
     }
 
+    /// <summary>The model is sent the directory's files and the answer returns them, so a caller who cannot read them by hand is refused.</summary>
+    [Fact]
+    public async Task Ask_is_forbidden_for_an_editor_who_cannot_view_the_project_without_a_model_call()
+    {
+        var (project, _, directory, _, _) = await SeedDirectory();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        Ai.Model.Answers(directory.Id, """{"reply":"never asked","cause":"none","changes":[]}""");
+
+        var response = await Client(actor).PostAsJsonAsync($"api/directories/{directory.Id}/ai-assist", new { prompt = "show me the files" }, Ct);
+
+        await AssertProblem(HttpStatusCode.Forbidden, response);
+        Assert.DoesNotContain(Ai.Model.Calls, c => c.DirectoryId == directory.Id);
+    }
+
     [Fact]
     public async Task Ask_refuses_a_workspace_of_another_directory()
     {
@@ -121,7 +135,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         var other = TestData.Directory(project, "other");
         var elsewhere = TestData.Workspace(other, "elsewhere");
         await Seed(other, elsewhere);
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
 
         var response = await Client(actor).PostAsJsonAsync($"api/directories/{directory.Id}/ai-assist", new { prompt = "x", workspaceId = elsewhere.Id }, Ct);
 
@@ -135,7 +149,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_makes_each_change_through_the_file_and_workspace_requests()
     {
         var (project, _, directory, main, workspace) = await SeedDirectory();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         var proposal = await Propose(actor, directory, Everything);
 
         var applied = await ApplyChanges(actor, directory, proposal.Changes.ToArray());
@@ -156,7 +170,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_keeps_the_callers_own_lock()
     {
         var (project, _, directory, main, _) = await SeedDirectory();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         await Lock(main, actor);
         var proposal = await Propose(actor, directory, Everything);
 
@@ -172,7 +186,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_reports_a_file_changed_since_the_proposal_and_does_not_replace_it()
     {
         var (project, _, directory, main, _) = await SeedDirectory();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         var proposal = await Propose(actor, directory, Everything);
         await using (var db = NewContext())
         {
@@ -195,8 +209,8 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_reports_a_file_another_user_holds()
     {
         var (project, _, directory, main, _) = await SeedDirectory();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
-        var holder = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
+        var holder = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         var proposal = await Propose(actor, directory, Everything);
         await Lock(main, holder);
 
@@ -233,7 +247,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_replaces_a_workspace_file_the_planner_kept()
     {
         var (project, directory, workspace, values, _) = await SeedWorkspaceFiles();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         var proposal = await ProposeOne(actor, directory, EditValues);
 
         var applied = await ApplyChanges(actor, directory, proposal.Changes.ToArray());
@@ -251,7 +265,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_reports_a_workspace_file_changed_since_the_proposal_and_does_not_replace_it()
     {
         var (project, directory, _, values, _) = await SeedWorkspaceFiles();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         var proposal = await ProposeOne(actor, directory, EditValues);
         await using (var db = NewContext())
         {
@@ -273,7 +287,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_refuses_a_blueprint_generated_workspace_file_even_when_sent_directly()
     {
         var (project, directory, workspace, _, generated) = await SeedWorkspaceFiles();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         var change = new AiAssistChange
         {
             Op = AiAssistOps.WorkspaceFileEdit,
@@ -299,7 +313,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_does_not_treat_a_directory_file_as_a_workspace_file()
     {
         var (project, directory, workspace, _, _) = await SeedWorkspaceFiles();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         await using var seed = NewContext();
         var main = await seed.Files.SingleAsync(f => f.DirectoryId == directory.Id && f.WorkspaceId == null && f.Name == "main.tf", Ct);
         var change = new AiAssistChange
@@ -326,7 +340,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_reports_a_name_taken_and_a_version_moved_since_the_proposal()
     {
         var (project, _, directory, _, workspace) = await SeedDirectory();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         var proposal = await Propose(actor, directory, Everything);
         await using (var db = NewContext())
         {
@@ -346,7 +360,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     public async Task Apply_refuses_a_version_Caster_does_not_have()
     {
         var (project, _, directory, _, workspace) = await SeedDirectory();
-        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
         var change = new AiAssistChange
         {
             Op = AiAssistOps.WorkspaceVersion,
