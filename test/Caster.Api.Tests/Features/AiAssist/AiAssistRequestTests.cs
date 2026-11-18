@@ -151,7 +151,6 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         Assert.DoesNotContain("an old failure", prompt);
     }
 
-    /// <summary>A failed plan is fixed by the next good plan, so only a failed apply stays shown beside a later plan.</summary>
     /// <summary>A restart during an apply marks the run failed and leaves its apply unfinished; its output is still the failure to show.</summary>
     [Fact]
     public async Task Ask_shows_an_apply_a_restart_interrupted_beside_a_later_plan()
@@ -172,6 +171,7 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         Assert.Contains("aws_instance.web: Creating...", prompt);
     }
 
+    /// <summary>A failed plan is fixed by the next good plan, so only a failed apply stays shown beside a later plan.</summary>
     [Fact]
     public async Task Ask_leaves_out_a_failed_plan_once_a_later_plan_succeeded()
     {
