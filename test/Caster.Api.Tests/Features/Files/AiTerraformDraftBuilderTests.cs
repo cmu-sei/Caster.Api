@@ -209,6 +209,15 @@ public class AiTerraformDraftBuilderTests
         Assert.Contains("name = \"web\"", shown);
     }
 
+    /// <summary>Terraform's unterminated-string diagnostic quotes the next line too, so an ordinary value must not swallow it.</summary>
+    [Fact]
+    public void Redacting_text_finds_a_credential_after_an_unfinished_string()
+    {
+        var shown = AiTerraformDraftBuilder.RedactText("name = \"unfinished\nadmin_password = \"LiveCredential123\"\n");
+
+        Assert.DoesNotContain("LiveCredential123", shown);
+    }
+
     [Fact]
     public void Redaction_leaves_a_file_with_no_literal_credential_as_it_is()
     {

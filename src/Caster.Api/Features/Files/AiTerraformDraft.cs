@@ -120,9 +120,24 @@ public static class AiTerraformDraftBuilder
     /// Text a model is shown that may quote a file, such as a failed plan's output: the value of a credential-like argument
     /// set to a literal string is replaced wherever it appears, not only at the start of a line.
     /// </summary>
-    public static string RedactText(string text) =>
-        string.IsNullOrEmpty(text) ? text : LiteralSecretInText.Replace(text, m =>
-            SecretNameOnly.IsMatch(m.Groups[1].Value) ? $"{m.Groups[1].Value}{m.Groups[2].Value}\"{Redacted}\"" : m.Value);
+    public static string RedactText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        var shown = new System.Text.StringBuilder();
+        var from = 0;
+        var m = LiteralSecretInText.Match(text);
+        while (m.Success)
+        {
+            var credential = SecretNameOnly.IsMatch(m.Groups[1].Value);
+            // an ordinary argument's value is not consumed, so a credential after an unfinished string is still found
+            var end = credential ? m.Index + m.Length : m.Groups[2].Index + m.Groups[2].Length;
+            shown.Append(text, from, (credential ? m.Groups[2].Index + m.Groups[2].Length : end) - from);
+            if (credential) shown.Append('"').Append(Redacted).Append('"');
+            from = end;
+            m = LiteralSecretInText.Match(text, end);
+        }
+        return shown.Append(text, from, text.Length - from).ToString();
+    }
 
     /// <summary>The placeholder a credential's value is shown as to a model.</summary>
     public const string Redacted = "[redacted]";
