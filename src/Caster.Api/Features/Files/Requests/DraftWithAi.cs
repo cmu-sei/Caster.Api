@@ -102,7 +102,7 @@ public class DraftWithAi
             var warnings = new List<string>();
             var hypervisors = ResolveHypervisors(files, requestedHypervisors, warnings);
             var inventory = await AiInventory.ForCaller(authorizationService, inventoryService, hypervisors, cancellationToken);
-            var catalog = await LoadCatalog(cancellationToken);
+            var catalog = await LoadCatalog(hypervisors, cancellationToken);
             var input = await aiModelClient.InvokeToolAsync(
                 AiTerraformDraftBuilder.BuildSystemPrompt(catalog, inventory.BuildPromptSection(), Domain.Models.Hypervisors.ProviderVariables(terraformOptions)),
                 AiTerraformDraftBuilder.BuildUserPrompt(prompt, files, await LoadDesigns(directoryId, cancellationToken), focus),
@@ -144,8 +144,9 @@ public class DraftWithAi
                 .ToListAsync(cancellationToken);
         }
 
-        // the modules Terraform runs can download, as the Design draft offers them, for every hypervisor
-        private async Task<List<AiCatalogModule>> LoadCatalog(CancellationToken cancellationToken)
+        // the modules Terraform runs can download, as the Design draft offers them: those that build on one of the draft's
+        // hypervisors, or on any. With no hypervisor known, every module.
+        private async Task<List<AiCatalogModule>> LoadCatalog(string[] hypervisors, CancellationToken cancellationToken)
         {
             var modules = await dbContext.Modules
                 .Include(m => m.Versions)
@@ -154,7 +155,7 @@ public class DraftWithAi
 
             // Modules that match no configured source came from the legacy Gitlab group.
             var fallbackSource = terraformOptions.GitlabGroupId.HasValue ? ModuleRepositoryDispatcher.GitlabSourceName : null;
-            return AiDesignDraftBuilder.SelectCatalog(modules, terraformOptions.ModuleSources, fallbackSource, hypervisors: null);
+            return AiDesignDraftBuilder.SelectCatalog(modules, terraformOptions.ModuleSources, fallbackSource, hypervisors);
         }
 
         private async Task<List<string>> LoadDesigns(Guid directoryId, CancellationToken cancellationToken)

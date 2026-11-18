@@ -78,6 +78,7 @@ These are starting points to try, not measured results. Set `Ai:Prices` and comp
 
 - **Design drafts** see the module catalog: each Module with a version, its variables and outputs, its source and the hypervisor it works on.
 - **Terraform drafts** see the Directory's files, its parents' files and the enabled Designs. They may change only the Directory's own files, and say in their notes what a read-only file would need.
+- **The module catalog** is offered to the Terraform drafts as to the Design drafts: the highest version of each Module that runs can download, and that builds on the hypervisor the Directory's Terraform uses (found from its provider blocks and resources, else the request's, else the configured hypervisors) or on any. A Proxmox Directory is not offered a vSphere-only Module.
 - **Ask AI** sees the Directory's files and its parents', its workspaces with their Terraform versions and own files (each marked editable or read-only, with the reason), the latest run's plan or apply output when it failed, and the enabled Designs.
 - **Provider settings.** The drafts and Ask AI are told the names, never the values, of the provider settings that Caster's runs set in the environment (for example `PROXMOX_VE_ENDPOINT`), so they leave those out of provider blocks and declare no variables for them.
 - **Credentials** are never put in a prompt, and a draft is told never to write one into a file.
