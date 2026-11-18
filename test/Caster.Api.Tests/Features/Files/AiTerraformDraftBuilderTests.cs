@@ -188,6 +188,28 @@ public class AiTerraformDraftBuilderTests
     }
 
     [Fact]
+    public void Redacting_text_is_fast_on_a_long_identifier_holding_many_credential_names()
+    {
+        var text = "Error on line 2: " + string.Concat(Enumerable.Repeat("token", 40_000)) + " = var.input";
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var shown = AiTerraformDraftBuilder.RedactText(text);
+
+        watch.Stop();
+        Assert.Equal(text, shown);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1), $"took {watch.Elapsed}");
+    }
+
+    [Fact]
+    public void Redacting_text_hides_a_credential_after_a_line_number_and_keeps_other_arguments()
+    {
+        var shown = AiTerraformDraftBuilder.RedactText("on main.tf line 4: 4: admin_password = \"hunter22\" name = \"web\"");
+
+        Assert.DoesNotContain("hunter22", shown);
+        Assert.Contains("name = \"web\"", shown);
+    }
+
+    [Fact]
     public void Redaction_leaves_a_file_with_no_literal_credential_as_it_is()
     {
         const string content = "variable \"password\" {\n  sensitive = true\n}\nadmin_password = var.admin_password\nname = \"web\"\n";

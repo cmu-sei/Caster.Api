@@ -152,6 +152,26 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
     }
 
     /// <summary>A failed plan is fixed by the next good plan, so only a failed apply stays shown beside a later plan.</summary>
+    /// <summary>A restart during an apply marks the run failed and leaves its apply unfinished; its output is still the failure to show.</summary>
+    [Fact]
+    public async Task Ask_shows_an_apply_a_restart_interrupted_beside_a_later_plan()
+    {
+        var (project, _, directory, _, workspace) = await SeedDirectory();
+        var interrupted = RunAt(workspace, RunStatus.Failed, hoursAgo: 5);
+        var later = RunAt(workspace, RunStatus.Planned, hoursAgo: 1);
+        await Seed(interrupted, later,
+            TestData.Plan(interrupted, PlanStatus.Planned, "Plan: 3 to add"),
+            TestData.Apply(interrupted, ApplyStatus.Applying, "aws_instance.web: Creating..."),
+            TestData.Plan(later, PlanStatus.Planned, "Plan: 3 to add"));
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
+
+        await Ask(actor, directory, "what happened to the last apply", """{"reply":"r","cause":"none","changes":[]}""");
+
+        var prompt = Ai.Model.Calls.Single(c => c.DirectoryId == directory.Id).Prompt;
+        Assert.Contains("Earlier failed run, not resolved by an apply since", prompt);
+        Assert.Contains("aws_instance.web: Creating...", prompt);
+    }
+
     [Fact]
     public async Task Ask_leaves_out_a_failed_plan_once_a_later_plan_succeeded()
     {

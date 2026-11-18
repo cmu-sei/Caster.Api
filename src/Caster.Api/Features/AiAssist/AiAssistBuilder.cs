@@ -130,7 +130,9 @@ public class AiAssistState
                             .Include(r => r.Apply)
                             .Where(r => r.WorkspaceId == workspace.Id && r.Id != run.Id
                                 && (lastApplied == null || r.CreatedAt > lastApplied)
-                                && (r.Apply.Status == ApplyStatus.Failed || r.Apply.Status == ApplyStatus.Failed_StateError))
+                                && (r.Apply.Status == ApplyStatus.Failed || r.Apply.Status == ApplyStatus.Failed_StateError
+                                    // an apply interrupted by a restart leaves the run failed and its apply unfinished
+                                    || (r.Apply != null && (r.Status == RunStatus.Failed || r.Status == RunStatus.Failed_StateError))))
                             .OrderByDescending(r => r.CreatedAt)
                             .FirstOrDefaultAsync(ct);
                         if (failed != null)

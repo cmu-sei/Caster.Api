@@ -110,16 +110,19 @@ public static class AiTerraformDraftBuilder
         RegexOptions.Multiline | RegexOptions.IgnoreCase);
 
     // the same arguments wherever they appear: a Terraform error prints the source line it is about, after a line number
+    // each identifier is matched whole, once, and its name is checked afterwards, so the match is linear in the text
     private static readonly Regex LiteralSecretInText = new(
-        $@"(?<![A-Za-z0-9_])({SecretName}\s*=\s*){SecretValue}",
+        $@"(?<![A-Za-z0-9_])([A-Za-z0-9_]+)(\s*=\s*){SecretValue}",
         RegexOptions.IgnoreCase);
+    private static readonly Regex SecretNameOnly = new($"^{SecretName}$", RegexOptions.IgnoreCase);
 
     /// <summary>
     /// Text a model is shown that may quote a file, such as a failed plan's output: the value of a credential-like argument
     /// set to a literal string is replaced wherever it appears, not only at the start of a line.
     /// </summary>
     public static string RedactText(string text) =>
-        string.IsNullOrEmpty(text) ? text : LiteralSecretInText.Replace(text, $"$1\"{Redacted}\"");
+        string.IsNullOrEmpty(text) ? text : LiteralSecretInText.Replace(text, m =>
+            SecretNameOnly.IsMatch(m.Groups[1].Value) ? $"{m.Groups[1].Value}{m.Groups[2].Value}\"{Redacted}\"" : m.Value);
 
     /// <summary>The placeholder a credential's value is shown as to a model.</summary>
     public const string Redacted = "[redacted]";
