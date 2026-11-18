@@ -147,6 +147,32 @@ public class AiTerraformDraftBuilderTests
         Assert.DoesNotContain(draft.Warnings, w => w.Contains("parent directory"));
     }
 
+    /// <summary>The cases a line-start, four-character, no-escape pattern missed.</summary>
+    [Theory]
+    [InlineData("pin_password = \"abc\"\n", "abc")]
+    [InlineData("provider \"x\" { api_token = \"tok-123456\" }\n", "tok-123456")]
+    [InlineData("settings = { user = \"u\", db_password = \"p4ssw0rd!\" }\n", "p4ssw0rd!")]
+    [InlineData("admin_password = \"ab\\\"cdef-ghijk\"\n", "cdef-ghijk")]
+    public void Redaction_hides_a_short_one_line_or_escaped_credential(string content, string secret)
+    {
+        Assert.True(AiTerraformDraftBuilder.HoldsLiteralSecret(content));
+        var shown = AiTerraformDraftBuilder.ForModel(content);
+
+        Assert.DoesNotContain(secret, shown);
+        Assert.Contains("[redacted]", shown);
+    }
+
+    [Theory]
+    [InlineData("admin_password = var.admin_password\n")]
+    [InlineData("db_password = \"${var.db_password}\"\n")]
+    [InlineData("password = \"\"\n")]
+    [InlineData("# password = \"commented-out\"\n")]
+    public void Redaction_leaves_a_variable_an_interpolation_an_empty_value_and_a_comment_alone(string content)
+    {
+        Assert.False(AiTerraformDraftBuilder.HoldsLiteralSecret(content));
+        Assert.Equal(content, AiTerraformDraftBuilder.ForModel(content));
+    }
+
     [Fact]
     public void Redaction_leaves_a_file_with_no_literal_credential_as_it_is()
     {

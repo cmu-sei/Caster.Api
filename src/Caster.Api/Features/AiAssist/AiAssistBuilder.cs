@@ -21,7 +21,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Caster.Api.Features.AiAssist;
 
 /// <summary>A workspace of the Directory as Ask AI shows it: its version, its own files and its latest run</summary>
-public record AiAssistWorkspace(Guid Id, string Name, string TerraformVersion, List<AiContextFile> Files, AiAssistRun LastRun);
+public record AiAssistWorkspace(Guid Id, string Name, string TerraformVersion, List<AiContextFile> Files, AiAssistRun LastRun, AiAssistRun LastFailedRun = null);
 
 /// <summary>A workspace's latest run, with the plan and apply output when it failed</summary>
 public record AiAssistRun(RunStatus Status, bool IsDestroy, DateTime CreatedAt, PlanStatus? PlanStatus, string PlanOutput, ApplyStatus? ApplyStatus, string ApplyOutput)
@@ -104,6 +104,7 @@ public class AiAssistState
         {
             // the run output of the workspace the planner works in, or of every workspace when none is chosen
             AiAssistRun lastRun = null;
+            AiAssistRun lastFailedRun = null;
             if (!workspaceId.HasValue || workspace.Id == workspaceId.Value)
             {
                 var run = await db.Runs
@@ -117,11 +118,30 @@ public class AiAssistState
                 {
                     lastRun = new AiAssistRun(run.Status, run.IsDestroy, run.CreatedAt, run.Plan?.Status, run.Plan?.Output, run.Apply?.Status, run.Apply?.Output);
                     if (!lastRun.Failed)
+                    {
                         lastRun = lastRun with { PlanOutput = null, ApplyOutput = null };
+                        // a plan that succeeded does not undo an apply that failed: show the latest failure no later apply has resolved
+                        var lastApplied = await db.Runs.AsNoTracking()
+                            .Where(r => r.WorkspaceId == workspace.Id && r.Status == RunStatus.Applied)
+                            .MaxAsync(r => (DateTime?)r.CreatedAt, ct);
+                        var failed = await db.Runs
+                            .AsNoTracking()
+                            .Include(r => r.Plan)
+                            .Include(r => r.Apply)
+                            .Where(r => r.WorkspaceId == workspace.Id && r.Id != run.Id
+                                && (lastApplied == null || r.CreatedAt > lastApplied)
+                                && (r.Status == RunStatus.Failed || r.Status == RunStatus.Failed_StateError
+                                    || r.Plan.Status == PlanStatus.Failed
+                                    || r.Apply.Status == ApplyStatus.Failed || r.Apply.Status == ApplyStatus.Failed_StateError))
+                            .OrderByDescending(r => r.CreatedAt)
+                            .FirstOrDefaultAsync(ct);
+                        if (failed != null)
+                            lastFailedRun = new AiAssistRun(failed.Status, failed.IsDestroy, failed.CreatedAt, failed.Plan?.Status, failed.Plan?.Output, failed.Apply?.Status, failed.Apply?.Output);
+                    }
                 }
             }
             shown.Add(new AiAssistWorkspace(workspace.Id, workspace.Name, workspace.TerraformVersion,
-                workspaceFiles.Where(f => f.WorkspaceId == workspace.Id).Select(f => f.File).ToList(), lastRun));
+                workspaceFiles.Where(f => f.WorkspaceId == workspace.Id).Select(f => f.File).ToList(), lastRun, lastFailedRun));
         }
 
         var designs = await db.Designs
@@ -310,6 +330,14 @@ did not ask about a failure.
             {
                 sb.AppendLine("  No runs yet.");
             }
+            if (workspace.LastFailedRun is AiAssistRun failedRun)
+            {
+                sb.AppendLine($"  Earlier failed run, not resolved by an apply since: {(failedRun.IsDestroy ? "destroy" : "plan")} {failedRun.CreatedAt:yyyy-MM-dd HH:mm} UTC, {Status(failedRun)}");
+                if (!string.IsNullOrEmpty(failedRun.ApplyOutput))
+                    AppendOutput(sb, "Apply output", failedRun.ApplyOutput);
+                else if (!string.IsNullOrEmpty(failedRun.PlanOutput))
+                    AppendOutput(sb, "Plan output", failedRun.PlanOutput);
+            }
         }
 
         if (state.Designs.Count > 0)
@@ -360,7 +388,8 @@ did not ask about a failure.
 
     private static void AppendOutput(StringBuilder sb, string title, string output)
     {
-        var text = Ansi.Replace(output, "").TrimEnd();
+        // a failed plan quotes the source line it failed on, so a credential in a file would reach the model through here
+        var text = AiTerraformDraftBuilder.RedactText(Ansi.Replace(output, "")).TrimEnd();
         var cut = text.Length > AiAssistState.MaxOutputCharacters;
         sb.AppendLine($"  {title}{(cut ? $" (the last {AiAssistState.MaxOutputCharacters} characters)" : "")}:");
         sb.AppendLine(Indent(cut ? text[^AiAssistState.MaxOutputCharacters..] : text));

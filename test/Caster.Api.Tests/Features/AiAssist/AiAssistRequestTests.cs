@@ -101,6 +101,74 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         Assert.Equal("Set dev to Terraform 1.5.7 (now 0.12.29)", Assert.Single(result.Changes).Label);
     }
 
+    private static Run RunAt(Workspace workspace, RunStatus status, int hoursAgo)
+    {
+        var run = TestData.Run(workspace, status);
+        run.CreatedAt = new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc).AddHours(-hoursAgo);
+        run.ModifiedAt = run.CreatedAt;
+        return run;
+    }
+
+    /// <summary>A plan that succeeds does not undo an apply that failed, so the failure is still shown beside it.</summary>
+    [Fact]
+    public async Task Ask_shows_a_failed_apply_that_a_later_plan_did_not_resolve()
+    {
+        var (project, _, directory, _, workspace) = await SeedDirectory();
+        var failedApply = RunAt(workspace, RunStatus.Failed, hoursAgo: 5);
+        var laterPlan = RunAt(workspace, RunStatus.Planned, hoursAgo: 1);
+        await Seed(failedApply, laterPlan,
+            TestData.Plan(failedApply, PlanStatus.Planned, "Plan: 3 to add"),
+            TestData.Apply(failedApply, ApplyStatus.Failed, "Error: insufficient capacity on the datastore"),
+            TestData.Plan(laterPlan, PlanStatus.Planned, "Plan: 3 to add"));
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
+
+        await Ask(actor, directory, "fix the errors from the last apply", """{"reply":"r","cause":"environment","changes":[]}""");
+
+        var prompt = Ai.Model.Calls.Single(c => c.DirectoryId == directory.Id).Prompt;
+        Assert.Contains("Earlier failed run, not resolved by an apply since", prompt);
+        Assert.Contains("Error: insufficient capacity on the datastore", prompt);
+        Assert.Contains("planned, not applied", prompt);
+    }
+
+    [Fact]
+    public async Task Ask_leaves_out_an_old_failure_once_a_later_apply_succeeded()
+    {
+        var (project, _, directory, _, workspace) = await SeedDirectory();
+        var failed = RunAt(workspace, RunStatus.Failed, hoursAgo: 9);
+        var applied = RunAt(workspace, RunStatus.Applied, hoursAgo: 4);
+        var latest = RunAt(workspace, RunStatus.Planned, hoursAgo: 1);
+        await Seed(failed, applied, latest,
+            TestData.Plan(failed, PlanStatus.Failed, "Error: an old failure"),
+            TestData.Plan(applied, PlanStatus.Planned, "Plan: 1 to add"),
+            TestData.Apply(applied, ApplyStatus.Applied, "Apply complete!"),
+            TestData.Plan(latest, PlanStatus.Planned, "No changes."));
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
+
+        await Ask(actor, directory, "any problems", """{"reply":"r","cause":"none","changes":[]}""");
+
+        var prompt = Ai.Model.Calls.Single(c => c.DirectoryId == directory.Id).Prompt;
+        Assert.DoesNotContain("Earlier failed run", prompt);
+        Assert.DoesNotContain("an old failure", prompt);
+    }
+
+    /// <summary>A failed plan prints the source line it failed on, so a credential in a file would reach the model through the error.</summary>
+    [Fact]
+    public async Task Ask_hides_a_credential_a_failed_runs_error_quotes_from_a_file()
+    {
+        var (project, _, directory, _, workspace) = await SeedDirectory();
+        var failed = RunAt(workspace, RunStatus.Failed, hoursAgo: 1);
+        await Seed(failed, TestData.Plan(failed, PlanStatus.Failed,
+            "Error: Invalid value\n\n  on main.tf line 2:\n   2:   admin_password = \"LiveCredential123\"\n\nThe argument is not allowed here."));
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
+
+        await Ask(actor, directory, "fix the error", """{"reply":"r","cause":"code","changes":[]}""");
+
+        var prompt = Ai.Model.Calls.Single(c => c.DirectoryId == directory.Id).Prompt;
+        Assert.DoesNotContain("LiveCredential123", prompt);
+        Assert.Contains("admin_password = \"[redacted]\"", prompt);
+        Assert.Contains("Error: Invalid value", prompt);
+    }
+
     [Fact]
     public async Task Ask_is_forbidden_for_a_viewer_without_a_model_call()
     {

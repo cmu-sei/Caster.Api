@@ -83,6 +83,9 @@ namespace Caster.Api.Domain.Services
             }
             // logged in the Messages API's terms, as the Bedrock calls are
             var usage = answer.ToUsageMessage();
+            // an endpoint that does not stream usage is recorded as zero tokens: say so, so the cost estimate is not read as complete
+            if (answer.Usage == null)
+                _logger.LogWarning("The {Model} endpoint reported no token usage for the {Tool} call, so it is recorded as zero tokens", model.ModelId, toolName);
             _logger.LogInformation("AI draft {Tool} on {Model} stopped with {StopReason}: {Usage}",
                 toolName, model.ModelId, answer.FinishReason, usage.GetProperty("usage").GetRawText());
             // recorded before the answer is checked: a call cut off or filtered is billed too
@@ -118,10 +121,26 @@ namespace Caster.Api.Domain.Services
             }
         }
 
-        private async Task<StreamedCompletion> StreamAsync(AiTaskModel model, JsonObject body, CancellationToken ct)
+        // HttpClient.Timeout ends with the response headers, so a server that sends them and then stalls would hold the call
+        // open for ever: one deadline covers the request and every read of the stream
+        private async Task<StreamedCompletion> StreamAsync(AiTaskModel model, JsonObject body, CancellationToken requested)
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(requested);
+            deadline.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
+            try
+            {
+                return await ReadStreamAsync(model, body, deadline.Token);
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested && !requested.IsCancellationRequested)
+            {
+                throw new InvalidOperationException($"The model server did not finish answering within {_options.TimeoutSeconds} seconds. Try again, or raise Ai:TimeoutSeconds.");
+            }
+        }
+
+        private async Task<StreamedCompletion> ReadStreamAsync(AiTaskModel model, JsonObject body, CancellationToken ct)
         {
             var client = _httpClientFactory.CreateClient(nameof(OpenAiModelClient));
-            client.Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds);
+            client.Timeout = Timeout.InfiniteTimeSpan;
             using var request = new HttpRequestMessage(HttpMethod.Post, model.BaseUrl.TrimEnd('/') + "/chat/completions")
             {
                 Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")

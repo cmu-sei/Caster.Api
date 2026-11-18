@@ -81,6 +81,36 @@ public class BedrockAiModelClientTests
         Assert.Equal(42, message.GetProperty("usage").GetProperty("output_tokens").GetInt32());
     }
 
+    /// <summary>A call cut off mid-argument is still billed: its usage and stop reason survive, and the reader explains why there is no draft.</summary>
+    [Fact]
+    public void StreamedMessage_keeps_the_usage_of_a_call_cut_off_mid_argument()
+    {
+        var message = Stream(
+            """{"type":"message_start","message":{"usage":{"input_tokens":900,"output_tokens":1}}}""",
+            """{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t1","name":"draft_terraform","input":{}}}""",
+            """{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"summary\":\"A web ser"}}""",
+            """{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":4096}}""",
+            """{"type":"message_stop"}""");
+
+        Assert.Equal("max_tokens", message.GetProperty("stop_reason").GetString());
+        Assert.Equal(900, message.GetProperty("usage").GetProperty("input_tokens").GetInt32());
+        Assert.Equal(4096, message.GetProperty("usage").GetProperty("output_tokens").GetInt32());
+        var error = Assert.Throws<InvalidOperationException>(() => BedrockAiModelClient.ReadToolInput(message));
+        Assert.Contains("ran out of output tokens", error.Message);
+    }
+
+    /// <summary>Only a call that stopped for length may have half an argument; any other malformed one is still an error.</summary>
+    [Fact]
+    public void StreamedMessage_still_rejects_a_malformed_argument_that_did_not_stop_for_length()
+    {
+        Assert.ThrowsAny<System.Text.Json.JsonException>(() => Stream(
+            """{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":1}}}""",
+            """{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t1","name":"draft_terraform","input":{}}}""",
+            """{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"summary\":\"A web ser"}}""",
+            """{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":20}}""",
+            """{"type":"message_stop"}"""));
+    }
+
     [Fact]
     public void StreamedMessage_keeps_the_refusal_category()
     {

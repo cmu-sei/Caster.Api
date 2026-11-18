@@ -95,15 +95,31 @@ public static class AiTerraformDraftBuilder
         @"^\s*(variable|output|module|provider)\s+""([^""]+)""|^\s*(resource|data)\s+""([^""]+)""\s+""([^""]+)""",
         RegexOptions.Multiline);
 
-    // a credential-like argument set to a literal string rather than a variable
+    // A credential-like argument (password, secret, token, a key) set to a literal string rather than a variable. It may start
+    // a line or follow { , or ; so a one-line block counts, and its value may hold an escaped quote or be one character long.
+    private const string SecretName = @"[A-Za-z0-9_]*(?:password|secret|token|api_key|access_key|private_key)[A-Za-z0-9_]*";
+    private const string SecretValue = @"""(?!\$\{)(?:[^""\\]|\\.)+""";
+
     private static readonly Regex LiteralSecret = new(
-        @"^\s*([A-Za-z0-9_]*(password|secret|token|api_key|access_key|private_key)[A-Za-z0-9_]*)\s*=\s*""(?!\$\{)[^""]{4,}""",
+        $@"(?:^|[{{,;])\s*({SecretName})\s*=\s*{SecretValue}",
         RegexOptions.Multiline | RegexOptions.IgnoreCase);
 
-    // the same arguments as LiteralSecret, with what comes before the value kept so the line can be written back redacted
+    // the same arguments, with what comes before the value kept so the text can be written back with the value redacted
     private static readonly Regex LiteralSecretValue = new(
-        @"^(\s*[A-Za-z0-9_]*(?:password|secret|token|api_key|access_key|private_key)[A-Za-z0-9_]*\s*=\s*)""(?!\$\{)[^""]{4,}""",
+        $@"((?:^|[{{,;])\s*{SecretName}\s*=\s*){SecretValue}",
         RegexOptions.Multiline | RegexOptions.IgnoreCase);
+
+    // the same arguments wherever they appear: a Terraform error prints the source line it is about, after a line number
+    private static readonly Regex LiteralSecretInText = new(
+        $@"({SecretName}\s*=\s*){SecretValue}",
+        RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Text a model is shown that may quote a file, such as a failed plan's output: the value of a credential-like argument
+    /// set to a literal string is replaced wherever it appears, not only at the start of a line.
+    /// </summary>
+    public static string RedactText(string text) =>
+        string.IsNullOrEmpty(text) ? text : LiteralSecretInText.Replace(text, $"$1\"{Redacted}\"");
 
     /// <summary>The placeholder a credential's value is shown as to a model.</summary>
     public const string Redacted = "[redacted]";

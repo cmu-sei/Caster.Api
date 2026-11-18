@@ -28,6 +28,48 @@ public class OpenAiModelClientTests
 {
     private static readonly AiTaskModel Model = new() { Provider = AiOptions.OpenAi, ModelId = "test-model", BaseUrl = "http://models.test/v1/", ApiKey = "key", MaxTokens = 4000, Effort = "xhigh" };
 
+    /// <summary>
+    /// HttpClient.Timeout ends with the response headers, so a server that sends them and then stalls used to hold the call
+    /// open for ever. The configured timeout now covers every read of the stream.
+    /// </summary>
+    [Fact]
+    public async Task InvokeTool_gives_up_on_a_stream_that_stalls_after_its_headers()
+    {
+        var (client, _) = Client(Substitute.For<IAiUsageRecorder>(), 1, NullLogger<OpenAiModelClient>.Instance, Stalled());
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.InvokeToolAsync(Model, "Draft.", "A web server.", "draft_terraform", "Submit it", Schema(), CancellationToken.None));
+
+        Assert.Contains("did not finish answering within 1 seconds", error.Message);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"took {watch.Elapsed}");
+    }
+
+    /// <summary>The caller's own cancellation is still its own: it is not reported as a timeout.</summary>
+    [Fact]
+    public async Task InvokeTool_passes_the_callers_own_cancellation_through()
+    {
+        var (client, _) = Client(Substitute.For<IAiUsageRecorder>(), 30, NullLogger<OpenAiModelClient>.Instance, Stalled());
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            client.InvokeToolAsync(Model, "Draft.", "A web server.", "draft_terraform", "Submit it", Schema(), cancel.Token));
+    }
+
+    /// <summary>An endpoint that does not stream usage is recorded as zero tokens, and the log says so.</summary>
+    [Fact]
+    public async Task InvokeTool_warns_when_the_endpoint_reports_no_usage()
+    {
+        var logger = new ListLogger();
+        var (client, _) = Client(Substitute.For<IAiUsageRecorder>(), 30, logger, Stream(
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c","type":"function","function":{"name":"draft_terraform","arguments":"{\"summary\":\"s\",\"files\":[]}"}}]}}]}""",
+            """{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""));
+
+        await client.InvokeToolAsync(Model, "Draft.", "A web server.", "draft_terraform", "Submit it", Schema(), CancellationToken.None);
+
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("reported no token usage") && e.Message.Contains("zero tokens"));
+    }
+
     /// <summary>The streamed tool call's arguments are put together and the request is the OpenAI tool-calling shape.</summary>
     [Fact]
     public async Task InvokeTool_reads_the_streamed_tool_call()
@@ -354,12 +396,54 @@ public class OpenAiModelClientTests
     private static (OpenAiModelClient, Handler) Client(params HttpResponseMessage[] responses) =>
         Client(Substitute.For<IAiUsageRecorder>(), responses);
 
-    private static (OpenAiModelClient, Handler) Client(IAiUsageRecorder usage, params HttpResponseMessage[] responses)
+    private static (OpenAiModelClient, Handler) Client(IAiUsageRecorder usage, params HttpResponseMessage[] responses) =>
+        Client(usage, 30, NullLogger<OpenAiModelClient>.Instance, responses);
+
+    private static (OpenAiModelClient, Handler) Client(IAiUsageRecorder usage, int timeoutSeconds, ILogger<OpenAiModelClient> logger, params HttpResponseMessage[] responses)
     {
         var handler = new Handler(responses);
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(handler, disposeHandler: false));
-        return (new OpenAiModelClient(factory, new AiOptions { TimeoutSeconds = 30 }, usage, NullLogger<OpenAiModelClient>.Instance), handler);
+        return (new OpenAiModelClient(factory, new AiOptions { TimeoutSeconds = timeoutSeconds }, usage, logger), handler);
+    }
+
+    /// <summary>A 200 answer whose body sends nothing and never ends: the server sent its headers and then stalled.</summary>
+    private static HttpResponseMessage Stalled() =>
+        new(HttpStatusCode.OK) { Content = new StreamContent(new StalledStream()) };
+
+    private sealed class StalledStream : System.IO.Stream
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, System.IO.SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private sealed class ListLogger : ILogger<OpenAiModelClient>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 
     private static bool Reports(JsonElement message, string stopReason, int input, int output, int cacheRead) =>

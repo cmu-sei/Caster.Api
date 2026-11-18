@@ -412,7 +412,17 @@ malware, or step-by-step attack instructions; the scenario does not need them.";
             foreach (var (index, block) in _blocks)
             {
                 if (_partialJson.TryGetValue(index, out var json))
-                    block["input"] = json.Length == 0 ? new JsonObject() : JsonNode.Parse(json.ToString());
+                {
+                    try
+                    {
+                        block["input"] = json.Length == 0 ? new JsonObject() : JsonNode.Parse(json.ToString());
+                    }
+                    catch (JsonException) when (_message["stop_reason"]?.GetValue<string>() == "max_tokens")
+                    {
+                        // cut off mid-argument: the call is still billed and its stop reason says why, so it is not lost to a parse error
+                        block["input"] = new JsonObject();
+                    }
+                }
                 content.Add(block.DeepClone());
             }
             return JsonSerializer.SerializeToElement(_message);
