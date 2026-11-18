@@ -165,9 +165,9 @@ public static class AiTopology
 @"Range topology:
 - Build what the request asks for, no more. Do not add segments, machines, an attacker or an attack path the request does not
   call for; a request for one machine or one network is that machine or network.
-- Where the request describes an organization or a range, segment it as a real organization does: a perimeter (firewall or
-  router) between the internet and the inside, a DMZ for what the internet reaches, user LANs, server tiers on their own VLANs,
-  and management kept apart. Add OT/ICS behind its own boundary only when the scenario has industrial systems.
+- Where the request describes an organization, such as a company with offices, departments or servers, segment it as a real
+  organization does: a perimeter (firewall or router) between the internet and the inside, a DMZ for what the internet reaches,
+  user LANs, server tiers on their own VLANs, and management kept apart. Add OT/ICS behind its own boundary only when the scenario has industrial systems.
 - Only when the request or the files include an attacker: put the attacker outside (on the internet segment or its own) unless
   the request says insider, and give the attack path in topology, crossing the boundaries the defenders are meant to watch and
   ending at the critical assets. With no attacker, leave the attack path empty.

@@ -34,6 +34,19 @@ namespace Caster.Api.Tests.Features.Designs
         ];
 
         [Fact]
+        public void SelectCatalog_Offers_A_Module_On_Both_Hypervisors_Only_To_A_Draft_On_Both()
+        {
+            var both = Module("crucible-modules/hybrid", "bpg/proxmox", "hashicorp/vsphere");
+            var generic = Module("crucible-modules/label");
+
+            Assert.Equal(["hybrid", "label"], AiDesignDraftBuilder.SelectCatalog([both, generic], Sources, null, ["Proxmox", "vSphere"]).Select(c => c.Module.Name));
+            Assert.Equal(["hybrid", "label"], AiDesignDraftBuilder.SelectCatalog([both, generic], Sources, null, null).Select(c => c.Module.Name));
+            // a Proxmox-only draft cannot use a Module that also needs vSphere, but can use one that needs neither
+            Assert.Equal(["label"], AiDesignDraftBuilder.SelectCatalog([both, generic], Sources, null, ["Proxmox"]).Select(c => c.Module.Name));
+            Assert.Equal(["label"], AiDesignDraftBuilder.SelectCatalog([both, generic], Sources, null, ["vSphere"]).Select(c => c.Module.Name));
+        }
+
+        [Fact]
         public void SelectCatalog_Leaves_Out_Sources_Runs_Cannot_Download()
         {
             var modules = new[] { Module("crucible-modules/vm"), Module("ssh-only/vm") };

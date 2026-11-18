@@ -52,6 +52,20 @@ public static class Hypervisors
     }
 
     /// <summary>
+    /// Every hypervisor a Module's providers need, in <see cref="All"/> order: none for a Module that works anywhere,
+    /// two for one that spans both, which only a draft that builds on both can use.
+    /// </summary>
+    public static string[] RequiredBy(IEnumerable<string> providerSources)
+    {
+        var found = (providerSources ?? [])
+            .Select(s => s?.Split('/').Last())
+            .Where(t => t != null && ByProviderType.ContainsKey(t))
+            .Select(t => ByProviderType[t])
+            .ToHashSet();
+        return All.Where(found.Contains).ToArray();
+    }
+
+    /// <summary>
     /// The hypervisors Terraform runs have an endpoint for, in <see cref="All"/> order,
     /// resolved as runs resolve their environment: a Terraform:EnvironmentVariables:Direct
     /// value wins, otherwise Caster's own value when InheritAll is on or an Inherit pattern

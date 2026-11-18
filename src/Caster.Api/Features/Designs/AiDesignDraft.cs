@@ -166,7 +166,8 @@ public static class AiDesignDraftBuilder
 
             var version = ModuleVersionOrder.HighestFirst(module.Versions).First();
             var hypervisor = Hypervisors.ForProviders(version.Providers);
-            if (hypervisor != null && hypervisors != null && !hypervisors.Contains(hypervisor))
+            // a Module needs every hypervisor its providers name, so one that spans two is offered only to a draft on both
+            if (hypervisors != null && Hypervisors.RequiredBy(version.Providers).Any(h => !hypervisors.Contains(h)))
                 continue;
 
             catalog.Add(new AiCatalogModule(module, version, source?.Name ?? fallbackSource, hypervisor));

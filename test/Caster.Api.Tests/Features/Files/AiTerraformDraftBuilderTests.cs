@@ -122,6 +122,27 @@ public class AiTerraformDraftBuilderTests
     }
 
     [Fact]
+    public void The_prompt_shows_a_file_that_sets_a_credential_without_its_value()
+    {
+        var file = new AiContextFile(Guid.NewGuid(), "secrets.tf", "locals {}\nadmin_password = \"Pr0d-Secret!\"\ntoken = var.token\n", "lab", false);
+
+        var prompt = AiTerraformDraftBuilder.BuildUserPrompt("add a vm", [file], [], null);
+
+        Assert.DoesNotContain("Pr0d-Secret!", prompt);
+        Assert.Contains("admin_password = \"[redacted]\"", prompt);
+        Assert.Contains("token = var.token", prompt);
+        Assert.Contains("=== secrets.tf (read-only, from lab; credential values are hidden) ===", prompt);
+    }
+
+    [Fact]
+    public void Redaction_leaves_a_file_with_no_literal_credential_as_it_is()
+    {
+        const string content = "variable \"password\" {\n  sensitive = true\n}\nadmin_password = var.admin_password\nname = \"web\"\n";
+
+        Assert.Equal(content, AiTerraformDraftBuilder.ForModel(content));
+    }
+
+    [Fact]
     public void Review_lists_the_models_assumptions_apart_from_its_warnings()
     {
         var draft = Review("""{"summary":"s","files":[{"name":"n.tf","content":"# n"}],"assumptions":["Reuses var.attacker_template for the second attacker.","  ","Puts it on red-net."],"notes":["Set var.node."]}""");

@@ -182,6 +182,22 @@ public class AiAssistBuilderTests
         Assert.Equal(4, FreeText(BedrockAiModelClient.StrictSchema(AiAssistBuilder.BuildSchema(StateWithWorkspaceFiles()))));
     }
 
+    /// <summary>The model is never shown a credential's value, in a workspace's file or the directory's.</summary>
+    [Fact]
+    public void The_prompt_hides_the_value_of_a_credential_in_any_file()
+    {
+        var state = StateWithWorkspaceFiles();
+        state.Files.Add(new AiContextFile(Guid.NewGuid(), "creds.tf", "variable \"x\" {}\napi_token = \"TOKEN-VALUE-123\"\n", "lab", false));
+
+        var prompt = AiAssistBuilder.BuildUserPrompt("what is set", [], state);
+
+        Assert.DoesNotContain("hunter22", prompt);
+        Assert.DoesNotContain("TOKEN-VALUE-123", prompt);
+        Assert.Contains("admin_password = \"[redacted]\"", prompt);
+        Assert.Contains("api_token = \"[redacted]\"", prompt);
+        Assert.Contains("=== creds.tf (read-only, from lab; credential values are hidden) ===", prompt);
+    }
+
     [Fact]
     public void The_prompt_marks_each_workspace_file_editable_or_read_only_with_why()
     {

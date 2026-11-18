@@ -128,6 +128,26 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         Assert.DoesNotContain(Ai.Model.Calls, c => c.DirectoryId == directory.Id);
     }
 
+    /// <summary>A file that sets a credential reaches the model without its value, and cannot be replaced with the placeholder.</summary>
+    [Fact]
+    public async Task Ask_hides_a_credential_from_the_model_and_will_not_replace_the_file_that_holds_it()
+    {
+        var (project, _, directory, _, _) = await SeedDirectory();
+        await Seed(TestData.File(directory, "creds.tf", "admin_password = \"Pr0d-Secret!\"\n"));
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
+
+        var proposal = await Ask(actor, directory, "make creds.tf set a different value", """
+            {"reply":"r","cause":"none","changes":[
+              {"op":"file.edit","file":"creds.tf","content":"admin_password = \"[redacted]\"\n"}]}
+            """);
+
+        var prompt = Ai.Model.Calls.Last(c => c.DirectoryId == directory.Id).Prompt;
+        Assert.DoesNotContain("Pr0d-Secret!", prompt);
+        Assert.Contains("admin_password = \"[redacted]\"", prompt);
+        Assert.Empty(proposal.Changes);
+        Assert.Contains(proposal.Warnings, w => w.Contains("creds.tf sets a credential, so it cannot be changed here"));
+    }
+
     [Fact]
     public async Task Ask_refuses_a_workspace_of_another_directory()
     {
@@ -414,6 +434,12 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         var proposal = await Ask(actor, directory, "change a value");
         Assert.Single(proposal.Changes);
         return proposal;
+    }
+
+    private async Task<AiAssistResult> Ask(TestActor actor, Directory directory, string prompt, string answer)
+    {
+        Ai.Model.Answers(directory.Id, answer);
+        return await Ask(actor, directory, prompt);
     }
 
     private async Task<AiAssistResult> Ask(TestActor actor, Directory directory, string prompt) =>

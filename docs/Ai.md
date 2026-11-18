@@ -78,10 +78,10 @@ These are starting points to try, not measured results. Set `Ai:Prices` and comp
 
 - **Design drafts** see the module catalog: each Module with a version, its variables and outputs, its source and the hypervisor it works on.
 - **Terraform drafts** see the Directory's files, its parents' files and the enabled Designs. They may change only the Directory's own files, and say in their notes what a read-only file would need.
-- **The module catalog** is offered to the Terraform drafts as to the Design drafts: the highest version of each Module that runs can download, and that builds on the hypervisor the Directory's Terraform uses (found from its provider blocks and resources, else the request's, else the configured hypervisors) or on any. A Proxmox Directory is not offered a vSphere-only Module.
+- **The module catalog** is offered to the Terraform drafts as to the Design drafts: the highest version of each Module that runs can download, and that builds on the hypervisor the Directory's Terraform uses (found from its provider blocks and resources, else the request's, else the configured hypervisors) or on any. A Proxmox Directory is not offered a vSphere-only Module, nor one that needs both hypervisors.
 - **Ask AI** sees the Directory's files and its parents', its workspaces with their Terraform versions and own files (each marked editable or read-only, with the reason), the latest run's plan or apply output when it failed, and the enabled Designs.
 - **Provider settings.** The drafts and Ask AI are told the names, never the values, of the provider settings that Caster's runs set in the environment (for example `PROXMOX_VE_ENDPOINT`), so they leave those out of provider blocks and declare no variables for them.
-- **Credentials** are never put in a prompt, and a draft is told never to write one into a file.
+- **Credentials** are hidden from the model, and a draft is told never to write one into a file. In every file the model is shown, the value of an argument whose name contains `password`, `secret`, `token`, `api_key`, `access_key` or `private_key`, set to a literal string, is shown as `[redacted]`. A file that sets one is read-only to the model, so the placeholder can never be written back over the real value, and the prompt says why. This matches argument names, so it cannot recognise a secret under another name, in a value that is not a quoted string, or in a file that is not Terraform. Keep such values in sensitive variables or in the Environment Set.
 
 ### Grounding in the inventory
 

@@ -76,6 +76,8 @@ public class AiAssistState
             .Where(f => pathIds.Contains(f.DirectoryId) && f.WorkspaceId == null)
             .Select(f => new AiContextFile(f.Id, f.Name, f.Content, f.Directory.Name, f.DirectoryId == directoryId))
             .ToListAsync(ct);
+        // a file that sets a credential is shown without its value, so it cannot be replaced: the placeholder would overwrite it
+        files = files.Select(f => f with { Editable = f.Editable && !AiTerraformDraftBuilder.HoldsLiteralSecret(f.Content) }).ToList();
 
         var workspaces = await db.Workspaces
             .AsNoTracking()
@@ -290,7 +292,7 @@ did not ask about a failure.
                 sb.AppendLine(file.Editable
                     ? $"  === {file.Name} (editable, this workspace's own file) ==="
                     : $"  === {file.Name} (read-only, this workspace's own file: {lockedFor}) ===");
-                sb.AppendLine(Indent(AiAssistState.Shorten(file.Content ?? "", AiAssistState.MaxWorkspaceFileCharacters)));
+                sb.AppendLine(Indent(AiAssistState.Shorten(AiTerraformDraftBuilder.ForModel(file.Content) ?? "", AiAssistState.MaxWorkspaceFileCharacters)));
             }
             if (workspace.LastRun is AiAssistRun run)
             {
@@ -318,10 +320,12 @@ did not ask about a failure.
         foreach (var file in state.Files.OrderByDescending(f => f.Editable).ThenBy(f => f.DirectoryName).ThenBy(f => f.Name))
         {
             var kind = file.Editable ? "editable, this directory" : $"read-only, from {file.DirectoryName}";
+            if (AiTerraformDraftBuilder.HoldsLiteralSecret(file.Content))
+                kind += "; credential values are hidden";
             if (state.Trimmed.Contains(file.Id))
                 kind += ", not shown in full";
             sb.AppendLine().AppendLine($"=== {file.Name} ({kind}) ===");
-            sb.AppendLine(file.Content ?? "");
+            sb.AppendLine(AiTerraformDraftBuilder.ForModel(file.Content) ?? "");
         }
 
         var recent = (history ?? []).Where(m => !string.IsNullOrWhiteSpace(m?.Text)).TakeLast(MaxHistoryMessages).ToList();
@@ -513,7 +517,13 @@ did not ask about a failure.
         if (existing == null)
         {
             if (state.Files.Any(f => !f.Editable && f.Name == name) && change.Op == AiAssistOps.FileEdit)
-                return $"{name} belongs to the parent directory {state.Files.First(f => !f.Editable && f.Name == name).DirectoryName}; open Ask AI on that directory to change it";
+            {
+                var locked = state.Files.First(f => !f.Editable && f.Name == name);
+                // this directory's own file is read-only only when it sets a credential, which the model is shown without
+                return locked.DirectoryName == state.DirectoryName
+                    ? $"{name} sets a credential, so it cannot be changed here"
+                    : $"{name} belongs to the parent directory {locked.DirectoryName}; open Ask AI on that directory to change it";
+            }
             change.Op = AiAssistOps.FileAdd;
             change.FileId = null;
             change.ExistingContent = null;

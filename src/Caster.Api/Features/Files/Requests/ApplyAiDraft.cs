@@ -106,6 +106,8 @@ public class ApplyAiDraft
                         locks.Add(fileLock);
                         if (!fileLock.AcquiredLock)
                             throw new FileConflictException();
+                        // the file was loaded before its lock was taken: read it again, so a save that landed in between is seen
+                        await dbContext.Entry(file).ReloadAsync(cancellationToken);
                         if (AiTerraformDraftBuilder.ContentHash(file.Content) != change.ExistingContentHash)
                             throw new ConflictException($"{file.Name} has changed since the draft was written. Draft again.");
                         if (file.LockedById.HasValue && file.LockedById != userId)

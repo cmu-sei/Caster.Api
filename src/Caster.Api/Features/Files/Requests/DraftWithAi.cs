@@ -139,11 +139,13 @@ public class DraftWithAi
         {
             var directory = await dbContext.Directories.AsNoTracking().SingleAsync(d => d.Id == directoryId, cancellationToken);
             var pathIds = directory.PathIds();
-            return await dbContext.Files
+            var files = await dbContext.Files
                 .AsNoTracking()
                 .Where(f => pathIds.Contains(f.DirectoryId) && f.WorkspaceId == null)
                 .Select(f => new AiContextFile(f.Id, f.Name, f.Content, f.Directory.Name, f.DirectoryId == directoryId))
                 .ToListAsync(cancellationToken);
+            // a file that sets a credential is shown without its value, so it cannot be replaced: the placeholder would overwrite it
+            return files.Select(f => f with { Editable = f.Editable && !AiTerraformDraftBuilder.HoldsLiteralSecret(f.Content) }).ToList();
         }
 
         // the modules Terraform runs can download, as the Design draft offers them: those that build on one of the draft's

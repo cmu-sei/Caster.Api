@@ -73,7 +73,6 @@ namespace Caster.Api.Features.Projects
         }
 
         /// <summary>
-        /// <summary>
         /// What drafting with AI used in a project, and an estimate of what it cost.
         /// </summary>
         /// <remarks>

@@ -99,6 +99,22 @@ public static class AiTerraformDraftBuilder
         @"^\s*([A-Za-z0-9_]*(password|secret|token|api_key|access_key|private_key)[A-Za-z0-9_]*)\s*=\s*""(?!\$\{)[^""]{4,}""",
         RegexOptions.Multiline | RegexOptions.IgnoreCase);
 
+    // the same arguments as LiteralSecret, with what comes before the value kept so the line can be written back redacted
+    private static readonly Regex LiteralSecretValue = new(
+        @"^(\s*[A-Za-z0-9_]*(?:password|secret|token|api_key|access_key|private_key)[A-Za-z0-9_]*\s*=\s*)""(?!\$\{)[^""]{4,}""",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase);
+
+    /// <summary>The placeholder a credential's value is shown as to a model.</summary>
+    public const string Redacted = "[redacted]";
+
+    /// <summary>
+    /// A file's content as a model is shown it: the value of each credential-like argument set to a literal string is
+    /// replaced, so a password or token in a file never reaches the model. A file that has any is read-only to the model,
+    /// so the placeholder cannot be written back over the real value.
+    /// </summary>
+    public static string ForModel(string content) =>
+        HoldsLiteralSecret(content) ? LiteralSecretValue.Replace(content, $"$1\"{Redacted}\"") : content;
+
     /// <summary>Whether a file sets a credential-like argument, such as a password or token, to a literal string.</summary>
     public static bool HoldsLiteralSecret(string content) => !string.IsNullOrEmpty(content) && LiteralSecret.IsMatch(content);
 
@@ -198,8 +214,10 @@ public static class AiTerraformDraftBuilder
         foreach (var file in files.OrderBy(f => f.Editable).ThenBy(f => f.DirectoryName).ThenBy(f => f.Name))
         {
             sb.AppendLine();
-            sb.AppendLine($"=== {file.Name} ({(file.Editable ? "editable, this directory" : $"read-only, from {file.DirectoryName}")}) ===");
-            sb.AppendLine(file.Content ?? "");
+            var holdsSecret = HoldsLiteralSecret(file.Content);
+            var kind = file.Editable ? "editable, this directory" : $"read-only, from {file.DirectoryName}";
+            sb.AppendLine($"=== {file.Name} ({kind}{(holdsSecret ? "; credential values are hidden" : "")}) ===");
+            sb.AppendLine(ForModel(file.Content) ?? "");
         }
         return sb.ToString();
     }
