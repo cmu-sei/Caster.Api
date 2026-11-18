@@ -120,7 +120,7 @@ public class AiAssistState
                     if (!lastRun.Failed)
                     {
                         lastRun = lastRun with { PlanOutput = null, ApplyOutput = null };
-                        // a plan that succeeded does not undo an apply that failed: show the latest failure no later apply has resolved
+                        // a plan that succeeded does not undo an apply that failed: show the latest failed apply no later apply has resolved (a failed plan is fixed by the next good plan)
                         var lastApplied = await db.Runs.AsNoTracking()
                             .Where(r => r.WorkspaceId == workspace.Id && r.Status == RunStatus.Applied)
                             .MaxAsync(r => (DateTime?)r.CreatedAt, ct);
@@ -130,9 +130,7 @@ public class AiAssistState
                             .Include(r => r.Apply)
                             .Where(r => r.WorkspaceId == workspace.Id && r.Id != run.Id
                                 && (lastApplied == null || r.CreatedAt > lastApplied)
-                                && (r.Status == RunStatus.Failed || r.Status == RunStatus.Failed_StateError
-                                    || r.Plan.Status == PlanStatus.Failed
-                                    || r.Apply.Status == ApplyStatus.Failed || r.Apply.Status == ApplyStatus.Failed_StateError))
+                                && (r.Apply.Status == ApplyStatus.Failed || r.Apply.Status == ApplyStatus.Failed_StateError))
                             .OrderByDescending(r => r.CreatedAt)
                             .FirstOrDefaultAsync(ct);
                         if (failed != null)

@@ -151,6 +151,25 @@ public class AiAssistRequestTests(DatabaseFixture fixture, AiAppFactory factory)
         Assert.DoesNotContain("an old failure", prompt);
     }
 
+    /// <summary>A failed plan is fixed by the next good plan, so only a failed apply stays shown beside a later plan.</summary>
+    [Fact]
+    public async Task Ask_leaves_out_a_failed_plan_once_a_later_plan_succeeded()
+    {
+        var (project, _, directory, _, workspace) = await SeedDirectory();
+        var failed = RunAt(workspace, RunStatus.Failed, hoursAgo: 5);
+        var later = RunAt(workspace, RunStatus.Planned, hoursAgo: 1);
+        await Seed(failed, later,
+            TestData.Plan(failed, PlanStatus.Failed, "Error: Unsupported argument"),
+            TestData.Plan(later, PlanStatus.Planned, "Plan: 3 to add"));
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject, ProjectPermission.EditProject]).SeedAsync();
+
+        await Ask(actor, directory, "why add 3 VMs", """{"reply":"r","cause":"none","changes":[]}""");
+
+        var prompt = Ai.Model.Calls.Single(c => c.DirectoryId == directory.Id).Prompt;
+        Assert.DoesNotContain("Earlier failed run", prompt);
+        Assert.DoesNotContain("Unsupported argument", prompt);
+    }
+
     /// <summary>A failed plan prints the source line it failed on, so a credential in a file would reach the model through the error.</summary>
     [Fact]
     public async Task Ask_hides_a_credential_a_failed_runs_error_quotes_from_a_file()

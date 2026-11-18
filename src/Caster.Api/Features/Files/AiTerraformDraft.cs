@@ -111,7 +111,7 @@ public static class AiTerraformDraftBuilder
 
     // the same arguments wherever they appear: a Terraform error prints the source line it is about, after a line number
     private static readonly Regex LiteralSecretInText = new(
-        $@"({SecretName}\s*=\s*){SecretValue}",
+        $@"(?<![A-Za-z0-9_])({SecretName}\s*=\s*){SecretValue}",
         RegexOptions.IgnoreCase);
 
     /// <summary>

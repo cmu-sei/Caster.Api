@@ -173,6 +173,20 @@ public class AiTerraformDraftBuilderTests
         Assert.Equal(content, AiTerraformDraftBuilder.ForModel(content));
     }
 
+    /// <summary>Run output is redacted by an unanchored pattern, so a long run of name characters must not make it quadratic.</summary>
+    [Fact]
+    public void Redacting_text_is_fast_on_a_long_run_of_name_characters()
+    {
+        var text = new string('a', 50_000);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var shown = AiTerraformDraftBuilder.RedactText(text);
+
+        watch.Stop();
+        Assert.Equal(text, shown);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"took {watch.Elapsed}");
+    }
+
     [Fact]
     public void Redaction_leaves_a_file_with_no_literal_credential_as_it_is()
     {
