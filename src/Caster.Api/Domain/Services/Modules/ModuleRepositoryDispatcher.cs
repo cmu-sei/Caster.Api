@@ -91,7 +91,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
                 // Sources are independent, so one broken source must not hide
                 // the others. Whatever synced is already persisted; the caller
                 // is told what did not.
-                LogSyncFailure(source.Name, ex);
+                LogFailure(source.Name, ex.Message, ex);
                 failures.Add($"module source '{source.Name}': {ex.Message}");
                 _statuses.RecordFailure(source.Name, ex.Message);
             }
@@ -257,9 +257,6 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
 
         return false;
     }
-
-    private void LogSyncFailure(string sourceName, Exception ex) =>
-        LogFailure(sourceName, ex.Message, ex);
 
     /// <summary>
     /// Every refresh retries every source, so a source that stays broken fails with the same error each
