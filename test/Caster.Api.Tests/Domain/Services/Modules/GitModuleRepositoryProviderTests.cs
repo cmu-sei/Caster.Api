@@ -11,6 +11,7 @@ using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Caster.Api.Tests.Domain.Services.Modules
@@ -425,20 +426,33 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         }
 
         [Fact]
-        public async Task SyncModules_NoTags_ThrowsRatherThanRegisteringAnUnusableModule()
+        public async Task SyncModules_NoTags_IsZeroModulesAndQuiet()
+        {
+            _git.SourceTree = BuildRootLayoutTree();
+            var logger = new RecordingLogger<GitModuleRepositoryProvider>();
+            var sut = new GitModuleRepositoryProvider(Db, _git, new LockService(), logger);
+
+            var result = await sut.SyncModulesAsync(Source(ModuleSourceLayout.Root), false, Ct);
+
+            Assert.True(result);
+            Assert.Equal(0, _git.CloneCallCount);
+            Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
+            Assert.DoesNotContain(logger.Entries, x => x.Level >= LogLevel.Information);
+        }
+
+        [Fact]
+        public async Task SyncModule_NoTags_StillFailsForTheNamedModule()
         {
             _git.SourceTree = BuildRootLayoutTree();
 
             var exception = await Assert.ThrowsAsync<ModuleSyncException>(() =>
-                Sut.SyncModulesAsync(Source(ModuleSourceLayout.Root), false, Ct));
+                Sut.SyncModuleAsync(Source(ModuleSourceLayout.Subdirectories), "network-segment", Ct));
 
             Assert.Contains("no git tags", exception.Message);
-            Assert.Equal(0, _git.CloneCallCount);
-            Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
         }
 
         [Fact]
-        public async Task SyncModules_NoModuleRootAnywhere_Throws()
+        public async Task SyncModules_TagsButNoModuleRootAnywhere_IsZeroModulesAndQuiet()
         {
             GivenTags("v0.1.0");
 
@@ -446,12 +460,31 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             Directory.CreateDirectory(tree);
             File.WriteAllText(Path.Combine(tree, "README.md"), "nothing here\n");
             _git.SourceTree = tree;
+            var logger = new RecordingLogger<GitModuleRepositoryProvider>();
+            var sut = new GitModuleRepositoryProvider(Db, _git, new LockService(), logger);
+
+            foreach (var layout in new[] { ModuleSourceLayout.Root, ModuleSourceLayout.Subdirectories })
+            {
+                Assert.True(await sut.SyncModulesAsync(Source(layout), false, Ct));
+            }
+
+            Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
+            Assert.DoesNotContain(logger.Entries, x => x.Level >= LogLevel.Information);
+        }
+
+        [Fact]
+        public async Task SyncModule_NamedModuleThatIsNotThere_StillThrows()
+        {
+            GivenTags("v0.1.0");
+
+            var tree = Path.Combine(_scratch, "empty");
+            Directory.CreateDirectory(tree);
+            _git.SourceTree = tree;
 
             var exception = await Assert.ThrowsAsync<ModuleSyncException>(() =>
-                Sut.SyncModulesAsync(Source(ModuleSourceLayout.Root), false, Ct));
+                Sut.SyncModuleAsync(Source(ModuleSourceLayout.Subdirectories), "network-segment", Ct));
 
             Assert.Contains("variables.tf.json", exception.Message);
-            Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
         }
 
         #endregion

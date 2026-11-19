@@ -93,8 +93,17 @@ public class GitModuleRepositoryProvider(
 
         if (tags.Count == 0)
         {
-            // A repo with no tags has no selectable version, so a Design could
-            // never reference it. Saying so beats registering an empty Module.
+            // A repository with no tags, which includes one with no commits at
+            // all, has no versions to offer, so it has no Modules. That is a
+            // state a new source passes through, not a failure. A request for
+            // one named Module still fails, since that Module does not exist.
+            if (subdirectoryFilter == null)
+            {
+                logger.LogDebug("Module source {Source} has no git tags, so it has no Modules.", source.Name);
+
+                return true;
+            }
+
             throw new ModuleSyncException(
                 $"Module source '{source.Name}' has no git tags, so it has no versions Caster can offer. " +
                 "Tag the repository, for example 'v1.0.0', and retry.");
@@ -144,6 +153,19 @@ public class GitModuleRepositoryProvider(
 
         if (drafts.Count == 0)
         {
+            // Tags but nothing to version, such as tags on a commit before the
+            // Modules were added: zero Modules, not a failure. Naming a Module
+            // that is not there is still an error.
+            if (subdirectoryFilter == null)
+            {
+                logger.LogDebug(
+                    "Module source {Source} has {TagCount} tags but no Module root in any of them, so it has no Modules.",
+                    source.Name,
+                    tags.Count);
+
+                return true;
+            }
+
             throw new ModuleSyncException(
                 $"Module source '{source.Name}' has tags but no Module root containing {VariablesFileName} " +
                 $"or {OutputsFileName}" +
