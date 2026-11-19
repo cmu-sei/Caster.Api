@@ -52,6 +52,17 @@ public sealed class DatabaseFixture : IAsyncLifetime, ITestDatabaseSessionSource
 
     public static ITestDatabaseSession<CasterContext> GitlabSourceHostDatabase() => _gitlabSourceHost.Value.GetAwaiter().GetResult();
 
+    /// <summary>The host databases of <see cref="SharedSourcesAppFactory"/> and <see cref="RestrictingSharedSourcesAppFactory"/>.</summary>
+    private static readonly Lazy<Task<ITestDatabaseSession<CasterContext>>> _sharedSourcesHost =
+        new(() => _database.BeginSessionAsync());
+
+    private static readonly Lazy<Task<ITestDatabaseSession<CasterContext>>> _restrictingHost =
+        new(() => _database.BeginSessionAsync());
+
+    public static ITestDatabaseSession<CasterContext> SharedSourcesHostDatabase() => _sharedSourcesHost.Value.GetAwaiter().GetResult();
+
+    public static ITestDatabaseSession<CasterContext> RestrictingHostDatabase() => _restrictingHost.Value.GetAwaiter().GetResult();
+
     /// <summary>Nothing to do here: the container starts on the first request for a session.</summary>
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;
 
