@@ -6,6 +6,7 @@
 // against the host's own database, and is empty as shipped.
 
 using System;
+using System.Linq;
 using Caster.Api.Domain.Models;
 using Directory = Caster.Api.Domain.Models.Directory;
 using File = Caster.Api.Domain.Models.File;
@@ -346,6 +347,35 @@ public static class TestData
             Id = Guid.NewGuid(),
             ProjectId = project.Id,
             EnvironmentSetId = set.Id
+        };
+
+    /// <summary>A Module Scope, named uniquely by default because <c>module_scopes.name</c> is uniquely indexed.</summary>
+    public static ModuleScope ModuleScope(string name = null, params string[] paths)
+    {
+        var id = Guid.NewGuid();
+
+        return new ModuleScope
+        {
+            Id = id,
+            Name = name ?? $"scope-{id:N}",
+            Paths = paths.ToList()
+        };
+    }
+
+    public static ProjectModuleScope ProjectModuleScope(Project project, ModuleScope scope) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = project.Id,
+            ModuleScopeId = scope.Id
+        };
+
+    public static ProjectGroupModuleScope ProjectGroupModuleScope(ProjectGroup group, ModuleScope scope) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            ProjectGroupId = group.Id,
+            ModuleScopeId = scope.Id
         };
 
     public static readonly DateTime DefaultDateCreated = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
