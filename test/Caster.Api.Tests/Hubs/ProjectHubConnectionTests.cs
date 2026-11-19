@@ -1,6 +1,8 @@
 // Copyright 2026 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -37,6 +39,37 @@ public class ProjectHubConnectionTests(DatabaseFixture fixture, CasterAppFactory
         await connection.InvokeAsync(nameof(ProjectHub.JoinProject), project.Id, Ct);
 
         Assert.Equal(HubConnectionState.Connected, connection.State);
+    }
+
+    /// <summary>
+    /// Presence end to end: a member already in the project hears the second arrive, is in the second's
+    /// answer, and hears it depart when its connection closes without leaving, the disconnect path.
+    /// </summary>
+    [Fact]
+    public async Task A_member_in_the_project_sees_another_arrive_and_depart_on_disconnect()
+    {
+        var project = TestData.Project();
+        await Seed(project);
+        var bob = await Actor().WithName("Bob").OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+        var alice = await Actor().WithName("Alice").OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+        var arrived = new TaskCompletionSource<PresentUser>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var departed = new TaskCompletionSource<PresentUser>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var bobs = Connection(bob);
+        bobs.On<PresentUser>(ProjectHubMethods.PresenceArrived, x => arrived.TrySetResult(x));
+        bobs.On<PresentUser>(ProjectHubMethods.PresenceDeparted, x => departed.TrySetResult(x));
+        await bobs.StartAsync(Ct);
+        Assert.Empty(await bobs.InvokeAsync<List<PresentUser>>(nameof(ProjectHub.JoinProject), project.Id, Ct));
+
+        var alices = Connection(alice);
+        await alices.StartAsync(Ct);
+        var present = await alices.InvokeAsync<List<PresentUser>>(nameof(ProjectHub.JoinProject), project.Id, Ct);
+
+        Assert.Equal([new PresentUser(bob.Id, "Bob")], present);
+        Assert.Equal(new PresentUser(alice.Id, "Alice"), await arrived.Task.WaitAsync(Waits.Budget, Ct));
+
+        await alices.DisposeAsync();
+
+        Assert.Equal(new PresentUser(alice.Id, "Alice"), await departed.Task.WaitAsync(Waits.Budget, Ct));
     }
 
     /// <summary>A request with no identity is answered with a 401; the anonymous client is the case under test.</summary>

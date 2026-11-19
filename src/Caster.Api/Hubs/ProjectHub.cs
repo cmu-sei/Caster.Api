@@ -12,6 +12,7 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
+using Caster.Api.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -24,25 +25,62 @@ public class ProjectHub : Hub
     private readonly IOutputService _outputService;
     private readonly CasterContext _db;
     private readonly ICasterAuthorizationService _authorizationService;
+    private readonly IProjectPresenceTracker _presence;
 
-    public ProjectHub(IOutputService outputService, CasterContext db, ICasterAuthorizationService authorizationService)
+    public ProjectHub(
+        IOutputService outputService,
+        CasterContext db,
+        ICasterAuthorizationService authorizationService,
+        IProjectPresenceTracker presence)
     {
         _outputService = outputService;
         _db = db;
         _authorizationService = authorizationService;
+        _presence = presence;
     }
 
-    public async Task JoinProject(Guid projectId)
+    public override async Task OnDisconnectedAsync(Exception exception)
+    {
+        foreach (var departure in _presence.LeaveAll(Context.ConnectionId))
+        {
+            await Clients.Group(departure.ProjectId.ToString()).SendAsync(ProjectHubMethods.PresenceDeparted, departure.User);
+        }
+
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>
+    /// Adds the connection to the project's group and to the project's presence, telling the others in the
+    /// project when this is the caller's first connection to it.
+    /// </summary>
+    /// <returns>The other users with the project open.</returns>
+    public async Task<IReadOnlyList<PresentUser>> JoinProject(Guid projectId)
     {
         if (!await _authorizationService.Authorize<Project>(projectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], Context.ConnectionAborted))
             throw new ForbiddenException();
 
         await Groups.AddToGroupAsync(Context.ConnectionId, projectId.ToString());
+
+        var user = await GetPresentUser();
+
+        if (_presence.Join(projectId, Context.ConnectionId, user))
+        {
+            await Clients.OthersInGroup(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceArrived, user);
+        }
+
+        return [.. _presence.GetUsers(projectId).Where(x => x.Id != user.Id)];
     }
 
     public async Task LeaveProject(Guid projectId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, projectId.ToString());
+
+        var departed = _presence.Leave(projectId, Context.ConnectionId);
+
+        if (departed != null)
+        {
+            await Clients.Group(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceDeparted, departed);
+        }
     }
 
     public async Task JoinProjectAdmin(Guid projectId)
@@ -147,6 +185,26 @@ public class ProjectHub : Hub
     public async Task LeaveEnvironmentSetsAdmin()
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.EnvironmentSetsAdmin));
+    }
+
+    /// <summary>
+    /// The caller as the others see them: the token's name, else the name Caster stored for the user, else
+    /// their id.
+    /// </summary>
+    private async Task<PresentUser> GetPresentUser()
+    {
+        var id = Context.User.GetId();
+        var name = Context.User.FindFirst("name")?.Value;
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = await _db.Users
+                .Where(x => x.Id == id)
+                .Select(x => x.Name)
+                .FirstOrDefaultAsync(Context.ConnectionAborted);
+        }
+
+        return new PresentUser(id, string.IsNullOrWhiteSpace(name) ? id.ToString() : name);
     }
 
     #region RunOutput
@@ -270,6 +328,9 @@ public static class ProjectHubMethods
     public const string ProjectMembershipCreated = nameof(ProjectMembershipCreated);
     public const string ProjectMembershipUpdated = nameof(ProjectMembershipUpdated);
     public const string ProjectMembershipDeleted = nameof(ProjectMembershipDeleted);
+
+    public const string PresenceArrived = nameof(PresenceArrived);
+    public const string PresenceDeparted = nameof(PresenceDeparted);
 
     private const string GroupSeparator = "-";
 
