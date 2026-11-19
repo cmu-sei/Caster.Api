@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Services.ModuleScopes;
+using Caster.Api.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Features.ModuleScopes;
@@ -54,7 +55,8 @@ public static class ModuleScopeViews
     public static async Task<ModuleScope> GetScope(this CasterContext dbContext, Guid id, CancellationToken cancellationToken) =>
         (await dbContext.GetScopes(x => x.Id == id, cancellationToken)).FirstOrDefault();
 
-    public static async Task<ProjectModuleAccess> GetProjectAccess(this CasterContext dbContext, Guid projectId, CancellationToken cancellationToken)
+    public static async Task<ProjectModuleAccess> GetProjectAccess(
+        this CasterContext dbContext, Guid projectId, TerraformOptions options, CancellationToken cancellationToken)
     {
         var direct = await dbContext.ProjectModuleScopes
             .AsNoTracking()
@@ -84,14 +86,25 @@ public static class ModuleScopeViews
             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var access = ModuleAccess.Of(scopes.SelectMany(x => x.Paths));
+        var assigned = scopes.Length > 0;
+        var restrictUnassigned = options?.ModuleScopes?.RestrictUnassigned ?? false;
+        var paths = ModuleAccess.Of(scopes.SelectMany(x => x.Paths)).Paths;
 
         return new ProjectModuleAccess
         {
             ProjectId = projectId,
-            Restricted = scopes.Length > 0,
-            Paths = scopes.Length > 0 ? access.Paths : [],
-            Scopes = scopes
+            Restricted = assigned || restrictUnassigned,
+            RestrictedBecauseUnassigned = !assigned && restrictUnassigned,
+            Paths = paths,
+            SharedSources = options.SharedSourceNames(),
+            Scopes = scopes,
+            PathOrigins = paths
+                .Select(path => new ProjectModuleAccessPath
+                {
+                    Path = path,
+                    Scopes = scopes.Where(x => x.Paths.Contains(path)).ToArray()
+                })
+                .ToArray()
         };
     }
 }

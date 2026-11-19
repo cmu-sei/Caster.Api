@@ -9,11 +9,17 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Authorization;
+using Caster.Api.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Caster.Api.Domain.Services.ModuleScopes;
 
-/// <summary>Which Modules a project, or the caller, may use. Every endpoint that lists or looks up Modules asks here.</summary>
+/// <summary>
+/// Which Modules a project, or the caller, may use. Every endpoint that lists or looks up Modules asks here.
+/// The shared sources are always allowed. A project with no scope is allowed every Module, or only the
+/// shared sources when <c>Terraform:ModuleScopes:RestrictUnassigned</c> is on.
+/// </summary>
 public interface IModuleAccessService
 {
     /// <summary>The access of each project: its own scopes plus its project group's.</summary>
@@ -38,7 +44,8 @@ public interface IModuleAccessService
 
 public class ModuleAccessService(
     CasterContext dbContext,
-    ICasterAuthorizationService authorizationService) : IModuleAccessService
+    ICasterAuthorizationService authorizationService,
+    IOptionsMonitor<TerraformOptions> terraformOptions) : IModuleAccessService
 {
     public async Task<Dictionary<Guid, ModuleAccess>> ForProjects(IReadOnlyCollection<Guid> projectIds, CancellationToken cancellationToken)
     {
@@ -54,9 +61,15 @@ public class ModuleAccessService(
 
         var scopes = direct.Concat(grouped).ToLookup(x => x.ProjectId);
 
+        var options = terraformOptions.CurrentValue;
+        var shared = options.SharedSourceNames();
+        var restrictUnassigned = options?.ModuleScopes?.RestrictUnassigned ?? false;
+
         return projectIds.Distinct().ToDictionary(
             id => id,
-            id => scopes.Contains(id) ? ModuleAccess.Of(scopes[id].SelectMany(x => x.Paths)) : ModuleAccess.Everything);
+            id => scopes.Contains(id)
+                ? ModuleAccess.Of(scopes[id].SelectMany(x => x.Paths), shared)
+                : restrictUnassigned ? ModuleAccess.Of([], shared) : ModuleAccess.Everything);
     }
 
     public async Task<ModuleAccess> ForProject(Guid projectId, CancellationToken cancellationToken) =>
@@ -71,7 +84,7 @@ public class ModuleAccessService(
             return ModuleAccess.Everything;
 
         var projectIds = authorizationService.GetAuthorizedProjectIds().Distinct().ToList();
-        return ModuleAccess.Union((await ForProjects(projectIds, cancellationToken)).Values);
+        return ModuleAccess.Union((await ForProjects(projectIds, cancellationToken)).Values, terraformOptions.CurrentValue.SharedSourceNames());
     }
 
     public async Task<bool> CanSeeModule(Guid moduleId, Guid? projectId, CancellationToken cancellationToken)

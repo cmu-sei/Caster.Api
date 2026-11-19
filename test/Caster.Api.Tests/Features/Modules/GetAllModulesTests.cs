@@ -197,7 +197,7 @@ namespace Caster.Api.Tests.Features.Modules
         {
             var authorization = AuthorizationHarness.CreateCasterAuthorizationService(Db, caller ?? ClaimsPrincipalBuilder.Anonymous());
 
-            return new(authorization, Db, _modules, new ModuleAccessService(Db, authorization), new RecordingLogger<GetAll>());
+            return new(authorization, Db, _modules, new ModuleAccessService(Db, authorization, new StaticOptionsMonitor<Caster.Api.Infrastructure.Options.TerraformOptions>(new())), new RecordingLogger<GetAll>());
         }
     }
 }

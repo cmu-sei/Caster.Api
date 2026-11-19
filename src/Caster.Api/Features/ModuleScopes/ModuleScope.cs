@@ -36,19 +36,45 @@ public class ModuleScopeProjectGroup
 
 /// <summary>
 /// Which Modules a project may use, as the members of the project see it (ViewProject): every
-/// one, or only those matching <see cref="Paths"/>.
+/// one, or those at <see cref="Paths"/> plus the <see cref="SharedSources"/>.
 /// </summary>
 public class ProjectModuleAccess
 {
     public Guid ProjectId { get; set; }
 
-    /// <summary>False when no scope is assigned to the project or its group: every Module is allowed.</summary>
+    /// <summary>
+    /// False when every Module is allowed: no scope is assigned to the project or its group, and
+    /// unassigned projects are not restricted (<c>Terraform:ModuleScopes:RestrictUnassigned</c>).
+    /// </summary>
     public bool Restricted { get; set; }
 
-    /// <summary>The union of the paths of <see cref="Scopes"/>, sorted. Empty when not <see cref="Restricted"/>.</summary>
+    /// <summary>
+    /// True when <see cref="Restricted"/> only because no scope is assigned and the deployment
+    /// restricts unassigned projects: the project can use the shared sources alone.
+    /// </summary>
+    public bool RestrictedBecauseUnassigned { get; set; }
+
+    /// <summary>
+    /// The union of the paths of <see cref="Scopes"/>, sorted, without the shared sources. Empty
+    /// when no scope applies.
+    /// </summary>
     public string[] Paths { get; set; } = [];
 
+    /// <summary>The names of the sources every project may use, on top of <see cref="Paths"/>.</summary>
+    public string[] SharedSources { get; set; } = [];
+
     /// <summary>The scopes that apply, directly and through the project's group.</summary>
+    public ProjectModuleAccessScope[] Scopes { get; set; } = [];
+
+    /// <summary>Each of <see cref="Paths"/> with the scopes (and so the groups) it comes from.</summary>
+    public ProjectModuleAccessPath[] PathOrigins { get; set; } = [];
+}
+
+public class ProjectModuleAccessPath
+{
+    public string Path { get; set; }
+
+    /// <summary>The scopes that list the path.</summary>
     public ProjectModuleAccessScope[] Scopes { get; set; } = [];
 }
 
