@@ -172,7 +172,7 @@ public class GitModuleRepositoryProvider(
                 (source.Layout == ModuleSourceLayout.Subdirectories
                     ? " in any immediate subdirectory."
                     : " at the repository root.") +
-                (subdirectoryFilter == null ? string.Empty : $" Looked under '{subdirectoryFilter}'."));
+                $" Looked under '{subdirectoryFilter}'.");
         }
 
         try
