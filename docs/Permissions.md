@@ -21,6 +21,8 @@ The Administration area now can be accessed by any User with View or Manage Perm
 
 There are many more Permissions available. They can be viewed by going to the new Roles section of the Administration area.
 
+`ViewModules` and `ManageModules` also govern [Module Scopes](Modules.md#module-scopes), which limit the Modules a project can use.
+
 `ViewEnvironmentSets` and `ManageEnvironmentSets` govern [Environment Sets](EnvironmentSets.md), the credentials and values admins assign to projects' Terraform runs. `ManageEnvironmentSets` implies `ViewEnvironmentSets`.
 
 # Roles

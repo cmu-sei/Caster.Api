@@ -89,3 +89,19 @@ CASTER_GIT_TOKEN=<token with read access to the repositories>
 ```
 
 The helper only answers `get`, so git never tries to save credentials back, and it is only consulted for the host it names.
+
+## Module Scopes
+
+By default every project can use every Module. A **Module Scope** limits that: it is a named list of module sources, or folders of a source, that admins assign to projects and [project groups](ProjectGroups.md). Scopes live in the database, not in API settings, and are never part of a project export or import.
+
+Each entry of a scope is a Module Path: a source's name (`afp`) or a folder of one (`afp/exercise-x`). An entry allows the Modules at exactly that Path and those below it, so `afp` allows `afp` and `afp/exercise-x` but not `afp2`. Paths are matched exactly, including case, as the Modules page shows them. Folders only exist for sources whose layout makes one Module per folder (see the source `Layout`), and only as deep as they are discovered.
+
+* A project with no scope, directly or through its project group, can use every Module, so existing projects are unchanged.
+* A project's effective list is the union of the scopes assigned to the project and to its group.
+* The Designer, the file editor's module insert and every Module lookup the API serves for a project only offer the Modules on its effective list. This is enforced by the API: `GET api/modules?projectId=` lists a project's Modules, and without `projectId` a member gets what their own projects together allow. Adding a Module outside the list to a Design (or switching a Design's Module to one) is refused.
+* A Design that already uses a Module outside the list keeps working: the Module can still be looked up by that project, and plans and applies are unaffected. The Designer marks it as outside the project's Module Scopes.
+* The Modules admin page (`ViewModules`, no project) always shows every Module.
+
+Scopes are created, changed and deleted with `ManageModules` and read with `ViewModules`. Assigning a scope to a project or group uses `POST api/assignments` (`moduleScopeId`) and also needs `ManageModules`, so a project's own admins cannot widen the list. A project's members read what applies to them with `GET api/projects/{id}/module-scopes`.
+
+Deleting a scope, or deleting a project group or moving a project out of it, can leave a project with no scope, which can then use every Module again.
