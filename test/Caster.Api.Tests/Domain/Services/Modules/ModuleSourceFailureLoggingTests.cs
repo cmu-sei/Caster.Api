@@ -113,6 +113,33 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         }
 
         [Fact]
+        public async Task RepeatedCloneTimeouts_AreTheSameErrorDespiteADifferentTempDirectory()
+        {
+            var sut = Build("catalog");
+
+            foreach (var id in new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() })
+            {
+                _git.Failures["catalog"] = new TimeoutException(
+                    $"git clone --branch v1 <url> /tmp/caster-module-sources/{id:N} timed out after 60 seconds.");
+                await Refresh(sut);
+            }
+
+            Assert.Single(Errors);
+        }
+
+        [Fact]
+        public async Task SameWrapperMessageWithADifferentInnerFailure_IsAChangedError()
+        {
+            var sut = Build("catalog");
+            _git.Failures["catalog"] = new InvalidOperationException("saving failed", new Exception("foreign key violation"));
+            await Refresh(sut);
+            _git.Failures["catalog"] = new InvalidOperationException("saving failed", new Exception("permission denied"));
+            await Refresh(sut);
+
+            Assert.Equal(2, Errors.Count);
+        }
+
+        [Fact]
         public async Task StillFailingAfterTheBackoff_RemindsOnceAndTheBackoffGrows()
         {
             _git.Failures["catalog"] = new InvalidOperationException("git clone failed");

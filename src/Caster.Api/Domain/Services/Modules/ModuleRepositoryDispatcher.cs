@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Infrastructure.Exceptions;
@@ -266,7 +267,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
     /// </summary>
     private void LogFailure(string sourceName, string error, Exception ex)
     {
-        switch (_failureLog.RecordFailure(sourceName, error, out var suppressed))
+        switch (_failureLog.RecordFailure(sourceName, ex == null ? error : Fingerprint(ex), out var suppressed))
         {
             case ModuleSourceFailureLogAction.Log:
                 if (ex != null)
@@ -281,6 +282,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
 
             case ModuleSourceFailureLogAction.Remind:
                 _logger.LogError(
+                    ex,
                     "Module source {Source} is still failing with the same error ({Suppressed} repeats not logged since the last report): {Failure}",
                     sourceName,
                     suppressed,
@@ -292,6 +294,26 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
                 break;
         }
     }
+
+    /// <summary>
+    /// What makes two failures "the same error": the exception type and the innermost message, because a wrapper
+    /// such as EF's DbUpdateException says the same thing whatever went wrong inside it, with the per-attempt
+    /// temporary directory id a git timeout names taken out.
+    /// </summary>
+    private static string Fingerprint(Exception ex)
+    {
+        var innermost = ex;
+
+        while (innermost.InnerException != null)
+        {
+            innermost = innermost.InnerException;
+        }
+
+        return $"{ex.GetType().FullName}|{innermost.GetType().FullName}|{TempDirectoryIdPattern.Replace(innermost.Message, "<id>")}";
+    }
+
+    private static readonly Regex TempDirectoryIdPattern = new(
+        "[0-9a-f]{32}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private void LogRecovery(string sourceName)
     {
