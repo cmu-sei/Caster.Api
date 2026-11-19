@@ -73,13 +73,18 @@ public class ProjectHub : Hub
 
         using (await _presence.LockProjectAsync(projectId))
         {
+            var wasOpen = _presence.ProjectsOf(Context.ConnectionId).Contains(projectId);
             var arrived = _presence.Join(projectId, Context.ConnectionId, user);
 
             // The connection can have closed while this was waiting. Its disconnect has then already
-            // looked for what it had open and found nothing, so this must not leave it registered.
+            // looked for what it had open and found nothing, so a join that registered it now must not
+            // leave it registered. One that had registered it before is the disconnect's to remove, and
+            // announce.
             if (Context.ConnectionAborted.IsCancellationRequested)
             {
-                _presence.Leave(projectId, Context.ConnectionId);
+                if (!wasOpen)
+                    _presence.Leave(projectId, Context.ConnectionId);
+
                 return [];
             }
 
@@ -95,6 +100,10 @@ public class ProjectHub : Hub
     public async Task LeaveProject(Guid projectId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, projectId.ToString());
+
+        // Nothing to announce unless this connection had the project open.
+        if (!_presence.ProjectsOf(Context.ConnectionId).Contains(projectId))
+            return;
 
         using (await _presence.LockProjectAsync(projectId))
         {

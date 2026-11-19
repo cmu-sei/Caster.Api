@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -60,7 +59,11 @@ public interface IProjectPresenceTracker
 public class ProjectPresenceTracker : IProjectPresenceTracker
 {
     private readonly object _lock = new();
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _projectLocks = new();
+
+    // A fixed set of locks that projects share by id, so that memory doesn't grow with the project ids
+    // clients send, and one project's notifications are still never reordered. Two projects that share
+    // a lock only wait for each other.
+    private readonly SemaphoreSlim[] _projectLocks = [.. Enumerable.Range(0, 64).Select(_ => new SemaphoreSlim(1, 1))];
 
     // projectId -> connectionId -> user
     private readonly Dictionary<Guid, Dictionary<string, PresentUser>> _projects = [];
@@ -136,7 +139,7 @@ public class ProjectPresenceTracker : IProjectPresenceTracker
 
     public async Task<IDisposable> LockProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
-        var gate = _projectLocks.GetOrAdd(projectId, _ => new SemaphoreSlim(1, 1));
+        var gate = _projectLocks[(projectId.GetHashCode() & int.MaxValue) % _projectLocks.Length];
         await gate.WaitAsync(cancellationToken);
 
         return new Releaser(gate);

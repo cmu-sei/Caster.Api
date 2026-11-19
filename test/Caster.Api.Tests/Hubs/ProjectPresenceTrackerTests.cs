@@ -96,4 +96,25 @@ public class ProjectPresenceTrackerTests
         Assert.Single(departures, x => x != null);
         Assert.Empty(_tracker.GetUsers(_project));
     }
+
+    /// <summary>
+    /// Verifies: a project's lock is held until its holder disposes it, and is free again afterwards.
+    /// Data: two lock requests for one project.
+    /// </summary>
+    [Fact]
+    public async Task LockProjectAsync_makes_a_second_request_for_the_project_wait_for_the_first()
+    {
+        var projectId = Guid.NewGuid();
+        var first = await _tracker.LockProjectAsync(projectId, TestContext.Current.CancellationToken);
+
+        var second = _tracker.LockProjectAsync(projectId, TestContext.Current.CancellationToken);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        Assert.False(second.IsCompleted);
+
+        first.Dispose();
+        first.Dispose();
+
+        using var held = await second;
+        Assert.True(second.IsCompletedSuccessfully);
+    }
 }

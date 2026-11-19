@@ -259,6 +259,54 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
         Assert.Equal(["departed", "arrived"], sent);
     }
 
+    /// <summary>
+    /// Verifies: a repeat join that finds its connection closed leaves the earlier registration to the
+    /// disconnect, which announces the departure.
+    /// Interacts with: HubHarness (Groups.AddToGroupAsync aborts the connection), ProjectPresenceTracker.
+    /// Data: Alice joins, joins again as the connection aborts, then the disconnect runs; Bob is in the project.
+    /// </summary>
+    [Fact]
+    public async Task A_repeat_join_on_a_closed_connection_leaves_its_departure_to_the_disconnect()
+    {
+        var project = await SeedProject();
+        var alice = Connect(Member(project, "Alice"));
+        var bob = Connect(Member(project, "Bob"));
+        await alice.Hub.JoinProject(project.Id);
+        using var aborted = new CancellationTokenSource();
+        alice.Harness.Context.ConnectionAborted.Returns(aborted.Token);
+        alice.Harness.Groups
+            .AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                aborted.Cancel();
+                return Task.CompletedTask;
+            });
+
+        await alice.Hub.JoinProject(project.Id);
+        var present = await bob.Hub.JoinProject(project.Id);
+        await alice.Hub.OnDisconnectedAsync(null);
+
+        Assert.Equal([new PresentUser(alice.Harness.UserId, "Alice")], present);
+        var departed = HubHarness.Sent<PresentUser>(alice.Harness.Group(project.Id.ToString()), ProjectHubMethods.PresenceDeparted);
+        Assert.Equal(new PresentUser(alice.Harness.UserId, "Alice"), departed);
+    }
+
+    /// <summary>
+    /// Verifies: leaving a project the connection never had open announces nothing.
+    /// Interacts with: ProjectPresenceTracker.ProjectsOf.
+    /// Data: a connection that never joined leaves a project id it made up.
+    /// </summary>
+    [Fact]
+    public async Task LeaveProject_for_a_project_the_connection_never_joined_announces_nothing()
+    {
+        var alice = Connect(new ClaimsPrincipalBuilder().WithName("Alice"));
+
+        await alice.Hub.LeaveProject(Guid.NewGuid());
+
+        HubHarness.NothingSent(alice.Harness.Group("anything"), ProjectHubMethods.PresenceDeparted);
+        alice.Harness.AssertAddressedOnly();
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private sealed record Connection(ProjectHub Hub, HubHarness Harness, Dictionary<string, IClientProxy> OthersByGroup)
