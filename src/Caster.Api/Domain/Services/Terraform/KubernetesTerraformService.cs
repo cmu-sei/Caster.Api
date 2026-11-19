@@ -37,20 +37,20 @@ public class KubernetesTerraformService : BaseTerraformService
     private const string _workspaceNameLabel = "workspaceName";
     private const string _hostVolumeName = "host-vol";
 
-    public KubernetesTerraformService(TerraformOptions options, ILogger<KubernetesTerraformService> logger, IKubernetes k8sClient, IImageTagService imageTagService, IRegexService regexService) : base(options, regexService)
+    public KubernetesTerraformService(TerraformOptions options, ILogger<KubernetesTerraformService> logger, IKubernetes k8sClient, IImageTagService imageTagService, ITerraformEnvironmentBuilder environmentBuilder) : base(options, environmentBuilder)
     {
         _logger = logger;
         _k8sClient = k8sClient;
         _imageTagService = imageTagService;
-        _regexService = regexService;
     }
 
-    protected override async Task<TerraformResult> Run(Workspace workspace,
-                                                       IEnumerable<string> argumentList,
-                                                       Action<string> outputHandler,
-                                                       bool resume,
-                                                       Func<string, Task> finalizer,
-                                                       bool redirectStandardError = true)
+    protected override async Task<TerraformResult> RunCore(Workspace workspace,
+                                                           IEnumerable<string> argumentList,
+                                                           TerraformEnvironment environment,
+                                                           Action<string> outputHandler,
+                                                           bool resume,
+                                                           Func<string, Task> finalizer,
+                                                           bool redirectStandardError)
     {
         int exitCode = -1;
         StringBuilder outputBuilder = new StringBuilder();
@@ -73,10 +73,17 @@ public class KubernetesTerraformService : BaseTerraformService
                 };
             }
 
+            // A job already running is reattached to above whatever the sets say now; a new
+            // one must not start without its credentials.
+            if (!environment.IsValid)
+            {
+                return EnvironmentFailure(environment, outputHandler);
+            }
+
             var jobTemplate = GetJobTemplate();
             var securityContext = await GetSecurityContext(jobTemplate);
             var (volumes, volumeMounts) = GetVolumes();
-            var envVars = GetEnvironmentVariables(workspace);
+            var envVars = GetEnvironmentVariables(environment);
 
             var jobRequest = BuildJobRequest(jobTemplate, jobName, workspace, argumentList, securityContext, volumes, volumeMounts, envVars);
 
@@ -104,6 +111,11 @@ public class KubernetesTerraformService : BaseTerraformService
 
             var container = job.Spec?.Template?.Spec?.Containers?.SingleOrDefault()
                 ?? throw new InvalidOperationException("Job does not contain exactly one container.");
+
+            // After an API restart the job may carry secrets today's environment no longer gives:
+            // a credential rotated mid-run, or one whose secret, entry or set has gone since. They
+            // are literal in the job spec, so every value that isn't a plain one known today is masked.
+            environment.Masker = environment.Masker.With(JobValuesToMask(container, environment));
 
             var jobArg = container.Args?.FirstOrDefault();
             var expectedArg = argumentList?.FirstOrDefault();
@@ -176,6 +188,22 @@ public class KubernetesTerraformService : BaseTerraformService
             ExitCode = exitCode
         };
     }
+
+    /// <summary>
+    /// The values the job's container was given, except those today's environment gives the same
+    /// variable as a plain value. Fails closed: whatever has changed since the job started is masked,
+    /// as nothing records which of its variables were secrets then.
+    /// </summary>
+    public static IEnumerable<string> JobValuesToMask(V1Container container, TerraformEnvironment environment) =>
+        (container.Env ?? [])
+            .Where(x => !string.IsNullOrEmpty(x.Value) && !IsKnownPlainValue(x, environment))
+            .Select(x => x.Value);
+
+    private static bool IsKnownPlainValue(V1EnvVar variable, TerraformEnvironment environment) =>
+        variable.Name is not null
+        && !environment.SecretNames.Contains(variable.Name)
+        && environment.Variables.TryGetValue(variable.Name, out var value)
+        && string.Equals(value, variable.Value, StringComparison.Ordinal);
 
     private string GetImage(Workspace workspace)
     {
@@ -702,9 +730,9 @@ public class KubernetesTerraformService : BaseTerraformService
         return (volumes.ToArray(), volumeMounts.ToArray());
     }
 
-    private new V1EnvVar[] GetEnvironmentVariables(Workspace workspace)
+    private static V1EnvVar[] GetEnvironmentVariables(TerraformEnvironment environment)
     {
-        return base.GetEnvironmentVariables(workspace)
+        return environment.Variables
             .Select(x => new V1EnvVar
             {
                 Name = x.Key,

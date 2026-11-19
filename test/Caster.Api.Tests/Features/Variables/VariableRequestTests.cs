@@ -72,7 +72,7 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (project, design, variable) = await SeedVariable();
         var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
-        var response = await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct);
+        var response = await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct);
 
         Assert.Equal([variable.Id], (await ReadAsync<VariableView[]>(response)).Select(x => x.Id));
     }
@@ -83,7 +83,7 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (_, design, variable) = await SeedVariable();
         var actor = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
 
-        var response = await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct);
+        var response = await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct);
 
         Assert.Equal([variable.Id], (await ReadAsync<VariableView[]>(response)).Select(x => x.Id));
     }
@@ -94,7 +94,7 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (_, design, _) = await SeedVariable();
         var actor = await Actor().WithSystemPermissions(SystemPermission.EditProjects).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct));
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct));
     }
 
     [Fact]
@@ -103,11 +103,32 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var (_, design, _) = await SeedVariable();
         var actor = await Actor().OnNewProject(ProjectPermission.ViewProject).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct));
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct));
     }
 
     [Fact]
     public async Task GetByDesign_is_forbidden_for_a_caller_holding_only_EditProject()
+    {
+        var (project, design, _) = await SeedVariable();
+        var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(actor).GetAsync($"api/designs/{design.Id}/variables", Ct));
+    }
+
+    /// <summary>The misspelled api/designss route stays as an alias of api/designs/{designId}/variables.</summary>
+    [Fact]
+    public async Task GetByDesign_through_the_obsolete_route_lists_the_variables_for_a_member_holding_ViewProject()
+    {
+        var (project, design, variable) = await SeedVariable();
+        var actor = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+
+        var response = await Client(actor).GetAsync($"api/designss/{design.Id}/variables", Ct);
+
+        Assert.Equal([variable.Id], (await ReadAsync<VariableView[]>(response)).Select(x => x.Id));
+    }
+
+    [Fact]
+    public async Task GetByDesign_through_the_obsolete_route_is_forbidden_for_a_caller_holding_only_EditProject()
     {
         var (project, design, _) = await SeedVariable();
         var actor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
@@ -139,6 +160,25 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var response = await Client(actor).PostAsJsonAsync("api/variables", new { designId = design.Id, name = "count", type = "number" }, Ct);
 
         await AssertStatus(HttpStatusCode.Created, response);
+    }
+
+    [Fact]
+    public async Task Create_stores_a_type_outside_the_enum_in_the_design_file()
+    {
+        var (_, design) = await SeedDesign();
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/variables", new { designId = design.Id, name = "numeric_type", type = 7 }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        await using var context = NewContext();
+        var stored = await context.Variables.SingleAsync(x => x.DesignId == design.Id, Ct);
+        Assert.Equal((VariableType)7, stored.Type);
+        var directory = await context.Directories.SingleAsync(x => x.Id == design.DirectoryId, Ct);
+        var workspace = TestData.Workspace(directory);
+        var file = Assert.Single(await context.GetWorkspaceFiles(workspace, directory));
+        Assert.Equal($"{design.Name}-design.tf", file.Name);
+        Assert.Contains("type = 7", file.Content);
     }
 
     [Fact]
@@ -198,6 +238,25 @@ public class VariableRequestTests(DatabaseFixture fixture, CasterAppFactory fact
         var response = await Client(actor).PutAsJsonAsync($"api/variables/{variable.Id}", new { name = variable.Name, type = "string", defaultValue = "changed" }, Ct);
 
         await AssertStatus(HttpStatusCode.OK, response);
+    }
+
+    [Fact]
+    public async Task Edit_stores_a_type_outside_the_enum_in_the_design_file()
+    {
+        var (_, design, variable) = await SeedVariable();
+
+        var response = await RootClient.PutAsJsonAsync(
+            $"api/variables/{variable.Id}", new { name = variable.Name, type = 7 }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        await using var context = NewContext();
+        var stored = await context.Variables.SingleAsync(x => x.Id == variable.Id, Ct);
+        Assert.Equal((VariableType)7, stored.Type);
+        var directory = await context.Directories.SingleAsync(x => x.Id == design.DirectoryId, Ct);
+        var workspace = TestData.Workspace(directory);
+        var file = Assert.Single(await context.GetWorkspaceFiles(workspace, directory));
+        Assert.Equal($"{design.Name}-design.tf", file.Name);
+        Assert.Contains("type = 7", file.Content);
     }
 
     [Fact]

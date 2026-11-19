@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Domain.Models;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +14,6 @@ using Caster.Api.Domain.Events;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Identity;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Features.Shared;
 using FluentValidation;
@@ -63,7 +61,6 @@ namespace Caster.Api.Features.Runs
 
         public class Handler(
             ICasterAuthorizationService authorizationService,
-            IMapper mapper,
             CasterContext dbContext,
             IMediator mediator,
             ILockService lockService,
@@ -92,13 +89,13 @@ namespace Caster.Api.Features.Runs
                 await mediator.Publish(new RunCreated { RunId = run.Id, WorkspaceId = request.WorkspaceId });
 
                 return await dbContext.Runs
-                    .ProjectTo<Run>(mapper.ConfigurationProvider)
+                    .ProjectToRun()
                     .SingleOrDefaultAsync(x => x.Id == run.Id, cancellationToken);
             }
 
             private async Task<Domain.Models.Run> DoWork(Command request, Guid userId, CancellationToken cancellationToken)
             {
-                var run = mapper.Map<Domain.Models.Run>(request);
+                var run = request.ToEntity();
                 run.CreatedById = userId;
                 run.Modify(userId);
                 dbContext.Runs.Add(run);

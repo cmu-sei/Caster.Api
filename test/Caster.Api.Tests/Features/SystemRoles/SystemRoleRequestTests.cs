@@ -105,6 +105,31 @@ public class SystemRoleRequestTests(DatabaseFixture fixture, CasterAppFactory fa
     }
 
     [Fact]
+    public async Task Create_answers_an_id_that_is_already_taken_with_a_server_error()
+    {
+        var role = TestData.SystemRole(permissions: [SystemPermission.ViewHosts]);
+        await Seed(role);
+
+        var response = await RootClient.PostAsJsonAsync(
+            "api/system-roles", new { id = role.Id, name = "Another role" }, Ct);
+
+        var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
+        Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
+        Assert.Equal([SystemPermission.ViewHosts], (await StoredRole(role.Name)).Permissions);
+        Assert.Null(await StoredRole("Another role"));
+    }
+
+    [Fact]
+    public async Task Create_stores_a_permission_outside_the_enum()
+    {
+        var response = await RootClient.PostAsJsonAsync(
+            "api/system-roles", new { name = "Numeric permission", permissions = new[] { 99 } }, Ct);
+
+        await AssertStatus(HttpStatusCode.Created, response);
+        Assert.Equal([(SystemPermission)99], (await StoredRole("Numeric permission")).Permissions);
+    }
+
+    [Fact]
     public async Task Edit_by_a_caller_holding_ManageRoles_stores_the_new_permissions()
     {
         var role = TestData.SystemRole(permissions: [SystemPermission.ViewHosts]);
@@ -153,6 +178,19 @@ public class SystemRoleRequestTests(DatabaseFixture fixture, CasterAppFactory fa
         var problem = await AssertProblem(HttpStatusCode.InternalServerError, response);
 
         Assert.Equal("An error occurred while saving the entity changes. See the inner exception for details.", problem.Detail);
+    }
+
+    [Fact]
+    public async Task Edit_stores_a_permission_outside_the_enum()
+    {
+        var role = TestData.SystemRole(permissions: [SystemPermission.ViewHosts]);
+        await Seed(role);
+
+        var response = await RootClient.PutAsJsonAsync(
+            $"api/system-roles/{role.Id}", new { name = role.Name, permissions = new[] { 99 } }, Ct);
+
+        await AssertStatus(HttpStatusCode.OK, response);
+        Assert.Equal([(SystemPermission)99], (await StoredRole(role.Name)).Permissions);
     }
 
     [Fact]

@@ -31,6 +31,23 @@ public static class ArchiveHelper
         return new MultipartFormDataContent { { new ByteArrayContent(buffer.ToArray()), "archive", "import.zip" } };
     }
 
+    /// <summary>A multipart form holding a zip with each of <paramref name="entries"/>, as raw bytes.</summary>
+    public static MultipartFormDataContent Zip(params (string Path, byte[] Content)[] entries)
+    {
+        using var buffer = new MemoryStream();
+
+        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (path, content) in entries)
+            {
+                using var stream = zip.CreateEntry(path).Open();
+                stream.Write(content);
+            }
+        }
+
+        return new MultipartFormDataContent { { new ByteArrayContent(buffer.ToArray()), "archive", "import.zip" } };
+    }
+
     /// <summary>The entry names of the zip an export endpoint answered with.</summary>
     public static async Task<string[]> EntryNames(HttpResponseMessage response, CancellationToken ct)
     {

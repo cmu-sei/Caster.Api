@@ -44,13 +44,27 @@ public class VariablesController : ControllerBase
     /// </summary>
     /// <param name="designId">ID of a Design.</param>
     /// <returns></returns>
-    [HttpGet("designss/{designId}/variables")]
+    [HttpGet("designs/{designId}/variables")]
     [ProducesResponseType(typeof(IEnumerable<Variable>), (int)HttpStatusCode.OK)]
     [SwaggerOperation(OperationId = "GetVariablesByDesign")]
     public async Task<IActionResult> GetByDirectory([FromRoute] Guid designId)
     {
         var result = await _mediator.Send(new GetAll.Query { DesignId = designId });
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Get all Variables within a Design. Obsolete: use GET api/designs/{designId}/variables.
+    /// </summary>
+    /// <param name="designId">ID of a Design.</param>
+    /// <returns></returns>
+    [Obsolete("Use GET api/designs/{designId}/variables.")]
+    [HttpGet("designss/{designId}/variables")]
+    [ProducesResponseType(typeof(IEnumerable<Variable>), (int)HttpStatusCode.OK)]
+    [SwaggerOperation(OperationId = "GetVariablesByDesignObsolete")]
+    public Task<IActionResult> GetByDirectoryObsolete([FromRoute] Guid designId)
+    {
+        return GetByDirectory(designId);
     }
 
     /// <summary>

@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
@@ -55,7 +54,6 @@ namespace Caster.Api.Features.Files
 
         public class Handler(
                 CasterContext db,
-                IMapper mapper,
                 ICasterAuthorizationService authorizationService,
                 IIdentityResolver identityResolver,
                 IGetFileQuery fileQuery) : BaseHandler<Command, File>
@@ -79,7 +77,7 @@ namespace Caster.Api.Features.Files
                         throw new ConflictException("File and Workspace must be in the same Directory");
                 }
 
-                var file = mapper.Map<Domain.Models.File>(request);
+                var file = request.ToEntity();
                 file.Save(
                     identityResolver.GetId(),
                     canLock: await authorizationService.Authorize<Directory>(request.DirectoryId, [SystemPermission.LockFiles], [ProjectPermission.LockFiles], cancellationToken),

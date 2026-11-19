@@ -11,9 +11,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services.ProjectGroups;
 using Caster.Api.Domain.Events;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Topology;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
 using MediatR;
@@ -119,9 +121,9 @@ namespace Caster.Api.Features.Runs.EventHandlers
                     }
                     else
                     {
-                        // select a host. multiply by 1.0 to cast as double
-                        host = await _db.Hosts
-                            .Where(h => h.ProjectId == projectId && h.Enabled && !h.Development)
+                        // select a host from the project's own and its group's. multiply by 1.0 to cast as double
+                        host = await _db.ProjectHosts(projectId)
+                            .Where(h => h.Enabled && !h.Development)
                             .OrderBy(h => (h.Machines.Count * 1.0 / h.MaximumMachines * 1.0) * 100.0).FirstOrDefaultAsync();
                     }
 
@@ -205,9 +207,11 @@ namespace Caster.Api.Features.Runs.EventHandlers
                 _timer?.Stop();
             }
 
+            TerraformResult showResult = null;
+
             if (dynamicHost)
             {
-                var result = await _terraformService.Show(workspace);
+                var result = showResult = await _terraformService.Show(workspace);
                 isError = result.IsError;
 
                 if (!isError)
@@ -256,7 +260,53 @@ namespace Caster.Api.Features.Runs.EventHandlers
                 }
             }
 
+            if (!isError && _options.GenerateTopology)
+            {
+                await ReadTopology(workspace, showResult);
+            }
+
             return isError;
+        }
+
+        /// <summary>
+        /// Best effort: a topology that cannot be read is one output line, never
+        /// a failed plan. Reuses the dynamic host step's show output when there
+        /// is one.
+        /// </summary>
+        private async Task ReadTopology(Workspace workspace, TerraformResult showResult)
+        {
+            try
+            {
+                showResult ??= await _terraformService.Show(workspace);
+
+                if (showResult.IsError)
+                {
+                    _output.AddLine("Topology unavailable: terraform show did not succeed.");
+                    return;
+                }
+
+                var topology = PlanTopologyParser.Parse(showResult.Output, _options.Topology);
+                _plan.Topology = JsonSerializer.Serialize(topology, DefaultJsonSettings.Settings);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not read the topology of plan {PlanId}.", _plan.Id);
+                _output.AddLine($"Topology unavailable: {ex.Message}");
+                return;
+            }
+
+            // Only the latest plan's topology is ever read, so drop the older
+            // copies. Left behind, they cost space and nothing else.
+            try
+            {
+                await _db.Plans
+                    .Where(x => x.Run.WorkspaceId == workspace.Id && x.Id != _plan.Id && x.Topology != null)
+                    .ExecuteUpdateAsync(x => x.SetProperty(y => y.Topology, (string)null));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not clear the older topologies of workspace {WorkspaceId}.", workspace.Id);
+            }
         }
 
         private async Task<Domain.Models.Plan> CreatePlan(Domain.Models.Run run)

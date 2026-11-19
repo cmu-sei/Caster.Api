@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
 using System.Linq;
@@ -48,7 +47,7 @@ namespace Caster.Api.Features.Vlan
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Vlan>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Vlan>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageVLANs], cancellationToken);
@@ -59,10 +58,10 @@ namespace Caster.Api.Features.Vlan
                     .Where(x => x.Id == command.Id)
                     .FirstOrDefaultAsync(cancellationToken);
 
-                mapper.Map(command, vlan);
+                command.ApplyPatchTo(vlan);
                 await dbContext.SaveChangesAsync(cancellationToken);
 
-                return mapper.Map<Vlan>(vlan);
+                return vlan.ToVlan();
             }
         }
     }

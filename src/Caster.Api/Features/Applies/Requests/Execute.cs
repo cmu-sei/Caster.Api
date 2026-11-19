@@ -5,7 +5,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Runtime.Serialization;
@@ -37,7 +36,6 @@ namespace Caster.Api.Features.Applies
         public class Handler : BaseHandler<Command, Apply>
         {
             private readonly CasterContext _db;
-            private readonly IMapper _mapper;
             private readonly IMediator _mediator;
             private readonly ICasterAuthorizationService _authorizationService;
             private readonly ClaimsPrincipal _user;
@@ -45,14 +43,12 @@ namespace Caster.Api.Features.Applies
 
             public Handler(
                 CasterContext db,
-                IMapper mapper,
                 IMediator mediator,
                 ICasterAuthorizationService authorizationService,
                 IIdentityResolver identityResolver,
                 ILockService lockService)
             {
                 _db = db;
-                _mapper = mapper;
                 _mediator = mediator;
                 _authorizationService = authorizationService;
                 _user = identityResolver.GetClaimsPrincipal();
@@ -94,7 +90,7 @@ namespace Caster.Api.Features.Applies
 
                 await _mediator.Publish(new ApplyCreated { ApplyId = apply.Id, RunId = apply.RunId, WorkspaceId = workspaceId });
                 await _mediator.Publish(new RunUpdated(apply.RunId));
-                return _mapper.Map<Apply>(apply);
+                return apply.ToApply();
             }
 
             private void ValidateRun(Run run)

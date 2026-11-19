@@ -21,7 +21,7 @@ public class DesignModule
             return ModuleValue.GetModuleValues(Domain.Models.DesignModule.GetValues(ValuesJson));
         }
     }
-    private string ValuesJson { get; set; }
+    internal string ValuesJson { get; set; }
 }
 
 public class ModuleValue

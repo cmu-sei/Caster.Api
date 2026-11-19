@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Infrastructure.Exceptions;
@@ -102,19 +101,19 @@ namespace Caster.Api.Features.Directories
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Directory>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Directory>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Project>(request.ProjectId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
 
             public override async Task<Directory> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var directory = mapper.Map<Domain.Models.Directory>(request);
+                var directory = request.ToEntity();
                 await SetPath(directory, request.Id);
 
                 dbContext.Directories.Add(directory);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Directory>(directory);
+                return directory.ToDirectory();
             }
 
             private async Task SetPath(Domain.Models.Directory directory, Guid? id = null)

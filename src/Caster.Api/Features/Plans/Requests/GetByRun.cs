@@ -5,11 +5,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Domain.Models;
@@ -46,7 +44,7 @@ namespace Caster.Api.Features.Plans
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, Plan>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Plan>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Run>(request.RunId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
@@ -54,7 +52,7 @@ namespace Caster.Api.Features.Plans
             public override async Task<Plan> HandleRequest(Query request, CancellationToken cancellationToken)
             {
                 var plan = await dbContext.Plans
-                    .ProjectTo<Plan>(mapper.ConfigurationProvider)
+                    .ProjectToPlan()
                     .SingleOrDefaultAsync(x => x.RunId == request.RunId, cancellationToken);
 
                 if (plan == null)

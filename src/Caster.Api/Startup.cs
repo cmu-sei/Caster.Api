@@ -5,9 +5,9 @@ using System;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
-using AutoMapper.Internal;
 using Caster.Api.Data;
 using Caster.Api.Domain.Services;
+using Caster.Api.Domain.Services.Inventory;
 using Caster.Api.Domain.Services.Terraform;
 using Caster.Api.Extensions;
 using Caster.Api.Features.Files;
@@ -21,7 +21,6 @@ using Caster.Api.Infrastructure.Exceptions.Middleware;
 using Caster.Api.Infrastructure.Extensions;
 using Crucible.Common.EntityEvents.Extensions;
 using Caster.Api.Infrastructure.Identity;
-using Caster.Api.Infrastructure.Mapping;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Infrastructure.Serialization;
 using FluentValidation;
@@ -109,6 +108,10 @@ namespace Caster.Api
                 .Configure<FileVersionScrubOptions>(Configuration.GetSection("FileVersions"))
                     .AddScoped(config => config.GetService<IOptionsMonitor<FileVersionScrubOptions>>().CurrentValue);
 
+            services.AddOptions()
+                .Configure<InfrastructureOptions>(Configuration.GetSection("Infrastructure"))
+                    .AddScoped(config => config.GetService<IOptionsMonitor<InfrastructureOptions>>().CurrentValue);
+
 
             services.AddMvc()
             .AddJsonOptions(options =>
@@ -132,13 +135,6 @@ namespace Caster.Api
                 });
 
             services.AddSwagger(_authOptions);
-
-            services.AddAutoMapper(cfg =>
-            {
-                cfg.Internal().ForAllPropertyMaps(
-                    pm => pm.SourceType != null && Nullable.GetUnderlyingType(pm.SourceType) == pm.DestinationType,
-                    (pm, c) => c.MapFrom<object, object, object, object>(new IgnoreNullSourceValues(), pm.SourceMember.Name));
-            }, typeof(Startup));
 
             services.AddMediatR(cfg =>
             {
@@ -222,6 +218,14 @@ namespace Caster.Api
             services.AddScoped<ICasterAuthorizationService, AuthorizationService>();
 
             services.AddSingleton<IRegexService, RegexService>();
+            services.AddSingleton<Domain.Services.EnvironmentSets.IApiEnvironment, Domain.Services.EnvironmentSets.ApiEnvironment>();
+            services.AddSingleton<Domain.Services.EnvironmentSets.ISecretSource, Domain.Services.EnvironmentSets.SecretSource>();
+            services.AddSingleton<Domain.Services.Inventory.IInfrastructureConnectionCatalog, Domain.Services.Inventory.InfrastructureConnectionCatalog>();
+            services.AddScoped<Domain.Services.EnvironmentSets.IEntryValues, Domain.Services.EnvironmentSets.EntryValues>();
+            services.AddScoped<Domain.Services.Terraform.ITerraformEnvironmentBuilder, Domain.Services.Terraform.TerraformEnvironmentBuilder>();
+            services.AddScoped<Features.EnvironmentSets.IEnvironmentSetViews, Features.EnvironmentSets.EnvironmentSetViews>();
+            services.AddScoped<Features.Inventory.ProjectInventoryConnections>();
+            services.AddScoped<Features.ProjectGroups.ProjectGroupAccess>();
             services.AddSingleton<Domain.Services.IAuthenticationService, Domain.Services.AuthenticationService>();
             services.AddSingleton<ILockService, LockService>();
             services.AddSingleton<IUserIdProvider, SubUserIdProvider>();
@@ -241,6 +245,12 @@ namespace Caster.Api
 
             services.AddSingleton<IRunQueueService, RunQueueService>();
             services.AddSingleton<IHostedService>(x => x.GetService<IRunQueueService>());
+
+            // Read-only infrastructure inventory. Off unless a connection sets Inventory:Enabled.
+            services.AddInventoryServices();
+            services.AddSingleton<InventoryService>();
+            services.AddSingleton<IInventoryService>(x => x.GetService<InventoryService>());
+            services.AddSingleton<IHostedService>(x => x.GetService<InventoryService>());
 
             services.AddScoped<IGetFileQuery, GetFileQuery>();
 

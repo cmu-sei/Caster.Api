@@ -4,8 +4,6 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Crucible.Common.EntityEvents.Events;
 using MediatR;
@@ -15,8 +13,8 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Caster.Api.Features.SystemRoles.EventHandlers;
 
-public class RoleCreatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    RoleBaseSignalRHandler(_db, _mapper, _projectHub),
+public class RoleCreatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    RoleBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityCreated<Domain.Models.SystemRole>>
 {
 
@@ -26,8 +24,8 @@ public class RoleCreatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubC
     }
 }
 
-public class RoleUpdatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    RoleBaseSignalRHandler(_db, _mapper, _projectHub),
+public class RoleUpdatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    RoleBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityUpdated<Domain.Models.SystemRole>>
 {
 
@@ -47,13 +45,13 @@ public class RoleDeletedSignalRHandler(IHubContext<ProjectHub> _projectHub) :
     }
 }
 
-public class RoleBaseSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub)
+public class RoleBaseSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub)
 {
     protected async Task Handle(Domain.Models.SystemRole entity, string method, string[] modifiedProperties, CancellationToken cancellationToken)
     {
         var role = await _db.SystemRoles
             .Where(r => r.Id == entity.Id)
-            .ProjectTo<SystemRole>(_mapper.ConfigurationProvider)
+            .ProjectToSystemRole()
             .FirstOrDefaultAsync();
 
         await _projectHub.Clients.Groups(nameof(HubGroups.RolesAdmin)).SendAsync(method, role, modifiedProperties, cancellationToken);

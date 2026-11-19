@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
@@ -52,12 +51,18 @@ public class AddVlansToPartition
         public Validator(IValidationService validationService)
         {
             RuleFor(x => x.PartitionId).PartitionExists(validationService);
+
+            // A count that reaches the query unchecked fails in the database
+            // ("LIMIT must not be negative"), so say what is allowed instead.
+            RuleFor(x => x.Vlans)
+                .InclusiveBetween(1, 4096)
+                .When(x => x.VlanIds == null || x.VlanIds.Length == 0)
+                .WithMessage("Add between 1 and 4096 VLANs.");
         }
     }
 
     public class Handler(
         ICasterAuthorizationService authorizationService,
-        IMapper mapper,
         CasterContext dbContext,
         ILockService lockService) : BaseHandler<Command, Vlan[]>
     {
@@ -110,7 +115,7 @@ public class AddVlansToPartition
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
 
-            return mapper.Map<Vlan[]>(vlans);
+            return vlans.ToVlans();
         }
     }
 }

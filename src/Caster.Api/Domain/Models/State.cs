@@ -41,8 +41,8 @@ namespace Caster.Api.Domain.Models
                         Attributes = instance.Attributes,
                         Address = $"{res.Address}{index}",
                         BaseAddress = $"{res.Address}",
-                        Id = instance.Attributes.GetProperty("id").GetString(),
-                        Name = instance.Attributes.TryGetProperty("name", out JsonElement element) ? element.GetString() : res.Name,
+                        Id = instance.Attributes.TryGetProperty("id", out JsonElement id) ? ElementToString(id) : null,
+                        Name = instance.Attributes.TryGetProperty("name", out JsonElement element) ? ElementToString(element) : res.Name,
                         Tainted = instance.Status == "tainted",
                         Type = res.Type
                     };
@@ -53,6 +53,16 @@ namespace Caster.Api.Domain.Models
 
             return resources.ToArray();
         }
+
+        // Terraform puts no type on an attribute such as id: SDKv2 resources always store a string,
+        // but Plugin Framework resources may declare any type (bpg/proxmox's proxmox_cloned_vm uses a number),
+        // or omit id entirely.
+        private static string ElementToString(JsonElement element) => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Null or JsonValueKind.Undefined => null,
+            _ => element.GetRawText()
+        };
     }
 
     public class TFResource

@@ -31,5 +31,10 @@ namespace Caster.Api.Features.Projects
         /// The vlan partition this project is a part of.
         /// </summary>
         public Guid? PartitionId { get; set; }
+
+        /// <summary>
+        /// The project group this project is in, if any.
+        /// </summary>
+        public Guid? ProjectGroupId { get; set; }
     }
 }

@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
@@ -61,18 +60,18 @@ namespace Caster.Api.Features.Modules
             public List<string> Outputs { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, Module>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, Module>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageModules], cancellationToken);
 
             public override async Task<Module> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var module = mapper.Map<Domain.Models.Module>(request);
+                var module = request.ToEntity();
 
                 dbContext.Modules.Add(module);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<Module>(module);
+                return module.ToModule();
             }
         }
     }

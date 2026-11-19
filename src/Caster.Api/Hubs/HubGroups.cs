@@ -8,6 +8,7 @@ namespace Caster.Api.Hubs
         WorkspacesAdmin,
         VlansAdmin,
         RolesAdmin,
-        ProjectsAdmin
+        ProjectsAdmin,
+        EnvironmentSetsAdmin
     }
 }

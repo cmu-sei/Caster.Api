@@ -17,7 +17,6 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Domain.Models;
-using AutoMapper;
 using Caster.Api.Data;
 
 namespace Caster.Api.Features.DesignModules;
@@ -33,7 +32,7 @@ public class SetEnabled
         public bool Enabled { get; init; }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, DesignModule>
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, DesignModule>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Domain.Models.DesignModule>(
@@ -54,7 +53,7 @@ public class SetEnabled
             designModule.Enabled = request.Enabled;
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            return mapper.Map<DesignModule>(designModule);
+            return designModule.ToDesignModule();
         }
     }
 }

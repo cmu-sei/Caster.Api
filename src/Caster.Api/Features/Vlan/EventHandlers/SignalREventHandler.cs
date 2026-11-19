@@ -4,7 +4,6 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using Caster.Api.Data;
 using Crucible.Common.EntityEvents.Events;
 using Caster.Api.Hubs;
@@ -18,12 +17,11 @@ public class PoolCreatedSignalRHandler : VlanBaseSignalRHandler<Pool>, INotifica
 {
     public PoolCreatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityCreated<Domain.Models.Pool> notification, CancellationToken cancellationToken)
     {
-        await base.HandleCreateOrUpdate(notification.Entity, PoolHubMethods.Created, null, cancellationToken);
+        await base.HandleCreateOrUpdate(notification.Entity.ToPool(), PoolHubMethods.Created, null, cancellationToken);
     }
 }
 
@@ -31,13 +29,12 @@ public class PoolUpdatedSignalRHandler : VlanBaseSignalRHandler<Pool>, INotifica
 {
     public PoolUpdatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityUpdated<Domain.Models.Pool> notification, CancellationToken cancellationToken)
     {
         await base.HandleCreateOrUpdate(
-            notification.Entity,
+            notification.Entity.ToPool(),
             PoolHubMethods.Updated,
             notification.ModifiedProperties,
             cancellationToken);
@@ -48,8 +45,7 @@ public class PoolDeletedSignalRHandler : VlanBaseSignalRHandler<Pool>, INotifica
 {
     public PoolDeletedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityDeleted<Domain.Models.Pool> notification, CancellationToken cancellationToken)
     {
@@ -61,12 +57,11 @@ public class PartitionCreatedSignalRHandler : VlanBaseSignalRHandler<Partition>,
 {
     public PartitionCreatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityCreated<Domain.Models.Partition> notification, CancellationToken cancellationToken)
     {
-        await base.HandleCreateOrUpdate(notification.Entity, PartitionHubMethods.Created, null, cancellationToken);
+        await base.HandleCreateOrUpdate(notification.Entity.ToPartition(), PartitionHubMethods.Created, null, cancellationToken);
     }
 }
 
@@ -74,13 +69,12 @@ public class PartitionUpdatedSignalRHandler : VlanBaseSignalRHandler<Partition>,
 {
     public PartitionUpdatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityUpdated<Domain.Models.Partition> notification, CancellationToken cancellationToken)
     {
         await base.HandleCreateOrUpdate(
-            notification.Entity,
+            notification.Entity.ToPartition(),
             PartitionHubMethods.Updated,
             notification.ModifiedProperties,
             cancellationToken);
@@ -91,8 +85,7 @@ public class PartitionDeletedSignalRHandler : VlanBaseSignalRHandler<Partition>,
 {
     public PartitionDeletedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityDeleted<Domain.Models.Partition> notification, CancellationToken cancellationToken)
     {
@@ -104,12 +97,11 @@ public class VlanCreatedSignalRHandler : VlanBaseSignalRHandler<Vlan>, INotifica
 {
     public VlanCreatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityCreated<Domain.Models.Vlan> notification, CancellationToken cancellationToken)
     {
-        await base.HandleCreateOrUpdate(notification.Entity, VlanHubMethods.Created, null, cancellationToken);
+        await base.HandleCreateOrUpdate(notification.Entity.ToVlan(), VlanHubMethods.Created, null, cancellationToken);
     }
 }
 
@@ -117,13 +109,12 @@ public class VlanUpdatedSignalRHandler : VlanBaseSignalRHandler<Vlan>, INotifica
 {
     public VlanUpdatedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityUpdated<Domain.Models.Vlan> notification, CancellationToken cancellationToken)
     {
         await base.HandleCreateOrUpdate(
-            notification.Entity,
+            notification.Entity.ToVlan(),
             VlanHubMethods.Updated,
             notification.ModifiedProperties,
             cancellationToken);
@@ -134,8 +125,7 @@ public class VlanDeletedSignalRHandler : VlanBaseSignalRHandler<Vlan>, INotifica
 {
     public VlanDeletedSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
-        CasterContext db) : base(projectHub, mapper, db) { }
+        CasterContext db) : base(projectHub, db) { }
 
     public async Task Handle(EntityDeleted<Domain.Models.Vlan> notification, CancellationToken cancellationToken)
     {
@@ -146,26 +136,22 @@ public class VlanDeletedSignalRHandler : VlanBaseSignalRHandler<Vlan>, INotifica
 public class VlanBaseSignalRHandler<T>
 {
     protected readonly IHubContext<ProjectHub> _projectHub;
-    protected readonly IMapper _mapper;
     protected readonly CasterContext _db;
 
     public VlanBaseSignalRHandler(
         IHubContext<ProjectHub> projectHub,
-        IMapper mapper,
         CasterContext db)
     {
         _projectHub = projectHub;
-        _mapper = mapper;
         _db = db;
     }
 
     protected async Task HandleCreateOrUpdate(
-        object model,
+        T viewModel,
         string method,
         string[] modifiedProperties,
         CancellationToken cancellationToken)
     {
-        var viewModel = _mapper.Map<T>(model);
         await _projectHub.Clients.Group(this.GetGroup()).SendAsync(method, viewModel, modifiedProperties, cancellationToken);
     }
 

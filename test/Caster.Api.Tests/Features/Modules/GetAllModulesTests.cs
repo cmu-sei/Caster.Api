@@ -191,7 +191,6 @@ namespace Caster.Api.Tests.Features.Modules
         private GetAll.Handler Handler(ClaimsPrincipal caller = null) =>
             new(
                 AuthorizationHarness.CreateCasterAuthorizationService(Db, caller ?? ClaimsPrincipalBuilder.Anonymous()),
-                TestMapper.Mapper,
                 Db,
                 _modules,
                 new RecordingLogger<GetAll>());

@@ -4,8 +4,6 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Crucible.Common.EntityEvents.Events;
 using Caster.Api.Hubs;
@@ -15,8 +13,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Features.Projects.EventHandlers;
 
-public class ProjectMembershipCreatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    ProjectMembershipBaseSignalRHandler(_db, _mapper, _projectHub),
+public class ProjectMembershipCreatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    ProjectMembershipBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityCreated<Domain.Models.ProjectMembership>>
 {
     public async Task Handle(EntityCreated<Domain.Models.ProjectMembership> notification, CancellationToken cancellationToken)
@@ -25,8 +23,8 @@ public class ProjectMembershipCreatedSignalRHandler(CasterContext _db, IMapper _
     }
 }
 
-public class ProjectMembershipUpdatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    ProjectMembershipBaseSignalRHandler(_db, _mapper, _projectHub),
+public class ProjectMembershipUpdatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    ProjectMembershipBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityUpdated<Domain.Models.ProjectMembership>>
 {
     public async Task Handle(EntityUpdated<Domain.Models.ProjectMembership> notification, CancellationToken cancellationToken)
@@ -44,13 +42,13 @@ public class ProjectMembershipDeletedSignalRHandler(IHubContext<ProjectHub> proj
     }
 }
 
-public class ProjectMembershipBaseSignalRHandler(CasterContext db, IMapper mapper, IHubContext<ProjectHub> projectHub)
+public class ProjectMembershipBaseSignalRHandler(CasterContext db, IHubContext<ProjectHub> projectHub)
 {
     protected async Task Handle(Domain.Models.ProjectMembership entity, string method, string[] modifiedProperties, CancellationToken cancellationToken)
     {
         var projectMembership = await db.ProjectMemberships
             .Where(x => x.Id == entity.Id)
-            .ProjectTo<ProjectMembership>(mapper.ConfigurationProvider)
+            .ProjectToProjectMembership()
             .FirstOrDefaultAsync();
 
         await projectHub.Clients.Group(ProjectHubMethods.GetProjectAdminGroup(entity.ProjectId)).SendAsync(method, projectMembership, modifiedProperties, cancellationToken);

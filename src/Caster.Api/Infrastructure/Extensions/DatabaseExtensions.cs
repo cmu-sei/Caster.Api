@@ -3,6 +3,9 @@
 
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services.EnvironmentSets;
+using Caster.Api.Domain.Services.Inventory;
+using Caster.Api.Features.EnvironmentSets;
 using Caster.Api.Infrastructure.Options;
 using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +32,12 @@ namespace Caster.Api.Infrastructure.Extensions
 
                     var seedDataOptions = services.GetService<SeedDataOptions>();
                     var errors = ProcessSeedDataOptions(seedDataOptions, context);
+
+                    errors.AddRange(EnvironmentSetSeeder.Seed(
+                        seedDataOptions?.EnvironmentSets,
+                        context,
+                        services.GetRequiredService<ISecretSource>(),
+                        services.GetRequiredService<IInfrastructureConnectionCatalog>()));
 
                     if (errors.Any())
                     {

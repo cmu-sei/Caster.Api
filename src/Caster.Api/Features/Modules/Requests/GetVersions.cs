@@ -6,10 +6,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Caster.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
@@ -29,7 +27,7 @@ namespace Caster.Api.Features.Modules
             public Guid ModuleId { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, ModuleVersion[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, ModuleVersion[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
@@ -47,7 +45,7 @@ namespace Caster.Api.Features.Modules
             {
                 var versions = await dbContext.ModuleVersions
                     .Where(v => v.ModuleId == request.ModuleId)
-                    .ProjectTo<ModuleVersion>(mapper.ConfigurationProvider)
+                    .ProjectToModuleVersion()
                     .ToArrayAsync(cancellationToken);
 
                 return Domain.Models.ModuleVersionOrder.HighestFirst(versions, v => v.Name, v => v.DateCreated).ToArray();

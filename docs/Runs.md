@@ -94,6 +94,7 @@ These settings are defined in `appsettings.json`.
 
   * **Name** – Name of the ConfigMap in the cluster
   * **MountPath** – Path inside the Job where the ConfigMap is mounted
+  * **SubPath** – (Optional) A single key of the ConfigMap to mount as a file at `MountPath`
 
 * **JobTemplateFile**
   Path to a YAML file defining a Kubernetes `V1Job` template. Takes precedence over `JobTemplateYaml`. Caster uses this as a base and overrides only the properties it needs to control (metadata, primary container image/args/workingDir, volumes, env vars, and security context). Template values for volumes, volume mounts, and env vars are merged by name — template‑defined values are preserved unless Caster needs to override them.
@@ -150,22 +151,46 @@ Environment variables are injected into either:
 #### Options
 
 * **InheritAll**
-  Inherits *all* environment variables from the Caster API process, including sensitive values. **Recommended to set this to `false` in production**.
+  Inherits *all* environment variables from the Caster API process, including its own database connection string, OIDC client secret and GitLab token. Defaults to `false` (it was `true` before Environment Sets). See [Migrating off InheritAll](EnvironmentSets.md#migrating-off-inheritall).
 
 * **Inherit**
   List of regular expressions used to selectively inherit environment variables when `InheritAll` is `false`.
 
   Useful for including provider‑specific variables (e.g., Terraform provider prefixes).
 
+  Variables matching `Terraform:Secrets:Patterns` are never inherited, whatever `Inherit` or `InheritAll` say: they reach only the projects an [Environment Set](EnvironmentSets.md) gives them to.
+
+  In **Process mode**, the API's `PATH` and `HOME` are always passed, as a local process starts from an empty environment.
+
 * **Direct**
-  Explicitly defines environment variables injected into the Run.
+  Explicitly defines environment variables injected into the Run, as a map of name to value:
 
-  Each entry includes:
+  ```json
+  "Direct": {
+    "SSL_CERT_DIR": "/usr/local/share/ca-certificates/:/etc/ssl/certs/"
+  }
+  ```
 
-  * **Name** – Environment variable name
-  * **Value** – Environment variable value
+  As an environment variable: `Terraform__EnvironmentVariables__Direct__SSL_CERT_DIR`. Values defined here override any inherited variables with the same name.
 
-  Values defined here override any inherited variables with the same name.
+Variables under `Infrastructure__` (the inventory's connections, including their credentials) are never inherited, whatever `InheritAll` and `Inherit` say.
+
+### Secrets and Environment Sets
+
+Credentials for runs belong in API environment variables whose names match `Terraform:Secrets:Patterns` (default `^CASTER_SECRET_`), given to projects through Environment Sets. A project's sets override same-named inherited and direct variables. See [Environment Sets](EnvironmentSets.md).
+
+### Git Credentials for Module Sources
+
+`terraform init` fetches every Module from its `git::` address (see [Modules](Modules.md)), so a Run needs credentials for private module hosts, in addition to those Caster.Api uses for discovery.
+
+* In **Process mode** the Run is a child process of Caster.Api and uses the same git configuration.
+* In **Kubernetes mode** the Run is a Job pod, which only sees the files and environment variables Caster gives it:
+  * Mount any git configuration file into the Job with **ConfigMaps**, at the same path it has in the Caster.Api container.
+  * Pass the variables that point git at it (`GIT_CONFIG_SYSTEM`, or `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`, and any token variable a helper reads) through **EnvironmentVariables**. With `InheritAll` `false`, add an **Inherit** pattern such as `^(GIT_CONFIG_|CASTER_GIT_TOKEN$)`; patterns are case-sensitive.
+  * A custom **JobTemplateFile** or **JobTemplateYaml** needs no credentials of its own; the ConfigMaps and environment variables are merged into it.
+  * The Job image must include git, and `sh` if the credential helper is a shell function. The default `hashicorp/terraform` images include both.
+
+The Helm chart's `gitcredentials` value does all of this for both modes (caster chart 1.10.1 or later).
 
 ### MaxConcurrentRuns
 

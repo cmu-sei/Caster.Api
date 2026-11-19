@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
@@ -34,7 +33,7 @@ namespace Caster.Api.Features.Groups
             public GroupMembershipRole Role { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, GroupMembership>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, GroupMembership>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.GroupMembership>(request.Id, [SystemPermission.ManageGroups], [GroupPermission.ManageMembership], cancellationToken);
@@ -48,7 +47,7 @@ namespace Caster.Api.Features.Groups
 
                 groupMembership.Role = request.Role;
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<GroupMembership>(groupMembership);
+                return groupMembership.ToGroupMembership();
             }
         }
     }

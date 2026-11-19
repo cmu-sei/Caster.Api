@@ -144,13 +144,27 @@ public class DesignsModulesController : ControllerBase
     /// </summary>
     /// <param name="id">ID of a designModule</param>
     /// <returns></returns>
-    [HttpDelete("designsModules/{id}")]
+    [HttpDelete("designModules/{id}")]
     [ProducesResponseType((int)HttpStatusCode.NoContent)]
     [SwaggerOperation(OperationId = "DeleteDesignModule")]
     public async Task<IActionResult> Delete([FromRoute] Guid id)
     {
         await _mediator.Send(new Delete.Command { Id = id });
         return NoContent();
+    }
+
+    /// <summary>
+    /// Delete a designModule. Obsolete: use DELETE api/designModules/{id}.
+    /// </summary>
+    /// <param name="id">ID of a designModule</param>
+    /// <returns></returns>
+    [Obsolete("Use DELETE api/designModules/{id}.")]
+    [HttpDelete("designsModules/{id}")]
+    [ProducesResponseType((int)HttpStatusCode.NoContent)]
+    [SwaggerOperation(OperationId = "DeleteDesignModuleObsolete")]
+    public Task<IActionResult> DeleteObsolete([FromRoute] Guid id)
+    {
+        return Delete(id);
     }
 }
 

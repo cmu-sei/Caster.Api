@@ -5,9 +5,7 @@ using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
-using AutoMapper;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Caster.Api.Infrastructure.Authorization;
 using System;
@@ -36,7 +34,7 @@ namespace Caster.Api.Features.Groups
             }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, GroupMembership[]>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, GroupMembership[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.Group>(request.GroupId, [SystemPermission.ViewGroups], [GroupPermission.ManageMembership], cancellationToken);
@@ -45,7 +43,7 @@ namespace Caster.Api.Features.Groups
             {
                 return await dbContext.GroupMemberships
                     .Where(x => x.GroupId == request.GroupId)
-                    .ProjectTo<GroupMembership>(mapper.ConfigurationProvider)
+                    .ProjectToGroupMembership()
                     .ToArrayAsync();
             }
         }

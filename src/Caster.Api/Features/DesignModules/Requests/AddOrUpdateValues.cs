@@ -15,7 +15,6 @@ using FluentValidation;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Domain.Models;
-using AutoMapper;
 using Caster.Api.Data;
 
 namespace Caster.Api.Features.DesignModules;
@@ -31,7 +30,7 @@ public class AddOrUpdateValues
         public ModuleValue[] Values { get; init; }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext)
+    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext)
         : BaseHandler<Command, DesignModule>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
@@ -54,7 +53,7 @@ public class AddOrUpdateValues
             await DesignModuleValidation.EnsureComplete(dbContext, designModule, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            return mapper.Map<DesignModule>(designModule);
+            return designModule.ToDesignModule();
         }
     }
 }

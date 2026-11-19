@@ -4,8 +4,6 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Data;
 using Crucible.Common.EntityEvents.Events;
 using MediatR;
@@ -15,8 +13,8 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Caster.Api.Features.Runs.EventHandlers;
 
-public class RunCreatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    RunBaseSignalRHandler(_db, _mapper, _projectHub),
+public class RunCreatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    RunBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityCreated<Domain.Models.Run>>
 {
 
@@ -26,8 +24,8 @@ public class RunCreatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubCo
     }
 }
 
-public class RunUpdatedSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub) :
-    RunBaseSignalRHandler(_db, _mapper, _projectHub),
+public class RunUpdatedSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub) :
+    RunBaseSignalRHandler(_db, _projectHub),
     INotificationHandler<EntityUpdated<Domain.Models.Run>>
 {
 
@@ -47,13 +45,13 @@ public class RunDeletedSignalRHandler(IHubContext<ProjectHub> _projectHub) :
     }
 }
 
-public class RunBaseSignalRHandler(CasterContext _db, IMapper _mapper, IHubContext<ProjectHub> _projectHub)
+public class RunBaseSignalRHandler(CasterContext _db, IHubContext<ProjectHub> _projectHub)
 {
     protected async Task Handle(Domain.Models.Run entity, string method, string[] modifiedProperties, CancellationToken cancellationToken)
     {
         var run = await _db.Runs
             .Where(r => r.Id == entity.Id)
-            .ProjectTo<Run>(_mapper.ConfigurationProvider)
+            .ProjectToRun()
             .FirstOrDefaultAsync();
 
         await _projectHub.Clients.Groups(run.WorkspaceId.ToString(), nameof(HubGroups.WorkspacesAdmin)).SendAsync(method, run, modifiedProperties, cancellationToken);

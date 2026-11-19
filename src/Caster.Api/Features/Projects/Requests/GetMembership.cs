@@ -6,11 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
 using FluentValidation;
 using System.Linq;
@@ -32,7 +30,7 @@ namespace Caster.Api.Features.Projects
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, ProjectMembership>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, ProjectMembership>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.ProjectMembership>(request.Id, [SystemPermission.ManageProjects], [ProjectPermission.ManageProject], cancellationToken);
@@ -41,7 +39,7 @@ namespace Caster.Api.Features.Projects
             {
                 var projectMembership = await dbContext.ProjectMemberships
                     .Where(x => x.Id == request.Id)
-                    .ProjectTo<ProjectMembership>(mapper.ConfigurationProvider)
+                    .ProjectToProjectMembership()
                     .FirstOrDefaultAsync(cancellationToken);
 
                 if (projectMembership == null)

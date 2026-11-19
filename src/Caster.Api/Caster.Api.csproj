@@ -14,8 +14,9 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.1" />
-    <PackageReference Include="AutoMapper" Version="13.0.1"/> <!-- DO NOT UPDATE. Version 15+ requires a license. Plan to migrate to something else. -->
+    <PackageReference Include="Riok.Mapperly" Version="4.3.1" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="MediatR" Version="12.4.1"/> <!-- DO NOT UPDATE. Version 13+ requires a license. Plan to migrate to something else. -->
+    <PackageReference Include="VimClient" Version="7.0.0" />
     <PackageReference Include="Crucible.Common.EntityEvents" Version="0.2.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.0" />
     <PackageReference Include="Swashbuckle.AspNetCore.Annotations" Version="10.1.0" />
@@ -39,5 +40,12 @@
     <PackageReference Include="Docker.Registry.DotNet" Version="2.0.0" />
     <PackageReference Include="KubernetesClient" Version="19.0.2" />
     <PackageReference Include="Crucible.Common.ServiceDefaults" Version="0.0.2"/>
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      VimClient pulls in the .NET Core 2.1 framework package. With a runtime identifier (the
+      Dockerfile's -a), it publishes a 2.1 libhostfxr.so that stops the app from starting.
+    -->
+    <PrunePackageReference Include="Microsoft.NETCore.App" Version="2.1.0" />
   </ItemGroup>
 </Project>

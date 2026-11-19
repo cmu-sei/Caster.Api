@@ -6,11 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Exceptions;
 using Microsoft.EntityFrameworkCore;
-using AutoMapper.QueryableExtensions;
 using Caster.Api.Infrastructure.Authorization;
 using FluentValidation;
 using System.Linq;
@@ -32,7 +30,7 @@ namespace Caster.Api.Features.Groups
             public Guid Id { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Query, GroupMembership>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, GroupMembership>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize<Domain.Models.GroupMembership>(request.Id, [SystemPermission.ViewGroups], [GroupPermission.ManageMembership], cancellationToken);
@@ -41,7 +39,7 @@ namespace Caster.Api.Features.Groups
             {
                 var groupMembership = await dbContext.GroupMemberships
                     .Where(x => x.Id == request.Id)
-                    .ProjectTo<GroupMembership>(mapper.ConfigurationProvider)
+                    .ProjectToGroupMembership()
                     .FirstOrDefaultAsync(cancellationToken);
 
                 if (groupMembership == null)

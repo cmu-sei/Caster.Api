@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services.EnvironmentSets;
 using Caster.Api.Infrastructure.Options;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,9 @@ public class ProcessTerraformService : BaseTerraformService
     private readonly StringBuilder _outputBuilder = new StringBuilder();
     private readonly IMemoryCache _processCache;
 
-    public ProcessTerraformService(TerraformOptions options, ILogger<ProcessTerraformService> logger, IMemoryCache cache, IRegexService regexService) : base(options, regexService)
+    private OutputMasker _masker = OutputMasker.None;
+
+    public ProcessTerraformService(TerraformOptions options, ILogger<ProcessTerraformService> logger, IMemoryCache cache, ITerraformEnvironmentBuilder environmentBuilder) : base(options, environmentBuilder)
     {
         _logger = logger;
         _processCache = cache;
@@ -47,15 +50,28 @@ public class ProcessTerraformService : BaseTerraformService
         return Path.Combine(_options.BinaryPath, version, _binaryName);
     }
 
-    protected override async Task<TerraformResult> Run(Workspace workspace,
-                                                       IEnumerable<string> argumentList,
-                                                       Action<string> outputHandler,
-                                                       bool resume = false,
-                                                       Func<string, Task> finalizer = null,
-                                                       bool redirectStandardError = true)
+    /// <summary>
+    /// A local process starts from an empty environment, so it gets the API's PATH (to find
+    /// git for module sources) and HOME even when they are not inherited.
+    /// </summary>
+    protected override IEnumerable<string> BaselineEnvironmentVariables => ["PATH", "HOME"];
+
+    protected override async Task<TerraformResult> RunCore(Workspace workspace,
+                                                           IEnumerable<string> argumentList,
+                                                           TerraformEnvironment environment,
+                                                           Action<string> outputHandler,
+                                                           bool resume,
+                                                           Func<string, Task> finalizer,
+                                                           bool redirectStandardError)
     {
+        if (!environment.IsValid)
+        {
+            return EnvironmentFailure(environment, outputHandler);
+        }
+
         int exitCode;
         _outputBuilder.Clear();
+        _masker = environment.Masker;
 
         ProcessStartInfo startInfo = new ProcessStartInfo
         {
@@ -66,12 +82,11 @@ public class ProcessTerraformService : BaseTerraformService
             RedirectStandardError = redirectStandardError
         };
 
-        var envVars = this.GetEnvironmentVariables(workspace);
         startInfo.EnvironmentVariables.Clear();
 
-        foreach (var kvp in envVars)
+        foreach (var kvp in environment.Variables)
         {
-            startInfo.EnvironmentVariables.Add(kvp.Key, kvp.Value);
+            startInfo.EnvironmentVariables[kvp.Key] = kvp.Value;
         }
 
         using (Process process = new Process())
@@ -135,7 +150,7 @@ public class ProcessTerraformService : BaseTerraformService
         if (e.Data != null)
         {
             _outputBuilder.AppendLine(e.Data);
-            _logger.LogTrace(e.Data);
+            _logger.LogTrace("{Output}", _masker.Apply(e.Data));
         }
     }
 

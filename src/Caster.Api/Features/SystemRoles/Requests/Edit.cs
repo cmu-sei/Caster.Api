@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Caster.Api.Data;
-using AutoMapper;
 using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
@@ -35,7 +34,7 @@ namespace Caster.Api.Features.SystemRoles
             public SystemPermission[] Permissions { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, IMapper mapper, CasterContext dbContext) : BaseHandler<Command, SystemRole>
+        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, SystemRole>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
                 await authorizationService.Authorize([SystemPermission.ManageRoles], cancellationToken);
@@ -50,9 +49,9 @@ namespace Caster.Api.Features.SystemRoles
                 if (systemRole.Immutable)
                     throw new ConflictException("Immutable Role cannot be changed.");
 
-                mapper.Map(request, systemRole);
+                request.ApplyTo(systemRole);
                 await dbContext.SaveChangesAsync(cancellationToken);
-                return mapper.Map<SystemRole>(systemRole);
+                return systemRole.ToSystemRole();
             }
         }
     }
