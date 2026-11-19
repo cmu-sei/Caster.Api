@@ -25,7 +25,7 @@ public class Get
     public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, ModuleScope>
     {
         public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken) =>
-            await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+            await authorizationService.Authorize([SystemPermission.ViewModules, SystemPermission.ManageModules], cancellationToken);
 
         public override async Task<ModuleScope> HandleRequest(Query request, CancellationToken cancellationToken) =>
             await dbContext.GetScope(request.Id, cancellationToken)

@@ -16,7 +16,7 @@ namespace Caster.Api.Tests.Features.ModuleScopes;
 
 /// <summary>
 /// <c>api/module-scopes</c>, <c>api/projects/{id}/module-scopes</c> and the scope changes of <c>api/assignments</c>:
-/// scopes are read with ViewModules and made, changed, deleted and assigned with ManageModules; a project's
+/// scopes are read with ViewModules (or ManageModules) and made, changed, deleted and assigned with ManageModules; a project's
 /// members read what applies to the project, directly and through its group.
 /// </summary>
 public class ModuleScopeRequestTests(DatabaseFixture fixture, CasterAppFactory factory) : ApiTestBase(fixture, factory)
@@ -158,6 +158,9 @@ public class ModuleScopeRequestTests(DatabaseFixture fixture, CasterAppFactory f
         Assert.Equal(["afp", "navy"], one.Paths);
         Assert.Equal(["Alpha"], one.Projects.Select(x => x.Name));
         Assert.Equal([group.Name], one.ProjectGroups.Select(x => x.Name));
+        var manager = await Actor().WithSystemPermissions(SystemPermission.ManageModules).SeedAsync();
+        await AssertStatus(HttpStatusCode.OK, await Client(manager).GetAsync(Scopes, Ct));
+        await AssertStatus(HttpStatusCode.OK, await Client(manager).GetAsync($"{Scopes}/{scope.Id}", Ct));
         await AssertProblem(HttpStatusCode.Forbidden, await Client(nobody).GetAsync(Scopes, Ct));
         await AssertProblem(HttpStatusCode.Forbidden, await Client(nobody).GetAsync($"{Scopes}/{scope.Id}", Ct));
         await AssertProblem(HttpStatusCode.NotFound, await Client(viewer).GetAsync($"{Scopes}/{Guid.NewGuid()}", Ct));

@@ -102,6 +102,6 @@ Each entry of a scope is a Module Path: a source's name (`afp`) or a folder of o
 * A Design that already uses a Module outside the list keeps working: the Module can still be looked up by that project, and plans and applies are unaffected. The Designer marks it as outside the project's Module Scopes.
 * The Modules admin page (`ViewModules`, no project) always shows every Module.
 
-Scopes are created, changed and deleted with `ManageModules` and read with `ViewModules`. Assigning a scope to a project or group uses `POST api/assignments` (`moduleScopeId`) and also needs `ManageModules`, so a project's own admins cannot widen the list. A project's members read what applies to them with `GET api/projects/{id}/module-scopes`.
+Scopes are created, changed and deleted with `ManageModules` and read with `ViewModules` or `ManageModules`. Assigning a scope to a project or group uses `POST api/assignments` (`moduleScopeId`) and also needs `ManageModules`, so a project's own admins cannot widen the list. A project's members read what applies to them with `GET api/projects/{id}/module-scopes`.
 
 Deleting a scope, or deleting a project group or moving a project out of it, can leave a project with no scope, which can then use every Module again.
