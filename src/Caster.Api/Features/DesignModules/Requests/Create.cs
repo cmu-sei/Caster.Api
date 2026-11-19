@@ -15,6 +15,7 @@ using Caster.Api.Features.Shared.Services;
 using Caster.Api.Infrastructure.Extensions;
 using Caster.Api.Domain.Models;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services.ModuleScopes;
 
 namespace Caster.Api.Features.DesignModules;
 
@@ -44,7 +45,10 @@ public class Create
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, DesignModule>
+    public class Handler(
+        ICasterAuthorizationService authorizationService,
+        CasterContext dbContext,
+        IModuleAccessService moduleAccess) : BaseHandler<Command, DesignModule>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Design>(request.DesignId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -53,6 +57,7 @@ public class Create
         {
             var designModule = request.ToEntity();
 
+            await DesignModuleValidation.EnsureModuleAllowed(dbContext, moduleAccess, request.DesignId, request.ModuleId, cancellationToken);
             await DesignModuleValidation.EnsureComplete(dbContext, designModule, cancellationToken);
 
             dbContext.DesignModules.Add(designModule);

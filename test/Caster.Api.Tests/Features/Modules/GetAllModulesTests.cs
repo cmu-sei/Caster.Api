@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services.Modules;
+using Caster.Api.Domain.Services.ModuleScopes;
 using Caster.Api.Features.Modules;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Tests.Support;
@@ -37,7 +38,7 @@ namespace Caster.Api.Tests.Features.Modules
             _modules.GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new ModuleSyncException("module source 'catalog': fatal: repository not found"));
 
-            var modules = await Handler().HandleRequest(new GetAll.Query(), Ct);
+            var modules = await Handler(CatalogHolder()).HandleRequest(new GetAll.Query(), Ct);
 
             Assert.Equal("Network Segment", Assert.Single(modules).Name);
         }
@@ -49,7 +50,7 @@ namespace Caster.Api.Tests.Features.Modules
             _modules.GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
                 .ThrowsAsync(new ModuleSourceNotConfiguredException());
 
-            var modules = await Handler().HandleRequest(new GetAll.Query(), Ct);
+            var modules = await Handler(CatalogHolder()).HandleRequest(new GetAll.Query(), Ct);
 
             Assert.Single(modules);
         }
@@ -62,7 +63,7 @@ namespace Caster.Api.Tests.Features.Modules
                 .ThrowsAsync(new OperationCanceledException());
 
             await Assert.ThrowsAsync<OperationCanceledException>(() =>
-                Handler().HandleRequest(new GetAll.Query(), Ct));
+                Handler(CatalogHolder()).HandleRequest(new GetAll.Query(), Ct));
         }
 
         /// <summary>A member holding ViewProject on the design's project is answered its modules, after a sync that forced the update the query asked for.</summary>
@@ -172,6 +173,10 @@ namespace Caster.Api.Tests.Features.Modules
             return await TwoProjectGraph.SeedAsync(Db, savedBy.Id, Ct);
         }
 
+        /// <summary>Who lists the whole catalog, as the Modules admin page does: with no project, a holder of ViewModules gets every module.</summary>
+        private static ClaimsPrincipal CatalogHolder() =>
+            new ClaimsPrincipalBuilder().WithSystemPermissions(SystemPermission.ViewModules).Build();
+
         /// <summary>A forced listing of <paramref name="design"/>'s modules.</summary>
         private static GetAll.Query DesignQuery(Design design) => new() { DesignId = design.Id, ForceUpdate = true };
 
@@ -188,11 +193,11 @@ namespace Caster.Api.Tests.Features.Modules
         /// <paramref name="caller"/> (one holding nothing by default, for the tests that call
         /// <c>HandleRequest</c>, which runs after the gate).
         /// </summary>
-        private GetAll.Handler Handler(ClaimsPrincipal caller = null) =>
-            new(
-                AuthorizationHarness.CreateCasterAuthorizationService(Db, caller ?? ClaimsPrincipalBuilder.Anonymous()),
-                Db,
-                _modules,
-                new RecordingLogger<GetAll>());
+        private GetAll.Handler Handler(ClaimsPrincipal caller = null)
+        {
+            var authorization = AuthorizationHarness.CreateCasterAuthorizationService(Db, caller ?? ClaimsPrincipalBuilder.Anonymous());
+
+            return new(authorization, Db, _modules, new ModuleAccessService(Db, authorization), new RecordingLogger<GetAll>());
+        }
     }
 }

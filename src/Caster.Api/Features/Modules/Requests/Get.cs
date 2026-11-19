@@ -13,6 +13,7 @@ using Caster.Api.Infrastructure.Authorization;
 using System.Linq;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services.ModuleScopes;
 
 namespace Caster.Api.Features.Modules
 {
@@ -26,12 +27,28 @@ namespace Caster.Api.Features.Modules
             /// </summary>
             [DataMember]
             public Guid Id { get; set; }
+
+            /// <summary>
+            /// The project the Module is looked up for: it must be one the project may use, or one
+            /// its Designs already use. Without it, the same is checked across the caller's own projects.
+            /// </summary>
+            [DataMember]
+            public Guid? ProjectId { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, Module>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            CasterContext dbContext,
+            IModuleAccessService moduleAccess) : BaseHandler<Query, Module>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
+                if (request.ProjectId.HasValue)
+                {
+                    return await authorizationService.Authorize<Domain.Models.Project>(
+                        request.ProjectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
+                }
+
                 if (authorizationService.GetAuthorizedProjectIds().Any())
                 {
                     return true;
@@ -44,6 +61,9 @@ namespace Caster.Api.Features.Modules
 
             public override async Task<Module> HandleRequest(Query request, CancellationToken cancellationToken)
             {
+                if (!await moduleAccess.CanSeeModule(request.Id, request.ProjectId, cancellationToken))
+                    throw new EntityNotFoundException<Module>();
+
                 var module = await dbContext.Modules
                     .Include(m => m.Versions)
                     .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken);
