@@ -179,6 +179,40 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
+        public void SetIsoOutcome_WithNoFailuresReportsNothing()
+        {
+            var vim = new VimInventory();
+
+            VimInventorySource.SetIsoOutcome(vim, 2, []);
+
+            Assert.Null(vim.IsoError);
+            Assert.Null(vim.IsoWarning);
+        }
+
+        [Fact]
+        public void SetIsoOutcome_WhenSomeLocationsWereSearched_IsAWarningNotAnError()
+        {
+            var vim = new VimInventory();
+
+            VimInventorySource.SetIsoOutcome(vim, 1, ["[gone] stock: folder not found"]);
+
+            Assert.Null(vim.IsoError);
+            Assert.Contains("[gone] stock: folder not found", vim.IsoWarning);
+            Assert.StartsWith("Some ISO locations could not be searched", vim.IsoWarning);
+        }
+
+        [Fact]
+        public void SetIsoOutcome_WhenNoLocationCouldBeSearched_IsAnError()
+        {
+            var vim = new VimInventory();
+
+            VimInventorySource.SetIsoOutcome(vim, 0, ["[a] x: timed out", "[b] y: folder not found"]);
+
+            Assert.Null(vim.IsoWarning);
+            Assert.Contains("[a] x: timed out; [b] y: folder not found", vim.IsoError);
+        }
+
+        [Fact]
         public void IsoTargets_WithNoLocationsSearchesNothing()
         {
             var (targets, unknown) = VimInventorySource.IsoTargets([], ["b", "a"]);

@@ -454,9 +454,9 @@ public class VsphereInventoryClient(
     /// <summary>
     /// An ISO's name is its path on its datastore, e.g. "iso/alpine.iso", which
     /// is what a vsphere_virtual_machine cdrom block's path takes alongside the
-    /// datastore; its path is the full datastore path, "[ds] iso/alpine.iso". A
-    /// partial list is not returned, since it would make an ISO that exists look
-    /// missing.
+    /// datastore; its path is the full datastore path, "[ds] iso/alpine.iso". When
+    /// some locations could not be searched the ISOs found are listed with a warning
+    /// naming them. When none could be searched, or none is set, ISOs are unavailable.
     /// </summary>
     internal static InventoryCategoryResult Isos(VimInventory vim)
     {
@@ -474,7 +474,7 @@ public class VsphereInventoryClient(
                 x => x.Select(d => datacenterOf(d.Parent)).Distinct(StringComparer.Ordinal).ToArray() is [var only] ? only : null,
                 StringComparer.Ordinal);
 
-        return InventoryCategoryResult.Ok(vim.Isos
+        return InventoryCategoryResult.OkWithWarning(vim.Isos
             .Select(x =>
             {
                 var close = x.Path.IndexOf(']');
@@ -496,7 +496,7 @@ public class VsphereInventoryClient(
             })
             .DistinctBy(x => x.Path, StringComparer.Ordinal)
             .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
-            .ToArray());
+            .ToArray(), vim.IsoWarning);
     }
 
     #endregion

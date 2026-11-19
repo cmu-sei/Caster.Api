@@ -37,6 +37,13 @@ public class VimInventory
 
     /// <summary>Why the ISOs could not all be listed, or null when they were.</summary>
     public string IsoError { get; set; }
+
+    /// <summary>
+    /// Which ISO locations could not be searched when others were, so the ISOs listed
+    /// are incomplete, or null when all were searched. Set instead of
+    /// <see cref="IsoError"/> when at least one search worked.
+    /// </summary>
+    public string IsoWarning { get; set; }
 }
 
 /// <summary>A datacenter. Its parent is the folder it is in, for its inventory path.</summary>
@@ -422,7 +429,8 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
     /// is searched and IsoError says what to set: a recursive search of every
     /// datastore is slow on a large vCenter and lists the ISOs inside VM folders
     /// too. Every search is a vCenter task, so a location that fails or times out
-    /// is reported in IsoError and the rest are still listed.
+    /// is reported in IsoWarning and the rest are still listed. Only when no
+    /// location could be searched at all is it an IsoError.
     /// </summary>
     private async Task SearchIsosAsync(
         VimPortTypeClient client, ManagedObjectReference collector, VimInventory inventory, List<ObjectContent> objects,
@@ -449,6 +457,7 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
 
         var (targets, unknown) = IsoTargets(isoLocations, browsers.Keys);
         var failed = new List<string>();
+        var searched = 0;
 
         if (unknown.Length > 0)
         {
@@ -482,6 +491,8 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
                     continue;
                 }
 
+                searched++;
+
                 foreach (var result in (info.result as HostDatastoreBrowserSearchResults[]) ?? [])
                 {
                     foreach (var file in result.file ?? [])
@@ -497,8 +508,23 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
             }
         }
 
-        if (failed.Count > 0)
-            inventory.IsoError = $"Some ISO locations could not be searched: {string.Join("; ", failed)}.";
+        SetIsoOutcome(inventory, searched, failed);
+    }
+
+    /// <summary>
+    /// Reports locations that could not be searched. When some were searched, the ISOs
+    /// found are still listed and the failures are a warning. When none was, there is
+    /// nothing to list, so it is an error.
+    /// </summary>
+    public static void SetIsoOutcome(VimInventory inventory, int searched, IReadOnlyCollection<string> failed)
+    {
+        if (failed.Count == 0)
+            return;
+
+        if (searched == 0)
+            inventory.IsoError = $"No ISO location could be searched: {string.Join("; ", failed)}.";
+        else
+            inventory.IsoWarning = $"Some ISO locations could not be searched, so ISOs in them are missing from this list: {string.Join("; ", failed)}.";
     }
 
     /// <summary>

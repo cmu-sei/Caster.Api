@@ -293,6 +293,48 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
+        public async Task GetInventoryAsync_ASearchThatFoundNothingAtAllMakesIsosUnavailable()
+        {
+            // Every location failed: an empty list would look like a datastore with no ISOs.
+            var vim = Vim();
+            vim.Isos.Clear();
+            vim.IsoError = "No ISO location could be searched: [a] x: timed out; [b] y: folder not found.";
+
+            var snapshot = await Read(DefaultResponder(), vim: vim);
+
+            Assert.False(snapshot.Isos.Available);
+            Assert.Empty(snapshot.Isos.Entries);
+            Assert.Null(snapshot.Isos.Warning);
+            Assert.Equal(vim.IsoError, snapshot.Isos.Error);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_APartialIsoSearchKeepsTheIsosFoundAndWarns()
+        {
+            var vim = Vim();
+            vim.IsoWarning = "Some ISO locations could not be searched, so ISOs in them are missing from this list: [gone] stock: folder not found.";
+
+            var snapshot = await Read(DefaultResponder(), vim: vim);
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.False(snapshot.Isos.Stale);
+            Assert.Null(snapshot.Isos.Error);
+            Assert.Equal(vim.IsoWarning, snapshot.Isos.Warning);
+            Assert.Contains(snapshot.Isos.Entries, x => x.Name == "iso/alpine.iso");
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.Null(snapshot.VmTemplates.Warning);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ACompleteIsoSearchHasNoWarning()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.Null(snapshot.Isos.Warning);
+        }
+
+        [Fact]
         public async Task GetInventoryAsync_ASoapFailureStillReadsContentLibraries()
         {
             var source = Substitute.For<IVimInventorySource>();
