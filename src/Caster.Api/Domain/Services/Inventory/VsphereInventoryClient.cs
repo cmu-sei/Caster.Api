@@ -507,6 +507,7 @@ public class VsphereInventoryClient(
     {
         var client = httpClientFactory.CreateClient(InventoryHttpClients.For(HttpClientName, options));
         client.BaseAddress = new Uri(options.Url.TrimEnd('/') + "/", UriKind.Absolute);
+        client.Timeout = InventoryHttpClients.Timeout(options);
         return client;
     }
 

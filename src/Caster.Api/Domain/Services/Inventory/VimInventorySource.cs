@@ -142,7 +142,14 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
         }
     }
 
-    private static VimPortTypeClient CreateClient(InfrastructureConnectionOptions options)
+    /// <summary>
+    /// The vim25 client for a connection. Each call may take up to the connection's
+    /// <see cref="InfrastructureConnectionOptions.TimeoutSeconds"/>: WCF's per-operation
+    /// timeout is the binding's SendTimeout, and ReceiveTimeout is set to match. Open and
+    /// close stay at WCF's defaults: the binding is connectionless, so they are not
+    /// waiting on vCenter's answers.
+    /// </summary>
+    public static VimPortTypeClient CreateClient(InfrastructureConnectionOptions options)
     {
         var client = new VimPortTypeClient(VimPortTypeClient.EndpointConfiguration.VimPort, $"{options.Url.TrimEnd('/')}/sdk");
 
@@ -154,6 +161,10 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
             binding.ReaderQuotas.MaxArrayLength = int.MaxValue;
             // The session lives in a cookie.
             binding.AllowCookies = true;
+
+            var timeout = InventoryHttpClients.Timeout(options);
+            binding.SendTimeout = timeout;
+            binding.ReceiveTimeout = timeout;
         }
 
         if (options.InsecureSkipVerify)

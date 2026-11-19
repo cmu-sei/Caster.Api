@@ -16,6 +16,7 @@ Each hypervisor is a connection under `Infrastructure:Connections`, read and cac
       "Username": "caster@vsphere.local",
       "Password": "...",
       "InsecureSkipVerify": false,
+      "TimeoutSeconds": 60,
       "IsoLocations": [ "[iso-datastore] stock" ],
       "Datacenters": [ "DC1" ],
       "Inventory": {
@@ -36,6 +37,7 @@ As environment variables, the same settings are `Infrastructure__Connections__0_
 
 - **Name** is required and unique, ignoring case. Clients pick a connection with `?connection=<Name>`, and a request that names none uses the first connection with inventory enabled. Other settings refer to a connection by its Name, so renaming one breaks those references, which then show as missing.
 - **Url, Username, Password, ApiToken.** Each connection holds one credential, which the inventory reads with. For Proxmox, `ApiToken` (`user@realm!tokenid=secret`, exactly as Proxmox prints it) is preferred over `Username` and `Password`. The credential needs to see what should be listed; for vSphere the ISO list also needs Datastore > Browse datastore.
+- **TimeoutSeconds** (default 60, from 1 to 600) is how long one request to the provider may take: each vSphere SOAP and content-library REST call, and each Proxmox api call. It is per request, not per refresh. Raise it when a busy provider is slow enough that reads fail with "timed out ... after 00:01:00". As an environment variable it is `Infrastructure__Connections__0__TimeoutSeconds`. Waiting for a vSphere ISO search to finish is separate and fixed at 2 minutes.
 - **IsoLocations** says where the connection's ISOs live. For vSphere it's datastore names (`iso-datastore`) or folders (`[iso-datastore] stock`), and it's required: with none, no ISOs are listed. For Proxmox it's storage names (`iso-stock`) or the start of a volid (`local:iso/stock-`), and with none every ISO storage is read.
 - **Datacenters** (vSphere only) limits the read to the named datacenters. Empty reads all of them. Content libraries belong to the whole vCenter, so `Datacenters` doesn't filter them.
 
