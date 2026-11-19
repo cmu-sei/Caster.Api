@@ -75,6 +75,12 @@ public static class InventoryFilters
         var problems = new List<string>();
         var vsphere = IsVsphere(options);
 
+        if (options.TimeoutSeconds is < 1 or > InfrastructureConnectionOptions.MaxTimeoutSeconds)
+        {
+            problems.Add($"Infrastructure:TimeoutSeconds must be a whole number of seconds from 1 to " +
+                $"{InfrastructureConnectionOptions.MaxTimeoutSeconds}, but is {options.TimeoutSeconds}.");
+        }
+
         if (!vsphere && (options.Datacenters ?? []).Any(x => !string.IsNullOrWhiteSpace(x)))
             problems.Add("Infrastructure:Datacenters is only for vsphere connections.");
 

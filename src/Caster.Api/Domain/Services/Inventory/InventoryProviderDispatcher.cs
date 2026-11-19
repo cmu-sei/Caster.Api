@@ -47,6 +47,21 @@ public static class InventoryHttpClients
     /// </summary>
     public static string For(string httpClientName, InfrastructureConnectionOptions options) =>
         options?.InsecureSkipVerify == true ? httpClientName + InsecureSuffix : httpClientName;
+
+    /// <summary>
+    /// How long one request for <paramref name="options"/> may take: the connection's
+    /// <see cref="InfrastructureConnectionOptions.TimeoutSeconds"/>, or the default when
+    /// it is not a usable value (validation rejects those, so this only guards a caller
+    /// that skipped it).
+    /// </summary>
+    public static TimeSpan Timeout(InfrastructureConnectionOptions options)
+    {
+        var seconds = options?.TimeoutSeconds ?? 0;
+
+        return TimeSpan.FromSeconds(seconds is >= 1 and <= InfrastructureConnectionOptions.MaxTimeoutSeconds
+            ? seconds
+            : InfrastructureConnectionOptions.DefaultTimeoutSeconds);
+    }
 }
 
 /// <summary>

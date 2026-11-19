@@ -76,6 +76,25 @@ public class InfrastructureConnectionOptions
     public bool InsecureSkipVerify { get; set; }
 
     /// <summary>
+    /// How long, in seconds, one request to the provider may take before it is given up
+    /// on: a vSphere vim25 call or content-library REST call, or a Proxmox api call. A
+    /// whole number from 1 to <see cref="MaxTimeoutSeconds"/>. The default is the
+    /// 1 minute the readers always used; raise it for a busy provider that needs longer
+    /// to answer a large read. It is per request, not per refresh, so a refresh makes
+    /// many of them. Waiting for a vSphere ISO search task to finish is a separate,
+    /// fixed 2 minutes.
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = DefaultTimeoutSeconds;
+
+    public const int DefaultTimeoutSeconds = 60;
+
+    /// <summary>
+    /// 10 minutes. A request that takes longer is not slow, it is stuck, and the read
+    /// would hold the connection's refresh loop for that long on every attempt.
+    /// </summary>
+    public const int MaxTimeoutSeconds = 600;
+
+    /// <summary>
     /// Where this connection's ISOs live. The inventory lists only these, so it offers
     /// the stock ISOs rather than everything uploaded alongside them.
     /// <para>

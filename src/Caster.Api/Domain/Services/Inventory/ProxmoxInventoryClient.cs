@@ -94,6 +94,7 @@ public class ProxmoxInventoryClient(
 
         using var client = httpClientFactory.CreateClient(InventoryHttpClients.For(HttpClientName, options));
         client.BaseAddress = baseAddress;
+        client.Timeout = InventoryHttpClients.Timeout(options);
 
         ProxmoxCredential credential;
 
