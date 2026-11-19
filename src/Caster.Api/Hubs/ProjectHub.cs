@@ -41,9 +41,17 @@ public class ProjectHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception exception)
     {
-        foreach (var departure in _presence.LeaveAll(Context.ConnectionId))
+        foreach (var projectId in _presence.ProjectsOf(Context.ConnectionId))
         {
-            await Clients.Group(departure.ProjectId.ToString()).SendAsync(ProjectHubMethods.PresenceDeparted, departure.User);
+            using (await _presence.LockProjectAsync(projectId))
+            {
+                var departed = _presence.Leave(projectId, Context.ConnectionId);
+
+                if (departed != null)
+                {
+                    await Clients.Group(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceDeparted, departed);
+                }
+            }
         }
 
         await base.OnDisconnectedAsync(exception);
@@ -63,23 +71,39 @@ public class ProjectHub : Hub
 
         var user = await GetPresentUser();
 
-        if (_presence.Join(projectId, Context.ConnectionId, user))
+        using (await _presence.LockProjectAsync(projectId))
         {
-            await Clients.OthersInGroup(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceArrived, user);
-        }
+            var arrived = _presence.Join(projectId, Context.ConnectionId, user);
 
-        return [.. _presence.GetUsers(projectId).Where(x => x.Id != user.Id)];
+            // The connection can have closed while this was waiting. Its disconnect has then already
+            // looked for what it had open and found nothing, so this must not leave it registered.
+            if (Context.ConnectionAborted.IsCancellationRequested)
+            {
+                _presence.Leave(projectId, Context.ConnectionId);
+                return [];
+            }
+
+            if (arrived)
+            {
+                await Clients.OthersInGroup(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceArrived, user);
+            }
+
+            return [.. _presence.GetUsers(projectId).Where(x => x.Id != user.Id)];
+        }
     }
 
     public async Task LeaveProject(Guid projectId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, projectId.ToString());
 
-        var departed = _presence.Leave(projectId, Context.ConnectionId);
-
-        if (departed != null)
+        using (await _presence.LockProjectAsync(projectId))
         {
-            await Clients.Group(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceDeparted, departed);
+            var departed = _presence.Leave(projectId, Context.ConnectionId);
+
+            if (departed != null)
+            {
+                await Clients.Group(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceDeparted, departed);
+            }
         }
     }
 

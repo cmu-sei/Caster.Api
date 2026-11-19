@@ -3,7 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Caster.Api.Hubs;
 
@@ -42,11 +45,22 @@ public interface IProjectPresenceTracker
 
     /// <summary>The users with <paramref name="projectId"/> open, each once, ordered by name.</summary>
     IReadOnlyList<PresentUser> GetUsers(Guid projectId);
+
+    /// <summary>The projects <paramref name="connectionId"/> has open.</summary>
+    IReadOnlyList<Guid> ProjectsOf(string connectionId);
+
+    /// <summary>
+    /// Holds <paramref name="projectId"/>'s presence until the result is disposed, so that a change and the
+    /// notification of it are made together. Without it, the arrival of a user who has just left and come
+    /// back can overtake the departure, and the others are left without them.
+    /// </summary>
+    Task<IDisposable> LockProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
 }
 
 public class ProjectPresenceTracker : IProjectPresenceTracker
 {
     private readonly object _lock = new();
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _projectLocks = new();
 
     // projectId -> connectionId -> user
     private readonly Dictionary<Guid, Dictionary<string, PresentUser>> _projects = [];
@@ -110,6 +124,29 @@ public class ProjectPresenceTracker : IProjectPresenceTracker
                 .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(x => x.Id)];
         }
+    }
+
+    public IReadOnlyList<Guid> ProjectsOf(string connectionId)
+    {
+        lock (_lock)
+        {
+            return [.. _projects.Where(x => x.Value.ContainsKey(connectionId)).Select(x => x.Key)];
+        }
+    }
+
+    public async Task<IDisposable> LockProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var gate = _projectLocks.GetOrAdd(projectId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+
+        return new Releaser(gate);
+    }
+
+    private sealed class Releaser(SemaphoreSlim gate) : IDisposable
+    {
+        private SemaphoreSlim _gate = gate;
+
+        public void Dispose() => Interlocked.Exchange(ref _gate, null)?.Release();
     }
 
     private PresentUser LeaveLocked(Guid projectId, string connectionId)

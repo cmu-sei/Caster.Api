@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
+using System.Threading;
 using System.Threading.Tasks;
 using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
@@ -185,6 +186,77 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
         await alice.Hub.OnDisconnectedAsync(null);
 
         alice.Harness.NothingAddressed();
+    }
+
+    /// <summary>
+    /// Verifies: a join that was still waiting when the connection closed leaves no one registered, so the
+    /// others never see a user who is gone.
+    /// Interacts with: HubHarness (Groups.AddToGroupAsync aborts the connection as the join waits on it), ProjectPresenceTracker.
+    /// Data: Alice's connection aborts after the join is authorized and before it registers; Bob then joins.
+    /// </summary>
+    [Fact]
+    public async Task JoinProject_on_a_connection_that_closed_meanwhile_leaves_no_one_present()
+    {
+        var project = await SeedProject();
+        var alice = Connect(Member(project, "Alice"));
+        var bob = Connect(Member(project, "Bob"));
+        using var aborted = new CancellationTokenSource();
+        alice.Harness.Context.ConnectionAborted.Returns(aborted.Token);
+        alice.Harness.Groups
+            .AddToGroupAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                aborted.Cancel();
+                return Task.CompletedTask;
+            });
+
+        var answer = await alice.Hub.JoinProject(project.Id);
+        var present = await bob.Hub.JoinProject(project.Id);
+
+        Assert.Empty(answer);
+        Assert.Empty(present);
+        HubHarness.NothingSent(alice.Others(project.Id), ProjectHubMethods.PresenceArrived);
+    }
+
+    /// <summary>
+    /// Verifies: a user's departure is announced before their next arrival, however slowly it is sent.
+    /// Interacts with: ProjectPresenceTracker.LockProjectAsync.
+    /// Data: Alice's only tab leaves and its departure broadcast is held up; her second tab joins meanwhile.
+    /// </summary>
+    [Fact]
+    public async Task A_departure_is_announced_before_the_same_users_next_arrival()
+    {
+        var project = await SeedProject();
+        var alice = Member(project, "Alice");
+        var firstTab = Connect(alice, "alice-tab-1");
+        var secondTab = Connect(alice, "alice-tab-2");
+        await firstTab.Hub.JoinProject(project.Id);
+
+        var sent = new List<string>();
+        var release = new TaskCompletionSource();
+        firstTab.Harness.Group(project.Id.ToString())
+            .SendCoreAsync(ProjectHubMethods.PresenceDeparted, Arg.Any<object[]>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                await release.Task;
+                lock (sent) sent.Add("departed");
+            });
+        secondTab.OthersByGroup[project.Id.ToString()] = Substitute.For<IClientProxy>();
+        secondTab.OthersByGroup[project.Id.ToString()]
+            .SendCoreAsync(ProjectHubMethods.PresenceArrived, Arg.Any<object[]>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                lock (sent) sent.Add("arrived");
+                return Task.CompletedTask;
+            });
+
+        var leaving = firstTab.Hub.LeaveProject(project.Id);
+        var joining = secondTab.Hub.JoinProject(project.Id);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+        release.SetResult();
+        await Task.WhenAll(leaving, joining);
+
+        Assert.Equal(["departed", "arrived"], sent);
     }
 
     // ---- helpers --------------------------------------------------------------------------------
