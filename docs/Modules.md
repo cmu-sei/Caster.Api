@@ -56,6 +56,9 @@ Terraform__ModuleSources__0__Layout=Subdirectories
   * `Root` (default): the repository root is one Module.
   * `Subdirectories`: every immediate subdirectory is a Module, addressed as `git::<Url>//<subdir>?ref=<tag>`. Deeper directories are not searched, and directories starting with `.` are skipped.
 
+* **Shared**
+  `false` (default). `true` makes every project able to use this source's Modules whatever its Module Scopes; see [Module Scopes](#module-scopes).
+
 * **ModuleSourceTimeoutSeconds**
   Seconds any single git command against a module source may run before it is killed. Default `120`; `0` or less disables the timeout.
 
@@ -92,17 +95,51 @@ The helper only answers `get`, so git never tries to save credentials back, and 
 
 ## Module Scopes
 
-By default every project can use every Module. A **Module Scope** limits that: it is a named list of module sources, or folders of a source, that admins assign to projects and [project groups](ProjectGroups.md). Scopes live in the database, not in API settings, and are never part of a project export or import.
+By default every project can use every Module. A **Module Scope** limits that: it is a named list of module sources that admins assign to projects and [project groups](ProjectGroups.md). Scopes live in the database, not in API settings, and are never part of a project export or import.
 
-Each entry of a scope is a Module Path: a source's name (`cmu`) or a folder of one (`cmu/exercise-x`). An entry allows the Modules at exactly that Path and those below it, so `cmu` allows `cmu` and `cmu/exercise-x` but not `cmu2`. Paths are matched exactly, including case, as the Modules page shows them. Folders only exist for sources whose layout makes one Module per folder (see the source `Layout`), and only as deep as they are discovered.
+### One source per vendor, plus a stock source
 
-* A project with no scope, directly or through its project group, can use every Module, so existing projects are unchanged.
-* A project's effective list is the union of the scopes assigned to the project and to its group.
-* The Designer, the file editor's module insert and every Module lookup the API serves for a project only offer the Modules on its effective list. This is enforced by the API: `GET api/modules?projectId=` lists a project's Modules, and without `projectId` a member gets what their own projects together allow. Adding a Module outside the list to a Design (or switching a Design's Module to one) is refused.
-* A Design that already uses a Module outside the list keeps working: the Module can still be looked up by that project, and plans and applies are unaffected. The Designer marks it as outside the project's Module Scopes.
-* The Modules admin page (`ViewModules`, no project) always shows every Module.
-* The snippet the file editor inserts (`POST api/modules/snippet`) is scoped the same way. With `projectId` it needs `ViewProject` on that project (or `ViewProjects`) instead of `ViewModules`, so a project author does not need `ViewModules`, which would show every Module. A Module outside the project's list answers `404`, as for a missing version, and a Design that already uses it does not open it for a new snippet. A holder of `ViewModules` who names a project is held to its list too. Without `projectId` the endpoint is unchanged: `ViewModules`, any Module.
+The intended layout is one repository per content vendor, each configured as its own module source, plus one **shared** repository of stock modules anybody can use. A project may then use its own vendor's source (or sources) and the stock source, and nothing else.
 
-Scopes are created, changed and deleted with `ManageModules` and read with `ViewModules` or `ManageModules`. Assigning a scope to a project or group uses `POST api/assignments` (`moduleScopeId`) and also needs `ManageModules`, so a project's own admins cannot widen the list. A project's members read what applies to them with `GET api/projects/{id}/module-scopes`.
+```json
+"Terraform": {
+  "ModuleSources": [
+    { "Name": "cmu",   "Url": "https://git.example.com/cmu/terraform-modules.git",   "Layout": "Subdirectories" },
+    { "Name": "sei",   "Url": "https://git.example.com/sei/terraform-modules.git",   "Layout": "Subdirectories" },
+    { "Name": "stock", "Url": "https://git.example.com/stock/terraform-modules.git", "Layout": "Subdirectories", "Shared": true }
+  ],
+  "ModuleScopes": { "RestrictUnassigned": true }
+}
+```
 
-Deleting a scope, or deleting a project group or moving a project out of it, can leave a project with no scope, which can then use every Module again.
+Create a scope `cmu` listing the path `cmu` and assign it to the cmu projects (or to a project group holding them), and a scope `sei` listing `sei` the same way. A cmu project then sees the Modules of `cmu` and `stock`, an sei project those of `sei` and `stock`, and a project with no scope only `stock`.
+
+### Settings
+
+* `Terraform:ModuleSources:<n>:Shared` (default `false`; environment variable `Terraform__ModuleSources__<n>__Shared`). A shared source is available to every project whatever its scopes, and cannot be restricted: a scope that does not list it still gets it, and nothing removes it. The Modules administration page reports each source's `shared` value (`GET api/modules/sources`). Source names are compared case insensitively, as elsewhere. The legacy Gitlab group cannot be shared.
+* `Terraform:ModuleScopes:RestrictUnassigned` (default `false`; environment variable `Terraform__ModuleScopes__RestrictUnassigned`). With the default, a project with no scope, directly or through its project group, can use every Module, so existing deployments are unchanged. When `true`, such a project can use only the shared sources. Turn it on once the vendor projects are scoped. It is named for the case it governs (projects that have nothing assigned) and sits under `ModuleScopes` with the rest of this feature, next to the per-source `Shared` flag.
+
+A project's effective access is every shared source plus the paths of the scopes assigned to the project and to its group:
+
+| Scope assigned (project or group) | `RestrictUnassigned` | A project can use |
+| --- | --- | --- |
+| none | `false` | every Module |
+| none | `true` | the shared sources only |
+| yes | either | the shared sources and the scope paths (all scopes united) |
+
+The Modules admin page (`ViewModules`, no project) always shows every Module. Without `projectId`, a member's access is the union of their projects' access: every Module if any of their projects can use every Module, else the united paths and the shared sources.
+
+### Paths
+
+Each entry of a scope is a Module Path: a source's name (`cmu`) or, as before, a folder of one (`cmu/exercise-x`). An entry allows the Modules at exactly that Path and those below it, so `cmu` allows `cmu` and `cmu/exercise-x` but not `cmu2`. Paths are matched exactly, including case, as the Modules page shows them. Folders only exist for sources whose layout makes one Module per folder (see the source `Layout`), and only as deep as they are discovered. Scoping by source is the intended use; folder paths still work.
+
+### What is enforced
+
+* The Designer, the file editor's module insert and every Module lookup the API serves for a project only offer the Modules the project may use. This is enforced by the API: `GET api/modules?projectId=` lists a project's Modules, and without `projectId` a member gets what their own projects together allow. Adding a Module outside the project's access to a Design (or switching a Design's Module to one) is refused.
+* A Design that already uses a Module outside the project's access keeps working: the Module can still be looked up by that project, and plans and applies are unaffected. The Designer marks it as outside the project's Module Scopes.
+* The snippet the file editor inserts (`POST api/modules/snippet`) is scoped the same way. With `projectId` it needs `ViewProject` on that project (or `ViewProjects`) instead of `ViewModules`, so a project author does not need `ViewModules`, which would show every Module. A Module outside the project's access answers `404`, as for a missing version, and a Design that already uses it does not open it for a new snippet. A holder of `ViewModules` who names a project is held to its access too. Without `projectId` the endpoint is unchanged: `ViewModules`, any Module.
+
+Scopes are created, changed and deleted with `ManageModules` and read with `ViewModules` or `ManageModules`. Assigning a scope to a project or group uses `POST api/assignments` (`moduleScopeId`) and also needs `ManageModules`, so a project's own admins cannot widen the list. A project's members read what applies to them with `GET api/projects/{id}/module-scopes`: `restricted`, `restrictedBecauseUnassigned` (restricted only because nothing is assigned and `RestrictUnassigned` is on), the united `paths`, the `sharedSources`, each path with the scopes and groups it comes from (`pathOrigins`), and the `scopes` themselves.
+
+Deleting a scope, or deleting a project group or moving a project out of it, can leave a project with no scope, which can then use every Module again (or only the shared sources, with `RestrictUnassigned`).
+
