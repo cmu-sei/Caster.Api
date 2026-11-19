@@ -34,6 +34,7 @@ namespace Caster.Api.Features.Modules
                         Name = x.Source.Name,
                         Description = x.Source.Description,
                         Provider = x.Source.Provider,
+                        Shared = x.Source.Shared,
                         LastAttempt = x.Status?.LastAttempt,
                         LastSuccess = x.Status?.LastSuccess,
                         Error = x.Status?.Error,

@@ -18,6 +18,9 @@ namespace Caster.Api.Features.Modules
         /// <summary>The kind of repository: git or gitlab.</summary>
         public string Provider { get; set; }
 
+        /// <summary>Whether every project may use this source's Modules whatever its Module Scopes (the source's Shared setting).</summary>
+        public bool Shared { get; set; }
+
         /// <summary>When this API instance last tried to sync the source, or null if it has not yet.</summary>
         public DateTime? LastAttempt { get; set; }
 
