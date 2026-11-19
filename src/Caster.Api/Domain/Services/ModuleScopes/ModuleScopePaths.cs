@@ -13,8 +13,8 @@ namespace Caster.Api.Domain.Services.ModuleScopes;
 /// <summary>
 /// The paths of a Module Scope. A Module's Path is <c>&lt;source&gt;</c> or
 /// <c>&lt;source&gt;/&lt;folder&gt;</c> (see the module sources), and an entry allows the Modules at
-/// exactly that Path and those below it: <c>afp</c> allows <c>afp</c> and <c>afp/exercise-x</c>, not
-/// <c>afp2</c>. Matching is exact in case, as the Paths are stored.
+/// exactly that Path and those below it: <c>cmu</c> allows <c>cmu</c> and <c>cmu/exercise-x</c>, not
+/// <c>cmu2</c>. Matching is exact in case, as the Paths are stored.
 /// </summary>
 public static class ModuleScopePaths
 {

@@ -19,11 +19,11 @@ public static class ModuleScopeFields
     public static IRuleBuilderOptions<T, List<string>> ValidPaths<T>(this IRuleBuilder<T, List<string>> rule) =>
         rule
             .NotEmpty()
-            .WithMessage("A Module Scope needs at least one path: a module source's name, or a folder of one such as afp/exercise-x.")
+            .WithMessage("A Module Scope needs at least one path: a module source's name, or a folder of one such as cmu/exercise-x.")
             .Must(x => x == null || x.Count <= ModuleScopePaths.MaximumPaths)
             .WithMessage($"A Module Scope has at most {ModuleScopePaths.MaximumPaths} paths.")
             .Must(x => x == null || x.All(p => ModuleScopePaths.Normalize(p) is not null))
-            .WithMessage("Each path is a module source's name, or a folder of one such as afp/exercise-x: letters, numbers, spaces, '.', '_' and '-' between slashes, with no wildcards or empty parts.");
+            .WithMessage("Each path is a module source's name, or a folder of one such as cmu/exercise-x: letters, numbers, spaces, '.', '_' and '-' between slashes, with no wildcards or empty parts.");
 
     /// <summary>The paths trimmed, without repeats.</summary>
     public static List<string> Clean(IEnumerable<string> paths) =>

@@ -32,7 +32,7 @@ public class Edit
         [DataMember]
         public string Description { get; set; }
 
-        /// <summary>Module sources, or folders of them: <c>afp</c> or <c>afp/exercise-x</c>. At least one.</summary>
+        /// <summary>Module sources, or folders of them: <c>cmu</c> or <c>cmu/exercise-x</c>. At least one.</summary>
         [DataMember]
         public List<string> Paths { get; set; } = [];
     }

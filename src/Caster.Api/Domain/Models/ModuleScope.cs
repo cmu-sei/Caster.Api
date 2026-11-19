@@ -27,8 +27,8 @@ public class ModuleScope : IEntity
     public string Description { get; set; }
 
     /// <summary>
-    /// What the scope allows: a module source's name (<c>afp</c>) or a folder of one
-    /// (<c>afp/exercise-x</c>). Each allows the Modules at exactly that Path and those below it.
+    /// What the scope allows: a module source's name (<c>cmu</c>) or a folder of one
+    /// (<c>cmu/exercise-x</c>). Each allows the Modules at exactly that Path and those below it.
     /// Stored normalized (see <c>ModuleScopePaths</c>), never empty.
     /// </summary>
     public List<string> Paths { get; set; } = new List<string>();

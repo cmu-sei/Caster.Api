@@ -94,7 +94,7 @@ The helper only answers `get`, so git never tries to save credentials back, and 
 
 By default every project can use every Module. A **Module Scope** limits that: it is a named list of module sources, or folders of a source, that admins assign to projects and [project groups](ProjectGroups.md). Scopes live in the database, not in API settings, and are never part of a project export or import.
 
-Each entry of a scope is a Module Path: a source's name (`afp`) or a folder of one (`afp/exercise-x`). An entry allows the Modules at exactly that Path and those below it, so `afp` allows `afp` and `afp/exercise-x` but not `afp2`. Paths are matched exactly, including case, as the Modules page shows them. Folders only exist for sources whose layout makes one Module per folder (see the source `Layout`), and only as deep as they are discovered.
+Each entry of a scope is a Module Path: a source's name (`cmu`) or a folder of one (`cmu/exercise-x`). An entry allows the Modules at exactly that Path and those below it, so `cmu` allows `cmu` and `cmu/exercise-x` but not `cmu2`. Paths are matched exactly, including case, as the Modules page shows them. Folders only exist for sources whose layout makes one Module per folder (see the source `Layout`), and only as deep as they are discovered.
 
 * A project with no scope, directly or through its project group, can use every Module, so existing projects are unchanged.
 * A project's effective list is the union of the scopes assigned to the project and to its group.

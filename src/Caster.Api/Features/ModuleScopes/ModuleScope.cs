@@ -12,7 +12,7 @@ public class ModuleScope
     public string Name { get; set; }
     public string Description { get; set; }
 
-    /// <summary>The module sources and source folders it allows, as Paths: <c>afp</c> or <c>afp/exercise-x</c>.</summary>
+    /// <summary>The module sources and source folders it allows, as Paths: <c>cmu</c> or <c>cmu/exercise-x</c>.</summary>
     public string[] Paths { get; set; } = [];
 
     /// <summary>The projects it is assigned to directly.</summary>

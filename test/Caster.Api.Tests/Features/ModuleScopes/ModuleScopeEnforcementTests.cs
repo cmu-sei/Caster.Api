@@ -22,9 +22,9 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
 {
     private static readonly object[] NoValues = [];
 
-    private record Catalog(Module AfpX, Module AfpXDeep, Module AfpXy, Module AfpY, Module Navy);
+    private record Catalog(Module CmuX, Module CmuXDeep, Module CmuXy, Module CmuY, Module Sei);
 
-    /// <summary>Modules at afp/x, afp/x/deep, afp/xy, afp/y and navy/c, each with a version 1.0.0.</summary>
+    /// <summary>Modules at cmu/x, cmu/x/deep, cmu/xy, cmu/y and sei/c, each with a version 1.0.0.</summary>
     private async Task<Catalog> SeedCatalog()
     {
         Module Make(string name, string path)
@@ -34,8 +34,8 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
             return module;
         }
 
-        var catalog = new Catalog(Make("x", "afp/x"), Make("deep", "afp/x/deep"), Make("xy", "afp/xy"), Make("y", "afp/y"), Make("c", "navy/c"));
-        Module[] all = [catalog.AfpX, catalog.AfpXDeep, catalog.AfpXy, catalog.AfpY, catalog.Navy];
+        var catalog = new Catalog(Make("x", "cmu/x"), Make("deep", "cmu/x/deep"), Make("xy", "cmu/xy"), Make("y", "cmu/y"), Make("c", "sei/c"));
+        Module[] all = [catalog.CmuX, catalog.CmuXDeep, catalog.CmuXy, catalog.CmuY, catalog.Sei];
         await Seed(all.Cast<object>().Concat(all.Select(x => (object)TestData.ModuleVersion(x))).ToArray());
 
         return catalog;
@@ -79,7 +79,7 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
         await Seed(project);
         var member = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
-        Assert.Equal(Ids(catalog.AfpX, catalog.AfpXDeep, catalog.AfpXy, catalog.AfpY, catalog.Navy), await ListIds(member, $"?projectId={project.Id}"));
+        Assert.Equal(Ids(catalog.CmuX, catalog.CmuXDeep, catalog.CmuXy, catalog.CmuY, catalog.Sei), await ListIds(member, $"?projectId={project.Id}"));
         Assert.Equal(5, (await ListIds(member)).Length);
     }
 
@@ -87,11 +87,11 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task GetAll_for_a_project_lists_only_the_modules_at_or_below_its_paths()
     {
         var catalog = await SeedCatalog();
-        var project = await SeedProjectScopedTo("afp/x");
+        var project = await SeedProjectScopedTo("cmu/x");
         var member = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
-        // afp/xy and afp/y are not below afp/x
-        Assert.Equal(Ids(catalog.AfpX, catalog.AfpXDeep), await ListIds(member, $"?projectId={project.Id}"));
+        // cmu/xy and cmu/y are not below cmu/x
+        Assert.Equal(Ids(catalog.CmuX, catalog.CmuXDeep), await ListIds(member, $"?projectId={project.Id}"));
     }
 
     [Fact]
@@ -101,12 +101,12 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
         var group = new ProjectGroup { Id = Guid.NewGuid(), Name = "group" };
         var project = TestData.Project();
         project.ProjectGroupId = group.Id;
-        var own = TestData.ModuleScope("Own", "navy");
-        var shared = TestData.ModuleScope("Shared", "afp/y");
+        var own = TestData.ModuleScope("Own", "sei");
+        var shared = TestData.ModuleScope("Shared", "cmu/y");
         await Seed(group, project, own, shared, TestData.ProjectModuleScope(project, own), TestData.ProjectGroupModuleScope(group, shared));
         var member = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
-        Assert.Equal(Ids(catalog.AfpY, catalog.Navy), await ListIds(member, $"?projectId={project.Id}"));
+        Assert.Equal(Ids(catalog.CmuY, catalog.Sei), await ListIds(member, $"?projectId={project.Id}"));
     }
 
     /// <summary>A client that leaves the project out still gets only what its projects allow.</summary>
@@ -114,22 +114,22 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task GetAll_without_a_project_limits_a_member_to_what_their_projects_allow()
     {
         var catalog = await SeedCatalog();
-        var afp = await SeedProjectScopedTo("afp/y");
-        var navy = await SeedProjectScopedTo("navy");
+        var cmu = await SeedProjectScopedTo("cmu/y");
+        var sei = await SeedProjectScopedTo("sei");
         var member = await Actor()
-            .OnProject(afp, [ProjectPermission.ViewProject])
-            .OnProject(navy, [ProjectPermission.ViewProject])
+            .OnProject(cmu, [ProjectPermission.ViewProject])
+            .OnProject(sei, [ProjectPermission.ViewProject])
             .SeedAsync();
 
-        Assert.Equal(Ids(catalog.AfpY, catalog.Navy), await ListIds(member));
-        Assert.Equal(Ids(catalog.AfpY), await ListIds(member, $"?projectId={afp.Id}"));
+        Assert.Equal(Ids(catalog.CmuY, catalog.Sei), await ListIds(member));
+        Assert.Equal(Ids(catalog.CmuY), await ListIds(member, $"?projectId={cmu.Id}"));
     }
 
     [Fact]
     public async Task GetAll_without_a_project_gives_every_module_to_a_member_of_an_unrestricted_project()
     {
         await SeedCatalog();
-        var restricted = await SeedProjectScopedTo("navy");
+        var restricted = await SeedProjectScopedTo("sei");
         var open = TestData.Project();
         await Seed(open);
         var member = await Actor()
@@ -145,7 +145,7 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task GetAll_without_a_project_is_never_limited_for_a_holder_of_ViewModules()
     {
         await SeedCatalog();
-        var project = await SeedProjectScopedTo("navy");
+        var project = await SeedProjectScopedTo("sei");
         var admin = await Actor().WithSystemPermissions(SystemPermission.ViewModules, SystemPermission.ViewProjects).SeedAsync();
 
         Assert.Equal(5, (await ListIds(admin)).Length);
@@ -157,7 +157,7 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task GetAll_for_a_project_needs_ViewProject_on_it_or_ViewProjects()
     {
         await SeedCatalog();
-        var project = await SeedProjectScopedTo("navy");
+        var project = await SeedProjectScopedTo("sei");
         var other = await Actor().OnNewProject(ProjectPermission.ViewProject).SeedAsync();
         var editor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
         var catalogOnly = await Actor().WithSystemPermissions(SystemPermission.ViewModules).SeedAsync();
@@ -171,14 +171,14 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task GetAll_for_a_design_lists_the_modules_it_uses_even_outside_the_projects_scopes()
     {
         var catalog = await SeedCatalog();
-        var project = await SeedProjectScopedTo("navy");
+        var project = await SeedProjectScopedTo("sei");
         var directory = TestData.Directory(project);
         var design = TestData.Design(directory);
-        await Seed(directory, design, TestData.DesignModule(design, catalog.AfpY));
+        await Seed(directory, design, TestData.DesignModule(design, catalog.CmuY));
         var member = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
-        Assert.Equal(Ids(catalog.AfpY), await ListIds(member, $"?designId={design.Id}&projectId={project.Id}"));
-        Assert.Equal(Ids(catalog.Navy), await ListIds(member, $"?projectId={project.Id}"));
+        Assert.Equal(Ids(catalog.CmuY), await ListIds(member, $"?designId={design.Id}&projectId={project.Id}"));
+        Assert.Equal(Ids(catalog.Sei), await ListIds(member, $"?projectId={project.Id}"));
     }
 
     [Fact]
@@ -186,14 +186,14 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     {
         var catalog = await SeedCatalog();
         var project = TestData.Project();
-        var scope = TestData.ModuleScope("Scope", "navy");
+        var scope = TestData.ModuleScope("Scope", "sei");
         await Seed(project, scope, TestData.ProjectModuleScope(project, scope));
         var member = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
         Assert.Single(await ListIds(member, $"?projectId={project.Id}"));
 
-        await AssertStatus(HttpStatusCode.OK, await RootClient.PutAsJsonAsync($"api/module-scopes/{scope.Id}", new { name = "Scope", paths = new[] { "afp" } }, Ct));
+        await AssertStatus(HttpStatusCode.OK, await RootClient.PutAsJsonAsync($"api/module-scopes/{scope.Id}", new { name = "Scope", paths = new[] { "cmu" } }, Ct));
 
-        Assert.Equal(Ids(catalog.AfpX, catalog.AfpXDeep, catalog.AfpXy, catalog.AfpY), await ListIds(member, $"?projectId={project.Id}"));
+        Assert.Equal(Ids(catalog.CmuX, catalog.CmuXDeep, catalog.CmuXy, catalog.CmuY), await ListIds(member, $"?projectId={project.Id}"));
     }
 
     // ---- GET api/modules/{id} and its versions --------------------------------------------------
@@ -202,16 +202,16 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task Get_and_versions_of_a_module_outside_the_scopes_are_not_found_to_a_member()
     {
         var catalog = await SeedCatalog();
-        var project = await SeedProjectScopedTo("navy");
+        var project = await SeedProjectScopedTo("sei");
         var member = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
         // with the project named, and without it: the only project the member has is restricted
         foreach (var query in new[] { $"?projectId={project.Id}", "" })
         {
-            await AssertProblem(HttpStatusCode.NotFound, await Client(member).GetAsync($"api/modules/{catalog.AfpY.Id}{query}", Ct));
-            await AssertProblem(HttpStatusCode.NotFound, await Client(member).GetAsync($"api/modules/{catalog.AfpY.Id}/versions{query}", Ct));
-            Assert.Equal(catalog.Navy.Id, (await ReadAsync<ModuleView>(await Client(member).GetAsync($"api/modules/{catalog.Navy.Id}{query}", Ct))).Id);
-            AssertPassedTheScopeGate(await Client(member).GetAsync($"api/modules/{catalog.Navy.Id}/versions{query}", Ct));
+            await AssertProblem(HttpStatusCode.NotFound, await Client(member).GetAsync($"api/modules/{catalog.CmuY.Id}{query}", Ct));
+            await AssertProblem(HttpStatusCode.NotFound, await Client(member).GetAsync($"api/modules/{catalog.CmuY.Id}/versions{query}", Ct));
+            Assert.Equal(catalog.Sei.Id, (await ReadAsync<ModuleView>(await Client(member).GetAsync($"api/modules/{catalog.Sei.Id}{query}", Ct))).Id);
+            AssertPassedTheScopeGate(await Client(member).GetAsync($"api/modules/{catalog.Sei.Id}/versions{query}", Ct));
         }
     }
 
@@ -219,52 +219,52 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task Get_and_versions_of_a_module_outside_the_scopes_still_work_when_a_design_of_the_project_uses_it()
     {
         var catalog = await SeedCatalog();
-        var project = await SeedProjectScopedTo("navy");
+        var project = await SeedProjectScopedTo("sei");
         var directory = TestData.Directory(project);
         var design = TestData.Design(directory);
-        await Seed(directory, design, TestData.DesignModule(design, catalog.AfpY));
+        await Seed(directory, design, TestData.DesignModule(design, catalog.CmuY));
         var member = await Actor().OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
 
-        await AssertStatus(HttpStatusCode.OK, await Client(member).GetAsync($"api/modules/{catalog.AfpY.Id}?projectId={project.Id}", Ct));
-        AssertPassedTheScopeGate(await Client(member).GetAsync($"api/modules/{catalog.AfpY.Id}/versions?projectId={project.Id}", Ct));
+        await AssertStatus(HttpStatusCode.OK, await Client(member).GetAsync($"api/modules/{catalog.CmuY.Id}?projectId={project.Id}", Ct));
+        AssertPassedTheScopeGate(await Client(member).GetAsync($"api/modules/{catalog.CmuY.Id}/versions?projectId={project.Id}", Ct));
         // but not the other outside modules, and not for a project that doesn't use it
-        await AssertProblem(HttpStatusCode.NotFound, await Client(member).GetAsync($"api/modules/{catalog.AfpX.Id}?projectId={project.Id}", Ct));
+        await AssertProblem(HttpStatusCode.NotFound, await Client(member).GetAsync($"api/modules/{catalog.CmuX.Id}?projectId={project.Id}", Ct));
     }
 
     [Fact]
     public async Task A_module_used_by_another_projects_design_does_not_open_it_for_this_project()
     {
         var catalog = await SeedCatalog();
-        var mine = await SeedProjectScopedTo("navy");
+        var mine = await SeedProjectScopedTo("sei");
         var theirs = TestData.Project();
         var directory = TestData.Directory(theirs);
         var design = TestData.Design(directory);
-        await Seed(theirs, directory, design, TestData.DesignModule(design, catalog.AfpY));
+        await Seed(theirs, directory, design, TestData.DesignModule(design, catalog.CmuY));
         var member = await Actor().OnProject(mine, [ProjectPermission.ViewProject]).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.NotFound, await Client(member).GetAsync($"api/modules/{catalog.AfpY.Id}?projectId={mine.Id}", Ct));
+        await AssertProblem(HttpStatusCode.NotFound, await Client(member).GetAsync($"api/modules/{catalog.CmuY.Id}?projectId={mine.Id}", Ct));
     }
 
     [Fact]
     public async Task Get_and_versions_are_not_limited_for_a_holder_of_ViewModules_who_names_no_project()
     {
         var catalog = await SeedCatalog();
-        await SeedProjectScopedTo("navy");
+        await SeedProjectScopedTo("sei");
         var admin = await Actor().WithSystemPermissions(SystemPermission.ViewModules).SeedAsync();
 
-        await AssertStatus(HttpStatusCode.OK, await Client(admin).GetAsync($"api/modules/{catalog.AfpY.Id}", Ct));
-        AssertPassedTheScopeGate(await Client(admin).GetAsync($"api/modules/{catalog.AfpY.Id}/versions", Ct));
+        await AssertStatus(HttpStatusCode.OK, await Client(admin).GetAsync($"api/modules/{catalog.CmuY.Id}", Ct));
+        AssertPassedTheScopeGate(await Client(admin).GetAsync($"api/modules/{catalog.CmuY.Id}/versions", Ct));
     }
 
     [Fact]
     public async Task Get_for_a_project_needs_ViewProject_on_it()
     {
         var catalog = await SeedCatalog();
-        var project = await SeedProjectScopedTo("navy");
+        var project = await SeedProjectScopedTo("sei");
         var other = await Actor().OnNewProject(ProjectPermission.ViewProject).SeedAsync();
 
-        await AssertProblem(HttpStatusCode.Forbidden, await Client(other).GetAsync($"api/modules/{catalog.Navy.Id}?projectId={project.Id}", Ct));
-        await AssertProblem(HttpStatusCode.Forbidden, await Client(other).GetAsync($"api/modules/{catalog.Navy.Id}/versions?projectId={project.Id}", Ct));
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(other).GetAsync($"api/modules/{catalog.Sei.Id}?projectId={project.Id}", Ct));
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(other).GetAsync($"api/modules/{catalog.Sei.Id}/versions?projectId={project.Id}", Ct));
     }
 
     // ---- DesignModules ---------------------------------------------------------------------------
@@ -282,18 +282,18 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task Creating_a_design_module_outside_the_projects_scopes_is_refused_and_inside_is_allowed()
     {
         var catalog = await SeedCatalog();
-        var (project, design) = await SeedDesign(await SeedProjectScopedTo("navy"));
+        var (project, design) = await SeedDesign(await SeedProjectScopedTo("sei"));
         var editor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
 
         var outside = await Client(editor).PostAsJsonAsync(
-            "api/designModules", new { designId = design.Id, moduleId = catalog.AfpY.Id, name = "web", moduleVersion = "1.0.0", values = NoValues }, Ct);
+            "api/designModules", new { designId = design.Id, moduleId = catalog.CmuY.Id, name = "web", moduleVersion = "1.0.0", values = NoValues }, Ct);
         var inside = await Client(editor).PostAsJsonAsync(
-            "api/designModules", new { designId = design.Id, moduleId = catalog.Navy.Id, name = "web", moduleVersion = "1.0.0", values = NoValues }, Ct);
+            "api/designModules", new { designId = design.Id, moduleId = catalog.Sei.Id, name = "web", moduleVersion = "1.0.0", values = NoValues }, Ct);
 
         await AssertProblem(HttpStatusCode.BadRequest, outside);
         Assert.Contains("Module Scopes", await outside.Content.ReadAsStringAsync(Ct));
         await AssertStatus(HttpStatusCode.Created, inside);
-        Assert.Equal(catalog.Navy.Id, Assert.Single(await ReadBack(db => db.DesignModules.Where(x => x.DesignId == design.Id).ToListAsync(Ct))).ModuleId);
+        Assert.Equal(catalog.Sei.Id, Assert.Single(await ReadBack(db => db.DesignModules.Where(x => x.DesignId == design.Id).ToListAsync(Ct))).ModuleId);
     }
 
     /// <summary>A system administrator editing a project's Designs is held to the project's scopes too.</summary>
@@ -301,10 +301,10 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task Creating_a_design_module_outside_the_scopes_is_refused_even_for_an_administrator()
     {
         var catalog = await SeedCatalog();
-        var (_, design) = await SeedDesign(await SeedProjectScopedTo("navy"));
+        var (_, design) = await SeedDesign(await SeedProjectScopedTo("sei"));
 
         var response = await RootClient.PostAsJsonAsync(
-            "api/designModules", new { designId = design.Id, moduleId = catalog.AfpY.Id, name = "web", moduleVersion = "1.0.0", values = NoValues }, Ct);
+            "api/designModules", new { designId = design.Id, moduleId = catalog.CmuY.Id, name = "web", moduleVersion = "1.0.0", values = NoValues }, Ct);
 
         await AssertProblem(HttpStatusCode.BadRequest, response);
     }
@@ -318,7 +318,7 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
         var (_, design) = await SeedDesign(project);
 
         var response = await RootClient.PostAsJsonAsync(
-            "api/designModules", new { designId = design.Id, moduleId = catalog.AfpY.Id, name = "web", moduleVersion = "1.0.0", values = NoValues }, Ct);
+            "api/designModules", new { designId = design.Id, moduleId = catalog.CmuY.Id, name = "web", moduleVersion = "1.0.0", values = NoValues }, Ct);
 
         await AssertStatus(HttpStatusCode.Created, response);
     }
@@ -327,17 +327,17 @@ public class ModuleScopeEnforcementTests(DatabaseFixture fixture, CasterAppFacto
     public async Task Editing_a_design_module_keeps_an_outside_module_but_cannot_switch_to_another_outside_one()
     {
         var catalog = await SeedCatalog();
-        var (project, design) = await SeedDesign(await SeedProjectScopedTo("navy"));
-        var designModule = TestData.DesignModule(design, catalog.AfpY);
+        var (project, design) = await SeedDesign(await SeedProjectScopedTo("sei"));
+        var designModule = TestData.DesignModule(design, catalog.CmuY);
         await Seed(designModule);
         var editor = await Actor().OnProject(project, [ProjectPermission.EditProject]).SeedAsync();
 
         var keep = await Client(editor).PutAsJsonAsync($"api/designModules/{designModule.Id}",
-            new { designId = design.Id, moduleId = catalog.AfpY.Id, name = "renamed", moduleVersion = "1.0.0", values = NoValues }, Ct);
+            new { designId = design.Id, moduleId = catalog.CmuY.Id, name = "renamed", moduleVersion = "1.0.0", values = NoValues }, Ct);
         var switchOutside = await Client(editor).PutAsJsonAsync($"api/designModules/{designModule.Id}",
-            new { designId = design.Id, moduleId = catalog.AfpX.Id, name = "renamed", moduleVersion = "1.0.0", values = NoValues }, Ct);
+            new { designId = design.Id, moduleId = catalog.CmuX.Id, name = "renamed", moduleVersion = "1.0.0", values = NoValues }, Ct);
         var switchInside = await Client(editor).PutAsJsonAsync($"api/designModules/{designModule.Id}",
-            new { designId = design.Id, moduleId = catalog.Navy.Id, name = "renamed", moduleVersion = "1.0.0", values = NoValues }, Ct);
+            new { designId = design.Id, moduleId = catalog.Sei.Id, name = "renamed", moduleVersion = "1.0.0", values = NoValues }, Ct);
 
         await AssertStatus(HttpStatusCode.OK, keep);
         await AssertProblem(HttpStatusCode.BadRequest, switchOutside);
