@@ -213,6 +213,22 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
+        public async Task GetInventoryAsync_LogsWhyIsosAreNotListedWhenASearchFailed()
+        {
+            var logger = new RecordingLogger<VsphereInventoryClient>();
+            var vim = Vim();
+            vim.Isos = [];
+            vim.IsoError = "Some ISO locations could not be searched: [slow-ds]: timed out.";
+
+            using var handler = new StubHandler(DefaultResponder());
+            var client = new VsphereInventoryClient(new StubHttpClientFactory(handler), Source(vim), logger);
+            await client.GetInventoryAsync(Options(), CancellationToken.None);
+
+            Assert.Contains(logger.At(LogLevel.Information), x =>
+                x.Message == "ISOs at https://vcenter.test are not listed: " + vim.IsoError);
+        }
+
+        [Fact]
         public async Task GetInventoryAsync_LogsZeroIsosWhenNoLocationsAreConfigured()
         {
             var logger = new RecordingLogger<VsphereInventoryClient>();
