@@ -197,6 +197,36 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
+        public async Task GetInventoryAsync_LogsHowManyIsosWereFoundAndHowManyLocationsWereSearched()
+        {
+            var options = Options();
+            options.IsoLocations = ["nfs-fast", " ", "[other] stock"];
+            var logger = new RecordingLogger<VsphereInventoryClient>();
+
+            using var handler = new StubHandler(DefaultResponder());
+            var client = new VsphereInventoryClient(new StubHttpClientFactory(handler), Source(Vim()), logger);
+            await client.GetInventoryAsync(options, CancellationToken.None);
+
+            var entry = Assert.Single(logger.At(LogLevel.Information), x => x.Message.Contains("ISOs"));
+            Assert.Equal("Read 2 ISOs from 2 configured locations at https://vcenter.test", entry.Message);
+            Assert.All(logger.Entries, x => Assert.DoesNotContain(Password, x.Message));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_LogsZeroIsosWhenNoLocationsAreConfigured()
+        {
+            var logger = new RecordingLogger<VsphereInventoryClient>();
+            var vim = Vim();
+            vim.Isos = [];
+
+            using var handler = new StubHandler(DefaultResponder());
+            var client = new VsphereInventoryClient(new StubHttpClientFactory(handler), Source(vim), logger);
+            await client.GetInventoryAsync(Options(), CancellationToken.None);
+
+            Assert.Contains(logger.At(LogLevel.Information), x => x.Message == "Read 0 ISOs from 0 configured locations at https://vcenter.test");
+        }
+
+        [Fact]
         public async Task GetInventoryAsync_NamesEachIsoByItsPathOnTheDatastore()
         {
             var snapshot = await Read(DefaultResponder());

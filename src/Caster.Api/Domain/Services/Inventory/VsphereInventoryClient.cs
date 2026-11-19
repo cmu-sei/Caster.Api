@@ -109,6 +109,10 @@ public class VsphereInventoryClient(
 
         var unavailable = vim == null ? InventoryCategoryResult.Unavailable(vimError) : null;
 
+        if (vim != null && InventoryFilters.IsEnabled(options, InventoryCategory.Iso))
+            logger.LogInformation("Read {Count} ISOs from {LocationCount} configured locations at {VsphereUrl}",
+                vim.Isos.Count, (options.IsoLocations ?? []).Count(x => !string.IsNullOrWhiteSpace(x)), options.Url);
+
         return new InventorySnapshot
         {
             LastUpdated = DateTime.UtcNow,
