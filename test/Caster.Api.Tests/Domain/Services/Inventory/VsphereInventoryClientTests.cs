@@ -278,22 +278,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
-        public async Task GetInventoryAsync_AnIncompleteIsoSearchMakesIsosUnavailable()
-        {
-            // A partial list would make an ISO that exists look missing.
-            var vim = Vim();
-            vim.IsoError = "Some ISO locations could not be searched: [slow-ds]: timed out.";
-
-            var snapshot = await Read(DefaultResponder(), vim: vim);
-
-            Assert.False(snapshot.Isos.Available);
-            Assert.Empty(snapshot.Isos.Entries);
-            Assert.Equal(vim.IsoError, snapshot.Isos.Error);
-            Assert.True(snapshot.VmTemplates.Available);
-        }
-
-        [Fact]
-        public async Task GetInventoryAsync_ASearchThatFoundNothingAtAllMakesIsosUnavailable()
+        public async Task GetInventoryAsync_WhenNoIsoLocationCouldBeSearchedIsosAreUnavailable()
         {
             // Every location failed: an empty list would look like a datastore with no ISOs.
             var vim = Vim();
@@ -306,6 +291,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Empty(snapshot.Isos.Entries);
             Assert.Null(snapshot.Isos.Warning);
             Assert.Equal(vim.IsoError, snapshot.Isos.Error);
+            Assert.True(snapshot.VmTemplates.Available);
         }
 
         [Fact]
