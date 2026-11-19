@@ -5,9 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore;
 
 namespace Caster.Api.Domain.Models;
 
+[Index(nameof(SourceName))]
 public class Module : IEntity
 {
     [Key]
@@ -18,4 +20,20 @@ public class Module : IEntity
     public string Description { get; set; }
     public virtual ICollection<ModuleVersion> Versions { get; set; } = new List<ModuleVersion>();
     public DateTime? DateModified { get; set; }
+
+    /// <summary>
+    /// The name of the git module source this Module was read from, or null
+    /// for a Gitlab Module or one stored before sources were recorded. Paths alone cannot
+    /// tell: a git source "terraform" and a Gitlab project "terraform/vpc"
+    /// share the prefix.
+    /// </summary>
+    public string SourceName { get; set; }
+
+    /// <summary>
+    /// When a whole-source read of a git module source first found this Module
+    /// gone from it, or null while it is in its source. Never set for Gitlab
+    /// Modules, which are added by hand per project. Nothing deletes a Module
+    /// because of this; it only tells an administrator which are leftovers.
+    /// </summary>
+    public DateTime? MissingSince { get; set; }
 }

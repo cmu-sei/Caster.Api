@@ -18,7 +18,11 @@ namespace Caster.Api.Tests.Support
     /// </summary>
     public class FakeGitCommandRunner : IGitCommandRunner
     {
-        /// <summary>Raw ls-remote lines to answer with.</summary>
+        /// <summary>
+        /// Raw ls-remote tag lines to answer with. HEAD and a main branch are
+        /// added when <see cref="DefaultBranchTree"/> or <see cref="HeadSha"/>
+        /// is set.
+        /// </summary>
         public List<string> LsRemoteLines { get; } = [];
 
         /// <summary>Directory tree copied into the clone destination.</summary>
@@ -39,15 +43,51 @@ namespace Caster.Api.Tests.Support
         /// <summary>How long each clone takes, so concurrent syncs overlap the way real clones do.</summary>
         public TimeSpan CloneDelay { get; set; }
 
+        /// <summary>
+        /// Tree the default branch clones to. Null is a repository with no
+        /// commits, which git clones to nothing but a .git directory.
+        /// </summary>
+        public string DefaultBranchTree { get; set; }
+
+        /// <summary>The sha ls-remote reports for HEAD; defaults to a fixed one when <see cref="DefaultBranchTree"/> is set.</summary>
+        public string HeadSha { get; set; }
+
+        /// <summary>HEAD names a branch that does not exist: ls-remote reports no HEAD, but branches exist.</summary>
+        public bool DanglingHead { get; set; }
+
+        /// <summary>Default-branch clone destinations handed out, so a test can assert they were deleted.</summary>
+        public List<string> DefaultBranchCloneDestinations { get; } = [];
+
         public int LsRemoteCallCount { get; private set; }
         public int CloneCallCount { get; private set; }
 
         public DateTime? HeadCommitDate { get; set; } = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
 
-        public Task<IReadOnlyList<string>> ListRemoteTagsAsync(string url, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<string>> ListRemoteRefsAsync(string url, CancellationToken cancellationToken)
         {
             LsRemoteCallCount++;
-            return Task.FromResult<IReadOnlyList<string>>(LsRemoteLines.ToArray());
+            var lines = new List<string>(LsRemoteLines);
+
+            if (DefaultBranchTree != null || HeadSha != null || DanglingHead)
+            {
+                var sha = HeadSha ?? "2222222222222222222222222222222222222222";
+
+                // A dangling HEAD gets no line, as from real git.
+                if (!DanglingHead)
+                {
+                    lines.Add($"{sha}\tHEAD");
+                }
+            }
+
+            return Task.FromResult<IReadOnlyList<string>>(lines.ToArray());
+        }
+
+        public int HasBranchesCallCount { get; private set; }
+
+        public Task<bool> HasBranchesAsync(string url, CancellationToken cancellationToken)
+        {
+            HasBranchesCallCount++;
+            return Task.FromResult(DefaultBranchTree != null || HeadSha != null || DanglingHead);
         }
 
         public async Task CloneTagAsync(string url, string tag, string destinationPath, CancellationToken cancellationToken)
@@ -77,6 +117,30 @@ namespace Caster.Api.Tests.Support
             // provider is seen to skip it when enumerating module roots.
             Directory.CreateDirectory(Path.Combine(destinationPath, ".git"));
             File.WriteAllText(Path.Combine(destinationPath, ".git", "HEAD"), "ref: refs/heads/main\n");
+        }
+
+        public Task CloneDefaultBranchAsync(string url, string destinationPath, CancellationToken cancellationToken)
+        {
+            DefaultBranchCloneDestinations.Add(destinationPath);
+
+            if (CloneFailure != null)
+            {
+                throw CloneFailure;
+            }
+
+            if (DefaultBranchTree == null)
+            {
+                Directory.CreateDirectory(destinationPath);
+            }
+            else
+            {
+                CopyTree(DefaultBranchTree, destinationPath);
+            }
+
+            Directory.CreateDirectory(Path.Combine(destinationPath, ".git"));
+            File.WriteAllText(Path.Combine(destinationPath, ".git", "HEAD"), "ref: refs/heads/main\n");
+
+            return Task.CompletedTask;
         }
 
         public Task<DateTime?> GetHeadCommitDateAsync(string repositoryPath, CancellationToken cancellationToken) =>

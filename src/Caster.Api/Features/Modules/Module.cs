@@ -28,6 +28,15 @@ namespace Caster.Api.Features.Modules
         public List<ModuleVersion> Versions { get; set; }
         public DateTime? DateModified { get; set; }
         public int? VersionsCount { get; set; }
+
+        /// <summary>
+        /// When the last whole-source read first found this Module gone from its git source, or null while it
+        /// is still there. Such a Module is still listed and usable; it is a candidate for Delete.
+        /// </summary>
+        public DateTime? MissingSince { get; set; }
+
+        /// <summary>Whether the Module is still in its source: true unless <see cref="MissingSince"/> is set.</summary>
+        public bool InSource => MissingSince == null;
     }
 
     public class ModuleVersion
