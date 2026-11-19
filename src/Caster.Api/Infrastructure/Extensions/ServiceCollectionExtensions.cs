@@ -307,6 +307,9 @@ namespace Caster.Api.Infrastructure.Extensions
         {
             services.AddSingleton<IGitCommandRunner, GitCommandRunner>();
             services.AddSingleton<ModuleSourceStatusStore>();
+            Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
+                .TryAddSingleton(services, TimeProvider.System);
+            services.AddSingleton<ModuleSourceFailureLog>();
 
             services.AddScoped<IModuleRepositoryProvider, GitlabModuleRepositoryProvider>();
             services.AddScoped<IModuleRepositoryProvider, GitModuleRepositoryProvider>();
