@@ -302,12 +302,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
     /// </summary>
     private static string Fingerprint(Exception ex)
     {
-        var innermost = ex;
-
-        while (innermost.InnerException != null)
-        {
-            innermost = innermost.InnerException;
-        }
+        var innermost = ex.GetBaseException();
 
         return $"{ex.GetType().FullName}|{innermost.GetType().FullName}|{TempDirectoryIdPattern.Replace(innermost.Message, "<id>")}";
     }
