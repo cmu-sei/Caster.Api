@@ -14,6 +14,7 @@ using Caster.Api.Infrastructure.Exceptions;
 using System.Linq;
 using Caster.Api.Domain.Models;
 using Caster.Api.Features.Shared;
+using Caster.Api.Domain.Services.ModuleScopes;
 
 namespace Caster.Api.Features.Modules
 {
@@ -40,19 +41,44 @@ namespace Caster.Api.Features.Modules
             [DataMember]
             public List<VariableValue> VariableValues { get; set; }
 
+            /// <summary>
+            /// The project the snippet is made for. The Module must be one the project may use (its
+            /// Module Scopes and its project group's), and the caller needs ViewProject on it (or
+            /// ViewProjects) instead of ViewModules. Without it, the snippet is made for a holder
+            /// of ViewModules for any Module.
+            /// </summary>
+            [DataMember]
+            public Guid? ProjectId { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, string>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            CasterContext dbContext,
+            IModuleAccessService moduleAccess) : BaseHandler<Command, string>
         {
             public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
-                await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+                await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken)
+                || (request.ProjectId.HasValue && await authorizationService.Authorize<Project>(
+                    request.ProjectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken));
 
             public override async Task<string> HandleRequest(Command request, CancellationToken cancellationToken)
             {
-                var version = await dbContext.ModuleVersions.FirstOrDefaultAsync(v => v.Id == request.VersionId);
+                var version = await dbContext.ModuleVersions
+                    .Include(v => v.Module)
+                    .FirstOrDefaultAsync(v => v.Id == request.VersionId, cancellationToken);
 
                 if (version == null)
                     throw new EntityNotFoundException<ModuleVersion>();
+
+                // Naming a project limits anyone, a holder of ViewModules too, to what that project may
+                // use, as for GET api/modules. Unlike a lookup, a Design that already uses the Module
+                // does not open it: a snippet adds a new use. An outside Module is the same 404 as a
+                // missing Version, so the answer does not say whether it exists.
+                if (request.ProjectId.HasValue
+                    && !(await moduleAccess.ForProject(request.ProjectId.Value, cancellationToken)).Allows(version.Module.Path))
+                {
+                    throw new EntityNotFoundException<ModuleVersion>();
+                }
 
                 return version.ToSnippet(request.ModuleName, VariableValue.ToDomain(request.VariableValues));
             }
