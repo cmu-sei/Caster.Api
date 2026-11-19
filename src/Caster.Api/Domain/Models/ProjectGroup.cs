@@ -34,6 +34,7 @@ public class ProjectGroup : IEntity
     public virtual ICollection<ProjectGroupMembership> Memberships { get; set; } = new List<ProjectGroupMembership>();
     public virtual ICollection<ProjectGroupEnvironmentSet> EnvironmentSets { get; set; } = new List<ProjectGroupEnvironmentSet>();
     public virtual ICollection<ProjectGroupInventoryConnection> InventoryConnections { get; set; } = new List<ProjectGroupInventoryConnection>();
+    public virtual ICollection<ProjectGroupModuleScope> ModuleScopes { get; set; } = new List<ProjectGroupModuleScope>();
     public virtual ICollection<Host> Hosts { get; set; } = new List<Host>();
 }
 
