@@ -466,7 +466,7 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
         }
 
         if (targets.Length > MaxDatastoreSearches)
-            failed.Add($"only the first {MaxDatastoreSearches} of {targets.Length} datastores were searched");
+            failed.Add($"only the first {MaxDatastoreSearches} of {targets.Length} locations were searched");
 
         foreach (var (name, folder) in targets.Take(MaxDatastoreSearches))
         {
