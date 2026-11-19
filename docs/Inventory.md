@@ -51,8 +51,9 @@ The API never returns a connection's url or credentials. Variables under `Infras
 - **Locations** lists only objects in those places. Every entry ignores case.
   - vSphere: a full inventory path, in the form `govc` uses, matching that folder and everything below it. `/DC1/vm/Templates` matches `/DC1/vm/Templates/linux/ubuntu`. VM templates take a VM folder, datastores a datastore folder or datastore cluster, and hosts a cluster. Networks take a network folder, or a distributed switch's name to list its port groups.
   - Proxmox: a name. VM templates take a node or resource pool, networks a node (for bridges) or SDN zone (for vnets), datastores a storage, and hosts a node.
-  - `Isos` and `ContentLibraries` have no Locations: ISOs are found in `IsoLocations`, and content libraries are filtered by name.
-- **Include** and **Exclude** are regular expressions on the object's name, ignoring case. An object is listed when its name matches `Include` (or there is none) and doesn't match `Exclude`.
+  - `ContentLibraries` (vSphere only) take content library names, not paths: `teamA-templates` lists only the items in the library of that name. Caster doesn't list or read the items of any other library, so a vCenter shared by several teams can be limited to one team's libraries. An entry that starts with `/` is rejected.
+  - `Isos` has no Locations: ISOs are found in `IsoLocations`.
+- **Include** and **Exclude** are regular expressions on the object's name, ignoring case. An object is listed when its name matches `Include` (or there is none) and doesn't match `Exclude`. For content libraries the name is the item's name, not the library's: use `Locations` to choose libraries.
 
 A setting that can't be used, such as an invalid regular expression or a location in the wrong form, marks the connection as misconfigured. It isn't read, and `GET api/inventory/connections` and every inventory endpoint say why. The API still starts.
 

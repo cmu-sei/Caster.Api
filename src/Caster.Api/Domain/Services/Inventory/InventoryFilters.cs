@@ -110,7 +110,12 @@ public static class InventoryFilters
 
             if (category is InventoryCategory.ContentLibrary)
             {
-                problems.Add($"{key}:Locations doesn't apply to content libraries. Use Include and Exclude.");
+                // Library names, not paths. Include and Exclude still match the item's name.
+                var wrong = locations.Where(x => x.StartsWith('/')).ToArray();
+
+                if (wrong.Length > 0)
+                    problems.Add($"{key}:Locations names {Quoted(wrong)}. Each entry is a content library's name, e.g. \"teamA-templates\", not a path.");
+
                 continue;
             }
 
@@ -213,6 +218,14 @@ public static class InventoryFilters
     {
         public bool Matches(InventoryEntry entry) =>
             Matches(entry.Name, entry.Locations);
+
+        /// <summary>
+        /// Whether a place, by name, is one the Locations setting lists. True when there are
+        /// no Locations. Ignores case. For a provider that can tell before reading what's
+        /// inside, e.g. a content library by name.
+        /// </summary>
+        public bool ListsLocation(string name) =>
+            locations.Length == 0 || locations.Any(x => IsAt(name ?? string.Empty, x));
 
         /// <summary>
         /// Whether an object with this name, at these locations, is listed. A location
