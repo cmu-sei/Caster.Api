@@ -314,7 +314,9 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
     {
         if (_failureLog.RecordSuccess(sourceName, out var recovery))
         {
-            _logger.LogInformation(
+            // Warning, not Information: the shipped default level is Warning, and the operator who saw the
+            // failure should see it end.
+            _logger.LogWarning(
                 "Module source {Source} synced again after failing {Failures} time(s) over {FailingFor}.",
                 sourceName,
                 recovery.Failures,

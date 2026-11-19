@@ -93,7 +93,7 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             }
 
             Assert.Single(Errors);
-            Assert.DoesNotContain(_logger.Entries, x => x.Level == LogLevel.Warning);
+            Assert.DoesNotContain(_logger.Entries.Skip(1), x => x.Level >= LogLevel.Warning);
             Assert.Equal(5, _logger.At(LogLevel.Debug).Count);
         }
 
@@ -248,7 +248,7 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             await Refresh(sut);
             await Refresh(sut);
 
-            var recovered = Assert.Single(_logger.At(LogLevel.Information));
+            var recovered = Assert.Single(_logger.At(LogLevel.Warning));
             Assert.Contains("catalog", recovered.Message);
             Assert.Contains("synced again", recovered.Message);
 
@@ -273,7 +273,7 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             await Refresh(sut);
 
             Assert.Equal(2, Errors.Count);
-            var recovered = Assert.Single(_logger.At(LogLevel.Information));
+            var recovered = Assert.Single(_logger.At(LogLevel.Warning));
             Assert.Contains("one", recovered.Message);
         }
 
