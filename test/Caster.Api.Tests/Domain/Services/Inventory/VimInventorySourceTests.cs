@@ -3,6 +3,7 @@
 
 using System.Linq;
 using Caster.Api.Domain.Services.Inventory;
+using Caster.Api.Infrastructure.Options;
 using VimClient;
 using Xunit;
 
@@ -178,12 +179,30 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal(expected, VimInventorySource.DatastorePath("ds1", folderPath, file));
         }
 
+        private const string Secret = "sup3r-s3cret-pw";
+
+        private static InfrastructureConnectionOptions Options() => new() { Name = "lab", Provider = "vsphere", Url = "https://vcenter.test", Username = "svc", Password = Secret };
+
+        [Fact]
+        public void SetIsoOutcome_NeverExposesAConfiguredSecret()
+        {
+            var partial = new VimInventory();
+            var none = new VimInventory();
+
+            VimInventorySource.SetIsoOutcome(partial, 1, [$"Infrastructure:IsoLocations names \"{Secret}\""], Options());
+            VimInventorySource.SetIsoOutcome(none, 0, [$"[{Secret}] x: failed"], Options());
+
+            Assert.DoesNotContain(Secret, partial.IsoWarning);
+            Assert.Contains("***", partial.IsoWarning);
+            Assert.DoesNotContain(Secret, none.IsoError);
+        }
+
         [Fact]
         public void SetIsoOutcome_WithNoFailuresReportsNothing()
         {
             var vim = new VimInventory();
 
-            VimInventorySource.SetIsoOutcome(vim, 2, []);
+            VimInventorySource.SetIsoOutcome(vim, 2, [], Options());
 
             Assert.Null(vim.IsoError);
             Assert.Null(vim.IsoWarning);
@@ -194,7 +213,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         {
             var vim = new VimInventory();
 
-            VimInventorySource.SetIsoOutcome(vim, 1, ["[gone] stock: folder not found"]);
+            VimInventorySource.SetIsoOutcome(vim, 1, ["[gone] stock: folder not found"], Options());
 
             Assert.Null(vim.IsoError);
             Assert.Contains("[gone] stock: folder not found", vim.IsoWarning);
@@ -206,7 +225,7 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         {
             var vim = new VimInventory();
 
-            VimInventorySource.SetIsoOutcome(vim, 0, ["[a] x: timed out", "[b] y: folder not found"]);
+            VimInventorySource.SetIsoOutcome(vim, 0, ["[a] x: timed out", "[b] y: folder not found"], Options());
 
             Assert.Null(vim.IsoWarning);
             Assert.Contains("[a] x: timed out; [b] y: folder not found", vim.IsoError);

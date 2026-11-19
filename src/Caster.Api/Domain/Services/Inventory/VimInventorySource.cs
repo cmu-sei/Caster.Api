@@ -508,23 +508,24 @@ public class VimInventorySource(ILogger<VimInventorySource> logger) : IVimInvent
             }
         }
 
-        SetIsoOutcome(inventory, searched, failed);
+        SetIsoOutcome(inventory, searched, failed, options);
     }
 
     /// <summary>
     /// Reports locations that could not be searched. When some were searched, the ISOs
     /// found are still listed and the failures are a warning. When none was, there is
-    /// nothing to list, so it is an error.
+    /// nothing to list, so it is an error. The text is redacted whole, since it names
+    /// configured locations as well as provider messages.
     /// </summary>
-    public static void SetIsoOutcome(VimInventory inventory, int searched, IReadOnlyCollection<string> failed)
+    public static void SetIsoOutcome(VimInventory inventory, int searched, IReadOnlyCollection<string> failed, InfrastructureConnectionOptions options)
     {
         if (failed.Count == 0)
             return;
 
         if (searched == 0)
-            inventory.IsoError = $"No ISO location could be searched: {string.Join("; ", failed)}.";
+            inventory.IsoError = InventoryRedaction.Redact($"No ISO location could be searched: {string.Join("; ", failed)}.", options);
         else
-            inventory.IsoWarning = $"Some ISO locations could not be searched, so ISOs in them are missing from this list: {string.Join("; ", failed)}.";
+            inventory.IsoWarning = InventoryRedaction.Redact($"Some ISO locations could not be searched, so ISOs in them are missing from this list: {string.Join("; ", failed)}.", options);
     }
 
     /// <summary>
