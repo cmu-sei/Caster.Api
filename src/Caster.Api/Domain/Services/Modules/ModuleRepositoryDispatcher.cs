@@ -313,7 +313,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
     }
 
     private static readonly Regex TempDirectoryIdPattern = new(
-        "[0-9a-f]{32}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        $"(?<={GitModuleRepositoryProvider.TempDirectoryName}[/\\\\])[0-9a-f]{{32}}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private void LogRecovery(string sourceName)
     {

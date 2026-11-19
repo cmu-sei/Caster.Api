@@ -128,6 +128,18 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         }
 
         [Fact]
+        public async Task SameErrorAboutADifferentHexRepositoryName_IsAChangedError()
+        {
+            var sut = Build("catalog");
+            _git.Failures["catalog"] = new InvalidOperationException($"repository 'file:///srv/git/{new string('a', 32)}.git' not found");
+            await Refresh(sut);
+            _git.Failures["catalog"] = new InvalidOperationException($"repository 'file:///srv/git/{new string('b', 32)}.git' not found");
+            await Refresh(sut);
+
+            Assert.Equal(2, Errors.Count);
+        }
+
+        [Fact]
         public async Task SameWrapperMessageWithADifferentInnerFailure_IsAChangedError()
         {
             var sut = Build("catalog");
