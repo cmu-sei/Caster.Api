@@ -140,6 +140,62 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         }
 
         [Fact]
+        public void TheReminderBackoffStopsGrowingAtTheCap()
+        {
+            var failureLog = new ModuleSourceFailureLog(_clock);
+            failureLog.RecordFailure("catalog", "boom", out _);
+
+            // Each reminder waits twice as long as the one before: 15m, 30m, 1h, 2h, 4h, then 4h again.
+            foreach (var minutes in new[] { 15, 30, 60, 120, 240, 240, 240 })
+            {
+                var wait = TimeSpan.FromMinutes(minutes);
+
+                _clock.Advance(wait - TimeSpan.FromSeconds(1));
+                Assert.Equal(ModuleSourceFailureLogAction.Suppress, failureLog.RecordFailure("catalog", "boom", out _));
+
+                _clock.Advance(TimeSpan.FromSeconds(1));
+                Assert.Equal(ModuleSourceFailureLogAction.Remind, failureLog.RecordFailure("catalog", "boom", out _));
+            }
+        }
+
+        [Fact]
+        public void ChangedError_StartsTheBackoffOver()
+        {
+            var failureLog = new ModuleSourceFailureLog(_clock);
+            failureLog.RecordFailure("catalog", "one", out _);
+            _clock.Advance(ModuleSourceFailureLog.FirstReminderInterval);
+            failureLog.RecordFailure("catalog", "one", out _);
+
+            Assert.Equal(ModuleSourceFailureLogAction.Log, failureLog.RecordFailure("catalog", "two", out _));
+
+            _clock.Advance(ModuleSourceFailureLog.FirstReminderInterval);
+            Assert.Equal(ModuleSourceFailureLogAction.Remind, failureLog.RecordFailure("catalog", "two", out _));
+        }
+
+        [Fact]
+        public async Task SourceNamedLikeAnInternalKey_IsNotConfusedWithAnIgnoredEntry()
+        {
+            _git.Failures["ignored:half"] = new InvalidOperationException("git clone failed");
+            var monitor = Substitute.For<IOptionsMonitor<TerraformOptions>>();
+            monitor.CurrentValue.Returns(new TerraformOptions
+            {
+                ModuleSources =
+                [
+                    new ModuleSourceOptions { Name = "half", Provider = ModuleSourceProviders.Git },
+                    new ModuleSourceOptions { Name = "ignored:half", Provider = ModuleSourceProviders.Git, Url = "file:///x" },
+                ],
+            });
+            var sut = new ModuleRepositoryDispatcher(
+                [_git], monitor, new ModuleSourceStatusStore(), new ModuleSourceFailureLog(_clock), _logger);
+
+            await Refresh(sut);
+            await Refresh(sut);
+
+            Assert.Single(Errors);
+            Assert.Single(_logger.At(LogLevel.Warning));
+        }
+
+        [Fact]
         public async Task Recovery_IsLoggedOnceAndTheNextFailureIsLoggedInFullAgain()
         {
             _git.Failures["catalog"] = new InvalidOperationException("git clone failed");

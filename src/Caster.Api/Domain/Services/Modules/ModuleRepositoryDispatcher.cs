@@ -189,9 +189,10 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
     /// </summary>
     public const string GitlabSourceName = "gitlab";
 
-    // Failure-log keys that no source name can collide with: a source needs a Name to be configured at all.
-    private const string NoSourcesKey = "";
-    private const string IgnoredEntryKeyPrefix = "ignored:";
+    // Failure-log keys that no source name can collide with: a configured source needs a non-blank Name, and
+    // these start with a control character no one types into a Name.
+    private const string NoSourcesKey = "\0no-sources";
+    private const string IgnoredEntryKeyPrefix = "\0ignored:";
 
     /// <summary>
     /// A git source is addressed as <c>&lt;sourceName&gt;</c> or
