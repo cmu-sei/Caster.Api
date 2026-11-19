@@ -23,12 +23,14 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
     private readonly Dictionary<string, IModuleRepositoryProvider> _providers;
     private readonly IOptionsMonitor<TerraformOptions> _terraformOptions;
     private readonly ModuleSourceStatusStore _statuses;
+    private readonly ModuleSourceFailureLog _failureLog;
     private readonly ILogger<ModuleRepositoryDispatcher> _logger;
 
     public ModuleRepositoryDispatcher(
         IEnumerable<IModuleRepositoryProvider> providers,
         IOptionsMonitor<TerraformOptions> terraformOptions,
         ModuleSourceStatusStore statuses,
+        ModuleSourceFailureLog failureLog,
         ILogger<ModuleRepositoryDispatcher> logger)
     {
         _providers = (providers ?? [])
@@ -39,6 +41,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
 
         _terraformOptions = terraformOptions;
         _statuses = statuses;
+        _failureLog = failureLog;
         _logger = logger;
     }
 
@@ -48,8 +51,19 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
 
         if (sources.Count == 0)
         {
-            throw new ModuleSourceNotConfiguredException();
+            var notConfigured = new ModuleSourceNotConfiguredException();
+
+            // Every refresh finds the same thing until an administrator configures a source.
+            if (_failureLog.RecordFailure(NoSourcesKey, notConfigured.Message, out _) !=
+                ModuleSourceFailureLogAction.Suppress)
+            {
+                _logger.LogWarning("{Message}", notConfigured.Message);
+            }
+
+            throw notConfigured;
         }
+
+        _failureLog.RecordSuccess(NoSourcesKey, out _);
 
         var failures = new List<string>();
 
@@ -66,6 +80,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
             {
                 await provider.SyncModulesAsync(source, forceUpdate, cancellationToken);
                 _statuses.RecordSuccess(source.Name);
+                LogRecovery(source.Name);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -76,7 +91,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
                 // Sources are independent, so one broken source must not hide
                 // the others. Whatever synced is already persisted; the caller
                 // is told what did not.
-                _logger.LogError(ex, "Failed to sync Modules from module source {Source}.", source.Name);
+                LogSyncFailure(source.Name, ex);
                 failures.Add($"module source '{source.Name}': {ex.Message}");
                 _statuses.RecordFailure(source.Name, ex.Message);
             }
@@ -149,9 +164,14 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
 
             if (!source.IsConfigured)
             {
-                _logger.LogWarning(
-                    "Ignoring a Terraform:ModuleSources entry with no Name or no Url (Name '{Name}').",
-                    source.Name);
+                // Seen again on every refresh until the configuration is fixed, so say it once.
+                if (_failureLog.RecordFailure($"{IgnoredEntryKeyPrefix}{source.Name}", "ignored", out _) !=
+                    ModuleSourceFailureLogAction.Suppress)
+                {
+                    _logger.LogWarning(
+                        "Ignoring a Terraform:ModuleSources entry with no Name or no Url (Name '{Name}').",
+                        source.Name);
+                }
 
                 continue;
             }
@@ -168,6 +188,10 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
     /// Module Path and changing it migrates nothing.
     /// </summary>
     public const string GitlabSourceName = "gitlab";
+
+    // Failure-log keys that no source name can collide with: a source needs a Name to be configured at all.
+    private const string NoSourcesKey = "";
+    private const string IgnoredEntryKeyPrefix = "ignored:";
 
     /// <summary>
     /// A git source is addressed as <c>&lt;sourceName&gt;</c> or
@@ -229,8 +253,57 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
         failure = $"module source '{source.Name}' names provider '{requested}', " +
                   $"which is not registered. Registered providers: {string.Join(", ", _providers.Keys)}.";
 
-        _logger.LogError("{Failure}", failure);
+        LogFailure(source.Name, failure, null);
 
         return false;
+    }
+
+    private void LogSyncFailure(string sourceName, Exception ex) =>
+        LogFailure(sourceName, ex.Message, ex);
+
+    /// <summary>
+    /// Every refresh retries every source, so a source that stays broken fails with the same error each
+    /// time. Log it in full once, again when the error changes, and as a reminder on a growing backoff;
+    /// the repeats in between go to Debug.
+    /// </summary>
+    private void LogFailure(string sourceName, string error, Exception ex)
+    {
+        switch (_failureLog.RecordFailure(sourceName, error, out var suppressed))
+        {
+            case ModuleSourceFailureLogAction.Log:
+                if (ex != null)
+                {
+                    _logger.LogError(ex, "Failed to sync Modules from module source {Source}.", sourceName);
+                }
+                else
+                {
+                    _logger.LogError("Module source {Source} cannot be synced: {Failure}", sourceName, error);
+                }
+                break;
+
+            case ModuleSourceFailureLogAction.Remind:
+                _logger.LogError(
+                    "Module source {Source} is still failing with the same error ({Suppressed} repeats not logged since the last report): {Failure}",
+                    sourceName,
+                    suppressed,
+                    error);
+                break;
+
+            default:
+                _logger.LogDebug("Module source {Source} is still failing: {Failure}", sourceName, error);
+                break;
+        }
+    }
+
+    private void LogRecovery(string sourceName)
+    {
+        if (_failureLog.RecordSuccess(sourceName, out var recovery))
+        {
+            _logger.LogInformation(
+                "Module source {Source} synced again after failing {Failures} time(s) over {FailingFor}.",
+                sourceName,
+                recovery.Failures,
+                recovery.FailingFor);
+        }
     }
 }
