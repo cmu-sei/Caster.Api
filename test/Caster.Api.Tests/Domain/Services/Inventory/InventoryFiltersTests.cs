@@ -250,6 +250,17 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
+        public void A_content_library_name_keeps_its_trailing_slash()
+        {
+            var options = Vsphere();
+            options.Inventory.Resources.ContentLibraries.Locations = ["teamA/"];
+            var filter = InventoryFilters.For(options, InventoryCategory.ContentLibrary);
+
+            Assert.False(filter.ListsLocation("teamA"));
+            Assert.True(filter.ListsLocation("teamA/"));
+        }
+
+        [Fact]
         public void ListsLocation_matches_names_ignoring_case()
         {
             var options = Vsphere();

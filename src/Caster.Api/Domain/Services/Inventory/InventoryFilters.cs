@@ -82,7 +82,7 @@ public static class InventoryFilters
         {
             var key = $"Infrastructure:Inventory:Resources:{Key(category)}";
             var settings = Settings(options, category);
-            var locations = Locations(settings);
+            var locations = Locations(settings, category);
 
             foreach (var (name, pattern) in new[] { ("Include", settings.Include), ("Exclude", settings.Exclude) })
             {
@@ -191,7 +191,7 @@ public static class InventoryFilters
         var settings = Settings(options, category);
 
         return new Filter(
-            Locations(settings),
+            Locations(settings, category),
             Pattern(settings.Include),
             Pattern(settings.Exclude));
     }
@@ -199,11 +199,12 @@ public static class InventoryFilters
     private static Regex Pattern(string pattern) =>
         string.IsNullOrWhiteSpace(pattern) ? null : new Regex(pattern, PatternOptions, MatchTimeout);
 
-    private static string[] Locations(InventoryResourceOptions settings) =>
+    private static string[] Locations(InventoryResourceOptions settings, InventoryCategory category) =>
         (settings.Locations ?? [])
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
-            .Select(x => x.Length > 1 ? x.TrimEnd('/') : x)
+            // A trailing '/' is only ignored on a path. A content library's name is taken as written.
+            .Select(x => x.Length > 1 && category != InventoryCategory.ContentLibrary ? x.TrimEnd('/') : x)
             .ToArray();
 
     private static bool IsVsphere(InfrastructureConnectionOptions options) =>
