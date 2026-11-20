@@ -16,6 +16,11 @@ public class ModuleScopePathsTests
     [InlineData("  cmu/exercise-x/ ", "cmu/exercise-x")]
     [InlineData("/cmu/", "cmu")]
     [InlineData("My Org/team_1.2", "My Org/team_1.2")]
+    [InlineData("crucible-modules", "crucible-modules")]
+    [InlineData("bitbucket-test/router-gateway", "bitbucket-test/router-gateway")]
+    [InlineData("_cmu", "_cmu")]
+    [InlineData("cmu/_network", "cmu/_network")]
+    [InlineData("-cmu/Exercise (X)+1", "-cmu/Exercise (X)+1")]
     public void A_path_is_trimmed(string path, string expected) =>
         Assert.Equal(expected, ModuleScopePaths.Normalize(path));
 
@@ -30,8 +35,9 @@ public class ModuleScopePathsTests
     [InlineData("cmu/*")]
     [InlineData("af?p")]
     [InlineData("cmu\\x")]
-    [InlineData("cmu/ x")]
-    [InlineData("-cmu")]
+    [InlineData("cmu/x*")]
+    [InlineData("cmu/\tx")]
+    [InlineData("cmu/a\nb")]
     public void A_path_that_no_source_or_folder_can_have_is_refused(string path) =>
         Assert.Null(ModuleScopePaths.Normalize(path));
 

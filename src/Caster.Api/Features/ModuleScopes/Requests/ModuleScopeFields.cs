@@ -23,7 +23,7 @@ public static class ModuleScopeFields
             .Must(x => x == null || x.Count <= ModuleScopePaths.MaximumPaths)
             .WithMessage($"A Module Scope has at most {ModuleScopePaths.MaximumPaths} paths.")
             .Must(x => x == null || x.All(p => ModuleScopePaths.Normalize(p) is not null))
-            .WithMessage("Each path is a module source's name, or a folder of one such as cmu/exercise-x: letters, numbers, spaces, '.', '_' and '-' between slashes, with no wildcards or empty parts.");
+            .WithMessage("Each path is a module source's name, or a folder of one such as cmu/exercise-x: separated by slashes, with no wildcards (* or ?), backslashes, control characters, empty parts, '.' or '..'.");
 
     /// <summary>The paths trimmed, without repeats.</summary>
     public static List<string> Clean(IEnumerable<string> paths) =>

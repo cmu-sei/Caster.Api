@@ -21,12 +21,15 @@ public static class ModuleScopePaths
     public const int MaximumPaths = 100;
     public const int MaximumLength = 300;
 
-    private static readonly Regex Segment = new(@"^[A-Za-z0-9][A-Za-z0-9._ \-]*$", RegexOptions.Compiled);
+    // A source name has no character restriction and a folder is any directory of the repository
+    // that does not begin with a dot, so a segment may hold any character a file name can except
+    // the wildcards and the backslash, which no Module Path has, and control characters.
+    private static readonly Regex Segment = new(@"^[^*?\\\p{Cc}]+\z", RegexOptions.Compiled);
 
     /// <summary>
     /// The path trimmed of white space and of slashes at either end, or null when it is not a path:
-    /// empty, too long, with an empty, dot or ".." segment, or a character that no source name or
-    /// folder has (wildcards, backslashes).
+    /// empty, too long, with an empty, dot or ".." segment, or a character that no Module Path has
+    /// (wildcards, backslashes, control characters). Names such as <c>_cmu</c> or <c>-cmu</c> are fine.
     /// </summary>
     public static string Normalize(string path)
     {
@@ -36,7 +39,7 @@ public static class ModuleScopePaths
             return null;
 
         var segments = trimmed.Split('/');
-        return segments.All(x => x.Length > 0 && x != "." && x != ".." && x.Trim() == x && Segment.IsMatch(x)) ? trimmed : null;
+        return segments.All(x => x.Length > 0 && x != "." && x != ".." && Segment.IsMatch(x)) ? trimmed : null;
     }
 
     /// <summary>Whether a Module at <paramref name="modulePath"/> is allowed by any of <paramref name="allowed"/>.</summary>
