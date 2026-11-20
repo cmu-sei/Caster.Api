@@ -68,16 +68,23 @@ namespace Caster.Api.Features.Modules
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                var canViewCatalog = authorizationService.GetAuthorizedProjectIds().Any()
-                    || await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
-
-                if (!canViewCatalog)
-                    return false;
-
-                if (request.ProjectId.HasValue && !await authorizationService.Authorize<Domain.Models.Project>(
-                    request.ProjectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken))
+                // Naming a project asks for that project's Modules, so seeing the project is what is needed;
+                // the catalog gate below is for the listing without one.
+                if (request.ProjectId.HasValue)
                 {
-                    return false;
+                    if (!await authorizationService.Authorize<Domain.Models.Project>(
+                        request.ProjectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken))
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    var canViewCatalog = authorizationService.GetAuthorizedProjectIds().Any()
+                        || await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+
+                    if (!canViewCatalog)
+                        return false;
                 }
 
                 return !request.DesignId.HasValue

@@ -74,6 +74,35 @@ public class ModuleSnippetScopeTests(DatabaseFixture fixture, CasterAppFactory f
         await AssertProblem(HttpStatusCode.NotFound, await Snippet(admin, data.OutsideVersion, missing));
     }
 
+    /// <summary>
+    /// A holder of ViewProjects alone, with no ViewModules and no memberships, may list a named project's
+    /// Modules, gets 404 for a project that does not exist, and is still refused the listing without one.
+    /// </summary>
+    [Fact]
+    public async Task A_holder_of_ViewProjects_alone_lists_a_projects_modules_and_gets_404_for_a_missing_one()
+    {
+        await SeedModules();
+        var project = await SeedProject("sei");
+        var viewer = await Actor().WithSystemPermissions(SystemPermission.ViewProjects).SeedAsync();
+
+        var listed = await Client(viewer).GetAsync($"api/modules?projectId={project.Id}", Ct);
+        Assert.Equal(HttpStatusCode.OK, listed.StatusCode);
+        await AssertProblem(HttpStatusCode.NotFound, await Client(viewer).GetAsync($"api/modules?projectId={Guid.NewGuid()}", Ct));
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(viewer).GetAsync("api/modules", Ct));
+    }
+
+    /// <summary>A caller who can neither see the project nor holds ViewProjects is refused a named project's Modules.</summary>
+    [Fact]
+    public async Task A_caller_who_cannot_see_the_project_is_refused_its_modules()
+    {
+        await SeedModules();
+        var project = await SeedProject("sei");
+        var other = await SeedProject();
+        var outsider = await Actor().OnProject(other, [ProjectPermission.ViewProject]).SeedAsync();
+
+        await AssertProblem(HttpStatusCode.Forbidden, await Client(outsider).GetAsync($"api/modules?projectId={project.Id}", Ct));
+    }
+
     [Fact]
     public async Task Without_a_project_a_holder_of_ViewModules_gets_any_module_as_before()
     {

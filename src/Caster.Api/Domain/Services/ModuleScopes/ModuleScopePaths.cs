@@ -28,7 +28,7 @@ public static class ModuleScopePaths
 
     /// <summary>
     /// The path trimmed of white space and of slashes at either end, or null when it is not a path:
-    /// empty, too long, with an empty, dot or ".." segment, or a character that no Module Path has
+    /// empty, too long, with an empty, dot or ".." segment, a segment with white space at either end, or a character that no Module Path has
     /// (wildcards, backslashes, control characters). Names such as <c>_cmu</c> or <c>-cmu</c> are fine.
     /// </summary>
     public static string Normalize(string path)
@@ -39,7 +39,7 @@ public static class ModuleScopePaths
             return null;
 
         var segments = trimmed.Split('/');
-        return segments.All(x => x.Length > 0 && x != "." && x != ".." && Segment.IsMatch(x)) ? trimmed : null;
+        return segments.All(x => x.Length > 0 && x.Trim() == x && x != "." && x != ".." && Segment.IsMatch(x)) ? trimmed : null;
     }
 
     /// <summary>Whether a Module at <paramref name="modulePath"/> is allowed by any of <paramref name="allowed"/>.</summary>
