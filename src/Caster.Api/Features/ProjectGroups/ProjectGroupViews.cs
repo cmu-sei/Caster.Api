@@ -22,6 +22,7 @@ public class ProjectGroup
     public Guid? PartitionId { get; set; }
     public ProjectGroupItem[] Projects { get; set; } = [];
     public ProjectGroupItem[] EnvironmentSets { get; set; } = [];
+    public ProjectGroupItem[] ModuleScopes { get; set; } = [];
 
     /// <summary>The inventory connections every project in the group sees, by name.</summary>
     public string[] InventoryConnections { get; set; } = [];
@@ -103,6 +104,8 @@ public static class ProjectGroupQueries
                 Projects = x.Projects.OrderBy(p => p.Name).Select(p => new ProjectGroupItem { Id = p.Id, Name = p.Name }).ToArray(),
                 EnvironmentSets = x.EnvironmentSets.OrderBy(s => s.EnvironmentSet.Name)
                     .Select(s => new ProjectGroupItem { Id = s.EnvironmentSetId, Name = s.EnvironmentSet.Name }).ToArray(),
+                ModuleScopes = x.ModuleScopes.OrderBy(s => s.ModuleScope.Name)
+                    .Select(s => new ProjectGroupItem { Id = s.ModuleScopeId, Name = s.ModuleScope.Name }).ToArray(),
                 InventoryConnections = x.InventoryConnections.OrderBy(c => c.ConnectionName).Select(c => c.ConnectionName).ToArray(),
                 Hosts = x.Hosts.OrderBy(h => h.Name).Select(h => new ProjectGroupItem { Id = h.Id, Name = h.Name }).ToArray()
             })

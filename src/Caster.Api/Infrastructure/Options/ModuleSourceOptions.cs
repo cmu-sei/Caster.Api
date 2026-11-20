@@ -45,6 +45,15 @@ public class ModuleSourceOptions
     public ModuleSourceLayout Layout { get; set; } = ModuleSourceLayout.Root;
 
     /// <summary>
+    /// Whether every project may use this source's Modules, whatever Module Scopes it
+    /// has (the stock repository of modules anybody can use). A shared source cannot
+    /// be restricted. Defaults to false: a source is available to a project through
+    /// its Module Scopes, or to everyone while the project has none and
+    /// <see cref="ModuleScopeOptions.RestrictUnassigned"/> is off.
+    /// </summary>
+    public bool Shared { get; set; }
+
+    /// <summary>
     /// A source with no name or no url is treated as absent rather than as an
     /// error, so a half-filled entry in a values file does not break startup.
     /// </summary>

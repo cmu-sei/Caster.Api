@@ -28,9 +28,9 @@ public enum AssignmentOperation
 }
 
 /// <summary>
-/// One assignment to add or remove: an Environment Set or an infrastructure connection, on a
-/// project or a project group. It names either ProjectId or ProjectGroupId, and either
-/// EnvironmentSetId or ConnectionName.
+/// One assignment to add or remove: an Environment Set, a Module Scope or an infrastructure
+/// connection, on a project or a project group. It names either ProjectId or ProjectGroupId, and
+/// one of EnvironmentSetId, ModuleScopeId or ConnectionName.
 /// </summary>
 [DataContract(Name = "AssignmentChange")]
 public class AssignmentChange
@@ -48,12 +48,18 @@ public class AssignmentChange
     [DataMember]
     public Guid? EnvironmentSetId { get; set; }
 
+    /// <summary>A Module Scope: it limits the Modules the project, or every project of the group, may use.</summary>
+    [DataMember]
+    public Guid? ModuleScopeId { get; set; }
+
     /// <summary>An infrastructure connection's name, matched without regard to case.</summary>
     [DataMember]
     public string ConnectionName { get; set; }
 
     /// <summary>Whether the change names a set. A blank id or name counts as none, as the validator treats it.</summary>
     internal bool IsSetChange => EnvironmentSetId.HasValue && EnvironmentSetId != Guid.Empty;
+
+    internal bool IsScopeChange => ModuleScopeId.HasValue && ModuleScopeId != Guid.Empty;
 
     internal bool IsProjectChange => ProjectId.HasValue && ProjectId != Guid.Empty;
 
@@ -91,8 +97,8 @@ public class EditAssignments
                     .Must(x => x.IsProjectChange != x.IsGroupChange)
                     .WithMessage("A change names either a project or a project group.");
                 change.RuleFor(x => x)
-                    .Must(x => x.IsSetChange != x.IsConnectionChange)
-                    .WithMessage("A change names either an Environment Set or a connection.");
+                    .Must(x => new[] { x.IsSetChange, x.IsScopeChange, x.IsConnectionChange }.Count(named => named) == 1)
+                    .WithMessage("A change names either an Environment Set, a Module Scope or a connection.");
             });
 
             RuleFor(x => x.Changes)
@@ -102,7 +108,7 @@ public class EditAssignments
 
 
         private static string Key(AssignmentChange change) =>
-            $"{change.ProjectId}|{change.ProjectGroupId}|{change.EnvironmentSetId}|{ProjectInventoryConnection.Normalize(change.ConnectionName ?? string.Empty)}";
+            $"{change.ProjectId}|{change.ProjectGroupId}|{change.EnvironmentSetId}|{change.ModuleScopeId}|{ProjectInventoryConnection.Normalize(change.ConnectionName ?? string.Empty)}";
     }
 
     /// <summary>
@@ -110,7 +116,8 @@ public class EditAssignments
     /// checked against the final state and saved together: a change that would leave a project
     /// with two sets giving the same name, directly or through its group, refuses the whole
     /// request. Adding what is already assigned, or removing what isn't, changes nothing. Set
-    /// changes need ManageEnvironmentSets, connection changes ManageInfrastructure.
+    /// changes need ManageEnvironmentSets, Module Scope changes ManageModules, connection changes
+    /// ManageInfrastructure.
     /// </summary>
     public class Handler(
         ICasterAuthorizationService authorizationService,
@@ -122,6 +129,12 @@ public class EditAssignments
         {
             if (request.Changes.Any(x => x.IsSetChange) &&
                 !await authorizationService.Authorize([SystemPermission.ManageEnvironmentSets], cancellationToken))
+            {
+                return false;
+            }
+
+            if (request.Changes.Any(x => x.IsScopeChange) &&
+                !await authorizationService.Authorize([SystemPermission.ManageModules], cancellationToken))
             {
                 return false;
             }
@@ -148,6 +161,7 @@ public class EditAssignments
                 throw new EntityNotFoundException<Domain.Models.ProjectGroup>();
 
             await ApplySetChanges(request.Changes.Where(x => x.IsSetChange).ToList(), cancellationToken);
+            await ApplyScopeChanges(request.Changes.Where(x => x.IsScopeChange).ToList(), cancellationToken);
             await ApplyConnectionChanges(request.Changes.Where(x => x.IsConnectionChange).ToList(), cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -226,6 +240,51 @@ public class EditAssignments
 
             if (proposed.ProjectAssignments.Count > 0 || proposed.GroupAssignments.Count > 0)
                 await dbContext.EnsureNoConflicts(proposed, cancellationToken);
+        }
+
+        private async Task ApplyScopeChanges(List<AssignmentChange> changes, CancellationToken cancellationToken)
+        {
+            if (changes.Count == 0)
+                return;
+
+            var scopeIds = changes.Select(x => x.ModuleScopeId.Value).Distinct().ToList();
+            if (await dbContext.ModuleScopes.CountAsync(x => scopeIds.Contains(x.Id), cancellationToken) != scopeIds.Count)
+                throw new EntityNotFoundException<Domain.Models.ModuleScope>();
+
+            var projectIds = changes.Where(x => x.IsProjectChange).Select(x => x.ProjectId.Value).Distinct().ToList();
+            var groupIds = changes.Where(x => x.IsGroupChange).Select(x => x.ProjectGroupId.Value).Distinct().ToList();
+            var onProjects = await dbContext.ProjectModuleScopes
+                .Where(x => projectIds.Contains(x.ProjectId))
+                .ToListAsync(cancellationToken);
+            var onGroups = await dbContext.ProjectGroupModuleScopes
+                .Where(x => groupIds.Contains(x.ProjectGroupId))
+                .ToListAsync(cancellationToken);
+
+            foreach (var change in changes)
+            {
+                var scopeId = change.ModuleScopeId.Value;
+                var add = change.Operation == AssignmentOperation.Add;
+
+                if (change.ProjectId is { } projectId)
+                {
+                    var existing = onProjects.SingleOrDefault(x => x.ProjectId == projectId && x.ModuleScopeId == scopeId);
+
+                    if (!add && existing is not null)
+                        dbContext.ProjectModuleScopes.Remove(existing);
+                    else if (add && existing is null)
+                        dbContext.ProjectModuleScopes.Add(new ProjectModuleScope { ProjectId = projectId, ModuleScopeId = scopeId });
+                }
+                else
+                {
+                    var groupId = change.ProjectGroupId.Value;
+                    var existing = onGroups.SingleOrDefault(x => x.ProjectGroupId == groupId && x.ModuleScopeId == scopeId);
+
+                    if (!add && existing is not null)
+                        dbContext.ProjectGroupModuleScopes.Remove(existing);
+                    else if (add && existing is null)
+                        dbContext.ProjectGroupModuleScopes.Add(new ProjectGroupModuleScope { ProjectGroupId = groupId, ModuleScopeId = scopeId });
+                }
+            }
         }
 
         private async Task ApplyConnectionChanges(List<AssignmentChange> changes, CancellationToken cancellationToken)

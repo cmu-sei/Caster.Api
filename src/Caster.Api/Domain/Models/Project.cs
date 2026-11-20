@@ -33,6 +33,8 @@ namespace Caster.Api.Domain.Models
 
         public virtual ICollection<ProjectEnvironmentSet> EnvironmentSets { get; set; } = new List<ProjectEnvironmentSet>();
 
+        public virtual ICollection<ProjectModuleScope> ModuleScopes { get; set; } = new List<ProjectModuleScope>();
+
         public virtual ICollection<ProjectInventoryConnection> InventoryConnections { get; set; } = new List<ProjectInventoryConnection>();
 
         public Project() { }
