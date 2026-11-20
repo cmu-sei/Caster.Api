@@ -12,6 +12,7 @@ using Caster.Api.Domain.Services.Modules;
 using Caster.Api.Infrastructure.Options;
 using Caster.Api.Tests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
@@ -105,6 +106,51 @@ namespace Caster.Api.Tests.Domain.Services.Modules
             // selectable, and no release API exists on a file:// remote.
             Assert.All(modules, module =>
                 Assert.Equal(["v0.1.0", "v0.2.0"], module.Versions.Select(x => x.Name).OrderBy(x => x)));
+        }
+
+        [Fact]
+        public async Task ARepositoryWithNoCommitsIsZeroModulesAndNotAFailure()
+        {
+            var bare = Path.Combine(_scratch, "empty.git");
+            RunGitOrThrow(_scratch, "init", "--bare", "-q", bare);
+            var source = Source();
+            source.Url = "file:///" + bare.Replace('\\', '/').TrimStart('/');
+            var logger = new RecordingLogger<GitModuleRepositoryProvider>();
+            var sut = new GitModuleRepositoryProvider(Db, new GitCommandRunner(
+                Monitor(), new RecordingLogger<GitCommandRunner>()), new LockService(), logger);
+
+            Assert.True(await sut.SyncModulesAsync(source, false, Ct));
+
+            Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
+            Assert.DoesNotContain(logger.Entries, x => x.Level >= LogLevel.Information);
+        }
+
+        [Fact]
+        public async Task ARepositoryWithTagsButNoModulesIsZeroModulesAndNotAFailure()
+        {
+            var work = Path.Combine(_scratch, "tags-only");
+            Directory.CreateDirectory(work);
+            File.WriteAllText(Path.Combine(work, "README.md"), "no modules yet\n");
+            RunGitOrThrow(work, "init", "-q", "-b", "main");
+            RunGitOrThrow(work, "config", "user.name", "Caster Test");
+            RunGitOrThrow(work, "config", "user.email", "test@localhost");
+            RunGitOrThrow(work, "config", "commit.gpgsign", "false");
+            RunGitOrThrow(work, "config", "tag.gpgsign", "false");
+            RunGitOrThrow(work, "add", "-A");
+            RunGitOrThrow(work, "commit", "-q", "-m", "readme");
+            RunGitOrThrow(work, "tag", "v0.1.0");
+            var bare = Path.Combine(_scratch, "tags-only.git");
+            RunGitOrThrow(_scratch, "clone", "--bare", "-q", work, bare);
+            var source = Source();
+            source.Url = "file:///" + bare.Replace('\\', '/').TrimStart('/');
+            var logger = new RecordingLogger<GitModuleRepositoryProvider>();
+            var sut = new GitModuleRepositoryProvider(Db, new GitCommandRunner(
+                Monitor(), new RecordingLogger<GitCommandRunner>()), new LockService(), logger);
+
+            Assert.True(await sut.SyncModulesAsync(source, false, Ct));
+
+            Assert.Equal(0, await ReadBack(db => db.Modules.CountAsync(Ct)));
+            Assert.DoesNotContain(logger.Entries, x => x.Level >= LogLevel.Information);
         }
 
         [Fact]
