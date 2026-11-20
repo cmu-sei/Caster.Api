@@ -131,13 +131,22 @@ The Modules admin page (`ViewModules`, no project) always shows every Module. Wi
 
 ### Paths
 
-Each entry of a scope is a Module Path: a source's name (`cmu`) or, as before, a folder of one (`cmu/exercise-x`). An entry allows the Modules at exactly that Path and those below it, so `cmu` allows `cmu` and `cmu/exercise-x` but not `cmu2`. Paths are matched exactly, including case, as the Modules page shows them. Folders only exist for sources whose layout makes one Module per folder (see the source `Layout`), and only as deep as they are discovered. Scoping by source is the intended use; folder paths still work.
+Each entry of a scope is a Module Path: a source's name (`cmu`) or, as before, a folder of one (`cmu/exercise-x`). An entry allows the Modules at exactly that Path and those below it, so `cmu` allows `cmu` and `cmu/exercise-x` but not `cmu2`. A path may contain any character except wildcards (`*`, `?`), backslashes and control characters, so names such as `_cmu` or `crucible-modules` work; empty parts, `.` and `..` are refused. Paths are matched exactly, including case, as the Modules page shows them. Folders only exist for sources whose layout makes one Module per folder (see the source `Layout`), and only as deep as they are discovered. Scoping by source is the intended use; folder paths still work.
 
 ### What is enforced
 
-* The Designer, the file editor's module insert and every Module lookup the API serves for a project only offer the Modules the project may use. This is enforced by the API: `GET api/modules?projectId=` lists a project's Modules, and without `projectId` a member gets what their own projects together allow. Adding a Module outside the project's access to a Design (or switching a Design's Module to one) is refused.
+* The Designer, the file editor's module insert and every Module lookup the API serves for a project only offer the Modules the project may use. This is enforced by the API: `GET api/modules?projectId=` lists a project's Modules (a `projectId` that names no project is `404`), and without `projectId` a member gets what their own projects together allow. Adding a Module outside the project's access to a Design (or switching a Design's Module to one) is refused.
 * A Design that already uses a Module outside the project's access keeps working: the Module can still be looked up by that project, and plans and applies are unaffected. The Designer marks it as outside the project's Module Scopes.
 * The snippet the file editor inserts (`POST api/modules/snippet`) is scoped the same way. With `projectId` it needs `ViewProject` on that project (or `ViewProjects`) instead of `ViewModules`, so a project author does not need `ViewModules`, which would show every Module. A Module outside the project's access answers `404`, as for a missing version, and a Design that already uses it does not open it for a new snippet. A holder of `ViewModules` who names a project is held to its access too. Without `projectId` the endpoint is unchanged: `ViewModules`, any Module.
+
+### What scopes do not restrict
+
+Module Scopes limit what the catalog offers and what the API serves: the Designer, the file editor's module insert, the snippet endpoint, `GET api/modules` and adding a Module to a Design. They are not an access boundary on the module repositories.
+
+* Terraform at run time can still clone any configured source. Every plan and apply uses the same git credentials (the shared credential store or `CASTER_GIT_TOKEN`), whatever the project.
+* A file author can type any module source into a `.tf` file, for example `source = "git::https://git.example.com/sei/terraform-modules.git//foo?ref=v1"`, since the repository URL appears in every snippet. A project that is scoped away from a source can still pull it that way.
+
+A deployment that needs real isolation between vendors must use separate git credentials or separate deployments.
 
 Scopes are created, changed and deleted with `ManageModules` and read with `ViewModules` or `ManageModules`. Assigning a scope to a project or group uses `POST api/assignments` (`moduleScopeId`) and also needs `ManageModules`, so a project's own admins cannot widen the list. A project's members read what applies to them with `GET api/projects/{id}/module-scopes`: `restricted`, `restrictedBecauseUnassigned` (restricted only because nothing is assigned and `RestrictUnassigned` is on), the united `paths`, the `sharedSources`, each path with the scopes and groups it comes from (`pathOrigins`), and the `scopes` themselves.
 
