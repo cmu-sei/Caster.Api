@@ -11,6 +11,7 @@ using Caster.Api.Domain.Services;
 using Caster.Api.Hubs;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Tests.Support;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Caster.Api.Tests.Hubs;
 
@@ -35,7 +36,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinProject(project.Id);
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, project.Id.ToString(), Arg.Any<CancellationToken>());
-        harness.NothingAddressed();
+        harness.AssertAddressedOnly(nameof(IHubCallerClients.OthersInGroup));
     }
 
     [Fact]
@@ -61,7 +62,7 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         await hub.JoinProject(project.Id);
 
         await harness.Groups.Received(1).AddToGroupAsync(HubHarness.ConnectionId, project.Id.ToString(), Arg.Any<CancellationToken>());
-        harness.NothingAddressed();
+        harness.AssertAddressedOnly(nameof(IHubCallerClients.OthersInGroup));
     }
 
     [Fact]
@@ -488,7 +489,8 @@ public class ProjectHubTests(DatabaseFixture fixture) : DatabaseTestBase(fixture
         var hub = harness.Attach(new ProjectHub(
             new OutputService(),
             Db,
-            AuthorizationHarness.CreateCasterAuthorizationService(Db, user)));
+            AuthorizationHarness.CreateCasterAuthorizationService(Db, user),
+            new ProjectPresenceTracker()));
 
         return (hub, harness);
     }

@@ -12,6 +12,7 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
+using Caster.Api.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -24,25 +25,95 @@ public class ProjectHub : Hub
     private readonly IOutputService _outputService;
     private readonly CasterContext _db;
     private readonly ICasterAuthorizationService _authorizationService;
+    private readonly IProjectPresenceTracker _presence;
 
-    public ProjectHub(IOutputService outputService, CasterContext db, ICasterAuthorizationService authorizationService)
+    public ProjectHub(
+        IOutputService outputService,
+        CasterContext db,
+        ICasterAuthorizationService authorizationService,
+        IProjectPresenceTracker presence)
     {
         _outputService = outputService;
         _db = db;
         _authorizationService = authorizationService;
+        _presence = presence;
     }
 
-    public async Task JoinProject(Guid projectId)
+    public override async Task OnDisconnectedAsync(Exception exception)
+    {
+        foreach (var projectId in _presence.ProjectsOf(Context.ConnectionId))
+        {
+            using (await _presence.LockProjectAsync(projectId))
+            {
+                var departed = _presence.Leave(projectId, Context.ConnectionId);
+
+                if (departed != null)
+                {
+                    await Clients.Group(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceDeparted, departed);
+                }
+            }
+        }
+
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>
+    /// Adds the connection to the project's group and to the project's presence, telling the others in the
+    /// project when this is the caller's first connection to it.
+    /// </summary>
+    /// <returns>The other users with the project open.</returns>
+    public async Task<IReadOnlyList<PresentUser>> JoinProject(Guid projectId)
     {
         if (!await _authorizationService.Authorize<Project>(projectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], Context.ConnectionAborted))
             throw new ForbiddenException();
 
         await Groups.AddToGroupAsync(Context.ConnectionId, projectId.ToString());
+
+        var user = await GetPresentUser();
+
+        using (await _presence.LockProjectAsync(projectId))
+        {
+            var wasOpen = _presence.ProjectsOf(Context.ConnectionId).Contains(projectId);
+            var arrived = _presence.Join(projectId, Context.ConnectionId, user);
+
+            // The connection can have closed while this was waiting. Its disconnect has then already
+            // looked for what it had open and found nothing, so a join that registered it now must not
+            // leave it registered. One that had registered it before is the disconnect's to remove, and
+            // announce.
+            if (Context.ConnectionAborted.IsCancellationRequested)
+            {
+                if (!wasOpen)
+                    _presence.Leave(projectId, Context.ConnectionId);
+
+                return [];
+            }
+
+            if (arrived)
+            {
+                await Clients.OthersInGroup(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceArrived, user);
+            }
+
+            return [.. _presence.GetUsers(projectId).Where(x => x.Id != user.Id)];
+        }
     }
 
     public async Task LeaveProject(Guid projectId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, projectId.ToString());
+
+        // Nothing to announce unless this connection had the project open.
+        if (!_presence.ProjectsOf(Context.ConnectionId).Contains(projectId))
+            return;
+
+        using (await _presence.LockProjectAsync(projectId))
+        {
+            var departed = _presence.Leave(projectId, Context.ConnectionId);
+
+            if (departed != null)
+            {
+                await Clients.Group(projectId.ToString()).SendAsync(ProjectHubMethods.PresenceDeparted, departed);
+            }
+        }
     }
 
     public async Task JoinProjectAdmin(Guid projectId)
@@ -147,6 +218,26 @@ public class ProjectHub : Hub
     public async Task LeaveEnvironmentSetsAdmin()
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.EnvironmentSetsAdmin));
+    }
+
+    /// <summary>
+    /// The caller as the others see them: the token's name, else the name Caster stored for the user, else
+    /// their id.
+    /// </summary>
+    private async Task<PresentUser> GetPresentUser()
+    {
+        var id = Context.User.GetId();
+        var name = Context.User.FindFirst("name")?.Value;
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = await _db.Users
+                .Where(x => x.Id == id)
+                .Select(x => x.Name)
+                .FirstOrDefaultAsync(Context.ConnectionAborted);
+        }
+
+        return new PresentUser(id, string.IsNullOrWhiteSpace(name) ? id.ToString() : name);
     }
 
     #region RunOutput
@@ -270,6 +361,9 @@ public static class ProjectHubMethods
     public const string ProjectMembershipCreated = nameof(ProjectMembershipCreated);
     public const string ProjectMembershipUpdated = nameof(ProjectMembershipUpdated);
     public const string ProjectMembershipDeleted = nameof(ProjectMembershipDeleted);
+
+    public const string PresenceArrived = nameof(PresenceArrived);
+    public const string PresenceDeparted = nameof(PresenceDeparted);
 
     private const string GroupSeparator = "-";
 
