@@ -21,10 +21,7 @@ public static class DesignModuleValidation
         "Name must start with a letter or underscore and contain only letters, digits, underscores and dashes";
 
     /// <summary>
-    /// A Design is turned straight into a Workspace file, so a DesignModule must have a
-    /// name unique in its Design, name an existing version and give every required
-    /// variable a value. Checked against the
-    /// values as they will be saved, since Edit and AddOrUpdateValues only send changes.
+    /// Refuses a Module outside the Module Scopes of the Design's project, which limit the modules it may use.
     /// </summary>
     public static async Task EnsureModuleAllowed(
         CasterContext dbContext,
@@ -52,6 +49,12 @@ public static class DesignModuleValidation
         }
     }
 
+    /// <summary>
+    /// A Design is turned straight into a Workspace file, so a DesignModule must have a
+    /// name unique in its Design, name an existing version and give every required
+    /// variable a value. Checked against the
+    /// values as they will be saved, since Edit and AddOrUpdateValues only send changes.
+    /// </summary>
     public static async Task EnsureComplete(CasterContext dbContext, Domain.Models.DesignModule designModule, CancellationToken cancellationToken)
     {
         // Each module becomes a block in the same generated file, where a repeated
