@@ -946,15 +946,29 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         [Fact]
         public async Task OverlappingRefreshes_AreMerged()
         {
+            var ct = TestContext.Current.CancellationToken;
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var thirdRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var extraRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var calls = 0;
-            var client = new FakeProviderClient(_ =>
+
+            // The second read waits on the gate without holding a thread, so a busy
+            // thread pool cannot starve the test of the threads it needs to release it.
+            var client = FakeProviderClient.Async(async (_, _) =>
             {
-                if (Interlocked.Increment(ref calls) == 2)
+                switch (Interlocked.Increment(ref calls))
                 {
-                    blocked.TrySetResult();
-                    gate.Task.Wait(TimeSpan.FromSeconds(10));
+                    case 2:
+                        blocked.TrySetResult();
+                        await gate.Task.WaitAsync(TimeSpan.FromSeconds(60));
+                        break;
+                    case 3:
+                        thirdRead.TrySetResult();
+                        break;
+                    case > 3:
+                        extraRead.TrySetResult();
+                        break;
                 }
 
                 return Loaded();
@@ -965,17 +979,23 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             {
                 await sut.StartAsync(CancellationToken.None);
                 sut.ForceRefresh();
-                await blocked.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+                await blocked.Task.WaitAsync(TimeSpan.FromSeconds(60), ct);
 
                 var refreshes = Enumerable.Range(0, 5)
-                    .Select(_ => sut.ForceRefreshAsync(TimeSpan.FromSeconds(10), CancellationToken.None))
+                    .Select(_ => sut.ForceRefreshAsync(TimeSpan.FromSeconds(60), ct))
                     .ToArray();
 
                 gate.TrySetResult();
 
                 Assert.All(await Task.WhenAll(refreshes), Assert.True);
-                await WaitFor(() => Volatile.Read(ref calls) >= 3);
-                await Task.Delay(200, TestContext.Current.CancellationToken);
+
+                // The merged refreshes cost exactly one more read. Once it has started,
+                // a stray extra read would follow straight away, so give it a short,
+                // bounded window to show up. The window only ever misses a stray read;
+                // it can never fail a correct run.
+                await thirdRead.Task.WaitAsync(TimeSpan.FromSeconds(60), ct);
+                await Assert.ThrowsAsync<TimeoutException>(
+                    () => extraRead.Task.WaitAsync(TimeSpan.FromMilliseconds(500), ct));
 
                 Assert.Equal(3, Volatile.Read(ref calls));
             }
@@ -1109,6 +1129,14 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         {
             private int _calls;
 
+            private Func<InfrastructureConnectionOptions, CancellationToken, Task<InventorySnapshot>> _asyncResponder;
+
+            /// <summary>
+            /// A client whose reads can wait asynchronously, for tests that hold a read open.
+            /// </summary>
+            public static FakeProviderClient Async(Func<InfrastructureConnectionOptions, CancellationToken, Task<InventorySnapshot>> responder) =>
+                new(_ => null) { _asyncResponder = responder };
+
             public int Calls => _calls;
             public InfrastructureConnectionOptions LastOptions { get; private set; }
 
@@ -1130,7 +1158,9 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 LastOptions = options;
                 Urls.Enqueue(options.Url);
                 OnCall?.Invoke(cancellationToken);
-                return Task.FromResult(responder(options));
+                return _asyncResponder is { } respond
+                    ? respond(options, cancellationToken)
+                    : Task.FromResult(responder(options));
             }
         }
 
