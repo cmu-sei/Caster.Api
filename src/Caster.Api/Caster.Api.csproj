@@ -38,7 +38,7 @@
     <PackageReference Include="AspNetCore.HealthChecks.Sqlite" Version="9.0.0" />
     <PackageReference Include="EFCore.BulkExtensions" Version="10.0.0" />
     <PackageReference Include="Docker.Registry.DotNet" Version="2.0.0" />
-    <PackageReference Include="KubernetesClient" Version="19.0.2" />
+    <PackageReference Include="KubernetesClient" Version="21.0.8" />
     <PackageReference Include="Crucible.Common.ServiceDefaults" Version="0.0.2"/>
   </ItemGroup>
   <ItemGroup>
