@@ -283,6 +283,78 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal(Refused, snapshot.Isos.Error);
         }
 
+        private static InventorySnapshot LoadedWithIsoWarning(DateTime stamp, string warning)
+        {
+            var read = LoadedAt(stamp);
+            read.Isos = InventoryCategoryResult.OkWithWarning([new InventoryEntry { Id = "[ds] a.iso", Name = "a.iso", Path = "[ds] a.iso" }], warning);
+            return read;
+        }
+
+        [Fact]
+        public async Task AStaleRead_KeepsTheWarningOfTheReadItCameFrom()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedWithIsoWarning(FirstRead, "Some ISO locations could not be searched: [gone] x."),
+                () => InventorySnapshot.AllUnavailable(Refused)));
+
+            await RunReads(sut, refreshes: 1);
+
+            var isos = sut.GetSnapshot().Isos;
+            Assert.True(isos.Stale);
+            Assert.Equal("a.iso", Assert.Single(isos.Entries).Name);
+            Assert.Equal("Some ISO locations could not be searched: [gone] x.", isos.Warning);
+            Assert.Equal(Refused, isos.Error);
+        }
+
+        [Fact]
+        public async Task AStaleRead_OfACompleteReadDoesNotInventAWarning()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () =>
+                {
+                    var read = LoadedAt(FirstRead);
+                    read.Isos = InventoryCategoryResult.Ok([new InventoryEntry { Id = "[ds] a.iso", Name = "a.iso", Path = "[ds] a.iso" }]);
+                    return read;
+                },
+                () => InventorySnapshot.AllUnavailable(Refused)));
+
+            await RunReads(sut, refreshes: 1);
+
+            var isos = sut.GetSnapshot().Isos;
+            Assert.True(isos.Stale);
+            Assert.Null(isos.Warning);
+        }
+
+        [Fact]
+        public async Task ANewerRead_ReplacesTheWarning()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedWithIsoWarning(FirstRead, "Some ISO locations could not be searched: [gone] x."),
+                () =>
+                {
+                    var read = LoadedAt(ThirdRead);
+                    read.Isos = InventoryCategoryResult.Ok([new InventoryEntry { Id = "[ds] a.iso", Name = "a.iso", Path = "[ds] a.iso" }]);
+                    return read;
+                }));
+
+            await RunReads(sut, refreshes: 1);
+
+            var isos = sut.GetSnapshot().Isos;
+            Assert.False(isos.Stale);
+            Assert.Null(isos.Warning);
+        }
+
+        [Fact]
+        public async Task AWarning_NamesTheConnectionsOwnKeys()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedWithIsoWarning(FirstRead, "Infrastructure:IsoLocations names \"x\", which is not an accessible datastore.")));
+
+            await RunReads(sut, refreshes: 0);
+
+            Assert.Contains("Infrastructure:Connections:0:IsoLocations", sut.GetSnapshot().Isos.Warning);
+        }
+
         [Fact]
         public async Task ContentLibraryDown_AfterAGoodRead_KeepsItAsStale()
         {
