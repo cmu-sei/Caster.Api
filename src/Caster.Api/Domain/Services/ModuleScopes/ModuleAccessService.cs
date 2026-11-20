@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Caster.Api.Data;
 using Caster.Api.Domain.Models;
 using Caster.Api.Infrastructure.Authorization;
+using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -22,9 +23,13 @@ namespace Caster.Api.Domain.Services.ModuleScopes;
 /// </summary>
 public interface IModuleAccessService
 {
-    /// <summary>The access of each project: its own scopes plus its project group's.</summary>
+    /// <summary>
+    /// The access of each project that exists: its own scopes plus its project group's, read in one
+    /// query. An id with no project is left out, so it never counts as an unrestricted project.
+    /// </summary>
     Task<Dictionary<Guid, ModuleAccess>> ForProjects(IReadOnlyCollection<Guid> projectIds, CancellationToken cancellationToken);
 
+    /// <summary>The access of the project; throws <see cref="EntityNotFoundException{T}"/> when there is no such project.</summary>
     Task<ModuleAccess> ForProject(Guid projectId, CancellationToken cancellationToken);
 
     /// <summary>
@@ -49,31 +54,45 @@ public class ModuleAccessService(
 {
     public async Task<Dictionary<Guid, ModuleAccess>> ForProjects(IReadOnlyCollection<Guid> projectIds, CancellationToken cancellationToken)
     {
-        var direct = await dbContext.ProjectModuleScopes
-            .Where(x => projectIds.Contains(x.ProjectId))
-            .Select(x => new { x.ProjectId, x.ModuleScope.Paths })
+        // One statement reads the projects, their own scopes and their group's, so the decision
+        // "no scope applies" is made from one consistent snapshot: moving an assignment between a
+        // project and its group, or a project between groups, is never seen half done. Only
+        // projects that exist are answered; an id with no row (a deleted project still in cached
+        // claims, a made-up id) contributes nothing and is never treated as unassigned.
+        var projects = await dbContext.Projects
+            .AsNoTracking()
+            .Where(x => projectIds.Contains(x.Id))
+            .Select(x => new
+            {
+                x.Id,
+                Own = x.ModuleScopes.Select(s => s.ModuleScope.Paths).ToList(),
+                Inherited = x.ProjectGroup == null
+                    ? null
+                    : x.ProjectGroup.ModuleScopes.Select(s => s.ModuleScope.Paths).ToList()
+            })
             .ToListAsync(cancellationToken);
-
-        var grouped = await dbContext.ProjectGroupModuleScopes
-            .SelectMany(x => x.ProjectGroup.Projects, (link, project) => new { ProjectId = project.Id, link.ModuleScope.Paths })
-            .Where(x => projectIds.Contains(x.ProjectId))
-            .ToListAsync(cancellationToken);
-
-        var scopes = direct.Concat(grouped).ToLookup(x => x.ProjectId);
 
         var options = terraformOptions.CurrentValue;
         var shared = options.SharedSourceNames();
         var restrictUnassigned = options?.ModuleScopes?.RestrictUnassigned ?? false;
 
-        return projectIds.Distinct().ToDictionary(
-            id => id,
-            id => scopes.Contains(id)
-                ? ModuleAccess.Of(scopes[id].SelectMany(x => x.Paths), shared)
-                : restrictUnassigned ? ModuleAccess.Of([], shared) : ModuleAccess.Everything);
+        return projects.ToDictionary(
+            x => x.Id,
+            x =>
+            {
+                var paths = x.Own.Concat(x.Inherited ?? []).SelectMany(p => p).ToList();
+                var assigned = x.Own.Count > 0 || (x.Inherited?.Count ?? 0) > 0;
+
+                return assigned
+                    ? ModuleAccess.Of(paths, shared)
+                    : restrictUnassigned ? ModuleAccess.Of([], shared) : ModuleAccess.Everything;
+            });
     }
 
     public async Task<ModuleAccess> ForProject(Guid projectId, CancellationToken cancellationToken) =>
-        (await ForProjects([projectId], cancellationToken))[projectId];
+        (await ForProjects([projectId], cancellationToken)).TryGetValue(projectId, out var access)
+            ? access
+            : throw new EntityNotFoundException<Project>();
 
     public async Task<ModuleAccess> ForCaller(Guid? projectId, CancellationToken cancellationToken)
     {

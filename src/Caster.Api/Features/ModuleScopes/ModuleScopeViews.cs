@@ -58,17 +58,23 @@ public static class ModuleScopeViews
     public static async Task<ProjectModuleAccess> GetProjectAccess(
         this CasterContext dbContext, Guid projectId, TerraformOptions options, CancellationToken cancellationToken)
     {
-        var direct = await dbContext.ProjectModuleScopes
+        // One statement, so the project's own and inherited scopes are one consistent snapshot.
+        var project = await dbContext.Projects
             .AsNoTracking()
-            .Where(x => x.ProjectId == projectId)
-            .Select(x => new { x.ModuleScope, GroupId = (Guid?)null, GroupName = (string)null })
-            .ToListAsync(cancellationToken);
+            .Where(x => x.Id == projectId)
+            .Select(x => new
+            {
+                Direct = x.ModuleScopes.Select(s => s.ModuleScope).ToList(),
+                Grouped = x.ProjectGroup == null
+                    ? null
+                    : x.ProjectGroup.ModuleScopes
+                        .Select(s => new { s.ModuleScope, GroupId = s.ProjectGroupId, GroupName = s.ProjectGroup.Name })
+                        .ToList()
+            })
+            .SingleOrDefaultAsync(cancellationToken);
 
-        var grouped = await dbContext.ProjectGroupModuleScopes
-            .AsNoTracking()
-            .Where(x => x.ProjectGroup.Projects.Any(p => p.Id == projectId))
-            .Select(x => new { x.ModuleScope, GroupId = (Guid?)x.ProjectGroupId, GroupName = x.ProjectGroup.Name })
-            .ToListAsync(cancellationToken);
+        var direct = (project?.Direct ?? []).Select(x => new { ModuleScope = x, GroupId = (Guid?)null, GroupName = (string)null });
+        var grouped = (project?.Grouped ?? []).Select(x => new { x.ModuleScope, GroupId = (Guid?)x.GroupId, x.GroupName });
 
         var scopes = direct.Concat(grouped)
             .GroupBy(x => x.ModuleScope.Id)
