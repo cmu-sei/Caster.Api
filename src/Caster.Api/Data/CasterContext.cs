@@ -59,6 +59,7 @@ public partial class CasterContext : EventPublishingDbContext
     public DbSet<ProjectGroupMembership> ProjectGroupMemberships { get; set; }
     public DbSet<ProjectGroupEnvironmentSet> ProjectGroupEnvironmentSets { get; set; }
     public DbSet<ProjectGroupInventoryConnection> ProjectGroupInventoryConnections { get; set; }
+    public DbSet<AiUsage> AiUsages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

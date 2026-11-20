@@ -21,6 +21,8 @@ Caster discovers the Modules offered in Designer from git repositories or a GitL
 
 Caster can list the VM templates, ISOs, networks, datastores and hosts on the vSphere and Proxmox hypervisors it deploys to, with Terraform to copy for each. See [docs/Inventory.md](docs/Inventory.md) for the connection settings and the filters on what is read.
 
+Caster can draft Designs and Terraform with AI, and propose changes to a Directory in an Ask AI panel, on Amazon Bedrock or an OpenAI-compatible endpoint. See [docs/Ai.md](docs/Ai.md) for the settings, what the models see, and the permissions and usage reporting.
+
 Project groups let several projects share memberships, Environment Sets, inventory connections, a VLAN partition and hosts. See [docs/ProjectGroups.md](docs/ProjectGroups.md) for what a group gives its projects and who can change it.
 
 ## Testing

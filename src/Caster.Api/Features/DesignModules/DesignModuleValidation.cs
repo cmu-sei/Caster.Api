@@ -62,5 +62,42 @@ public static class DesignModuleValidation
                 [nameof(designModule.Values)] = [$"Required values are missing: {string.Join(", ", missing)}"]
             });
         }
+
+        if (designModule.Enabled &&
+            await dbContext.Designs.AnyAsync(d => d.Id == designModule.DesignId && d.Enabled, cancellationToken))
+        {
+            EnsureNoPlaceholders([designModule], "Disable the design or the module first, or");
+        }
+    }
+
+    /// <summary>
+    /// What an enabled Design writes into its Workspaces goes to Terraform as is, so none of
+    /// its enabled modules may still hold a placeholder.
+    /// </summary>
+    public static async Task EnsureNoPlaceholders(CasterContext dbContext, System.Guid designId, CancellationToken cancellationToken)
+    {
+        var modules = await dbContext.DesignModules
+            .Where(m => m.DesignId == designId && m.Enabled)
+            .ToListAsync(cancellationToken);
+
+        EnsureNoPlaceholders(modules, "Before enabling,");
+    }
+
+    public static void EnsureNoPlaceholders(IEnumerable<Domain.Models.DesignModule> modules, string advice)
+    {
+        var unfinished = modules
+            .Select(m => (m.Name, Variables: Domain.Models.Placeholders.In(m.Values)))
+            .Where(m => m.Variables.Length > 0)
+            .OrderBy(m => m.Name)
+            .Select(m => $"{m.Name} ({string.Join(", ", m.Variables)})")
+            .ToArray();
+
+        if (unfinished.Length > 0)
+        {
+            throw new ValidationException(new Dictionary<string, string[]>
+            {
+                ["Values"] = [$"{advice} replace the placeholder values in {string.Join("; ", unfinished)}"]
+            });
+        }
     }
 }

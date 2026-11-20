@@ -646,6 +646,41 @@ namespace Caster.Api.Tests.Domain.Services.Modules
         }
 
         [Fact]
+        public async Task SyncModules_RecordsTheRequiredProviders()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildRootLayoutTree();
+            File.WriteAllText(Path.Combine(_git.SourceTree, "main.tf"),
+                "terraform {\n  required_providers {\n    proxmox = { source = \"bpg/proxmox\" }\n  }\n}\n");
+
+            await Sut.SyncModulesAsync(Source(ModuleSourceLayout.Root), false, Ct);
+
+            var version = await ReadBack(db => db.ModuleVersions.SingleAsync(Ct));
+            Assert.Equal(["bpg/proxmox"], version.Providers);
+        }
+
+        [Fact]
+        public async Task SyncModules_VersionsSyncedBeforeProvidersWereRead_AreReadAgain()
+        {
+            GivenTags("v0.1.0");
+            _git.SourceTree = BuildMonorepoTree();
+            var source = Source(ModuleSourceLayout.Subdirectories);
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            // what a sync from before the providers column left behind
+            await Db.ModuleVersions.ExecuteUpdateAsync(x => x.SetProperty(v => v.Providers, (string[])null), Ct);
+
+            await Sut.SyncModulesAsync(source, false, Ct);
+
+            Assert.Equal(2, _git.CloneCallCount);
+            Assert.False(await ReadBack(db => db.ModuleVersions.AnyAsync(v => v.Providers == null, Ct)));
+
+            // and once read, an unchanged tag set skips the clone again
+            await Sut.SyncModulesAsync(source, false, Ct);
+            Assert.Equal(2, _git.CloneCallCount);
+        }
+
+        [Fact]
         public async Task SyncModules_ModuleAddedInALaterTag_SecondSyncSkipsTheClone()
         {
             // v0.1.0 predates machine-blank, so it never carries that tag. That
