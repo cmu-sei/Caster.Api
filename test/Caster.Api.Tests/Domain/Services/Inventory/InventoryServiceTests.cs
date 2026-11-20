@@ -950,7 +950,6 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var thirdRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var extraRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var calls = 0;
 
             // The second read waits on the gate without holding a thread, so a busy
@@ -965,9 +964,6 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                         break;
                     case 3:
                         thirdRead.TrySetResult();
-                        break;
-                    case > 3:
-                        extraRead.TrySetResult();
                         break;
                 }
 
@@ -989,13 +985,12 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
                 Assert.All(await Task.WhenAll(refreshes), Assert.True);
 
-                // The merged refreshes cost exactly one more read. Once it has started,
-                // a stray extra read would follow straight away, so give it a short,
-                // bounded window to show up. The window only ever misses a stray read;
-                // it can never fail a correct run.
+                // The merged refreshes cost exactly one more read. Once it has started, a
+                // stray extra read would follow straight away, so a short wait that starts
+                // from that point is enough. It can only miss a stray read, never fail a
+                // correct run.
                 await thirdRead.Task.WaitAsync(TimeSpan.FromSeconds(60), ct);
-                await Assert.ThrowsAsync<TimeoutException>(
-                    () => extraRead.Task.WaitAsync(TimeSpan.FromMilliseconds(500), ct));
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
 
                 Assert.Equal(3, Volatile.Read(ref calls));
             }
