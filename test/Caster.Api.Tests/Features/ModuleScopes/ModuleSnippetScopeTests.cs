@@ -56,6 +56,24 @@ public class ModuleSnippetScopeTests(DatabaseFixture fixture, CasterAppFactory f
         Assert.Contains("module \"web\"", await response.Content.ReadAsStringAsync());
     }
 
+    /// <summary>
+    /// A project id with no project is a 404 on the list, the lookup, the versions and the snippet, even
+    /// for a holder of ViewProjects: it is not a project with no scopes, which would be offered every Module.
+    /// </summary>
+    [Fact]
+    public async Task A_project_that_does_not_exist_is_not_found_on_every_module_endpoint()
+    {
+        var data = await SeedModules();
+        await SeedProject("sei");
+        var admin = await Actor().WithSystemPermissions(SystemPermission.ViewProjects, SystemPermission.ViewModules).SeedAsync();
+        var missing = Guid.NewGuid();
+
+        await AssertProblem(HttpStatusCode.NotFound, await Client(admin).GetAsync($"api/modules?projectId={missing}", Ct));
+        await AssertProblem(HttpStatusCode.NotFound, await Client(admin).GetAsync($"api/modules/{data.Inside.Id}?projectId={missing}", Ct));
+        await AssertProblem(HttpStatusCode.NotFound, await Client(admin).GetAsync($"api/modules/{data.Inside.Id}/versions?projectId={missing}", Ct));
+        await AssertProblem(HttpStatusCode.NotFound, await Snippet(admin, data.OutsideVersion, missing));
+    }
+
     [Fact]
     public async Task Without_a_project_a_holder_of_ViewModules_gets_any_module_as_before()
     {
