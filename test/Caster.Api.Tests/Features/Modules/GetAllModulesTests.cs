@@ -11,6 +11,8 @@ using Caster.Api.Domain.Services.ModuleScopes;
 using Caster.Api.Features.Modules;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Tests.Support;
+using Caster.Api.Infrastructure.Options;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Xunit;
@@ -193,11 +195,19 @@ namespace Caster.Api.Tests.Features.Modules
         /// <paramref name="caller"/> (one holding nothing by default, for the tests that call
         /// <c>HandleRequest</c>, which runs after the gate).
         /// </summary>
+        private static IOptionsMonitor<TerraformOptions> Options()
+        {
+            var monitor = Substitute.For<IOptionsMonitor<TerraformOptions>>();
+            monitor.CurrentValue.Returns(new TerraformOptions());
+
+            return monitor;
+        }
+
         private GetAll.Handler Handler(ClaimsPrincipal caller = null)
         {
             var authorization = AuthorizationHarness.CreateCasterAuthorizationService(Db, caller ?? ClaimsPrincipalBuilder.Anonymous());
 
-            return new(authorization, Db, _modules, new ModuleAccessService(Db, authorization, new StaticOptionsMonitor<Caster.Api.Infrastructure.Options.TerraformOptions>(new())), new RecordingLogger<GetAll>());
+            return new(authorization, Db, _modules, new ModuleAccessService(Db, authorization, Options()), new RecordingLogger<GetAll>());
         }
     }
 }
