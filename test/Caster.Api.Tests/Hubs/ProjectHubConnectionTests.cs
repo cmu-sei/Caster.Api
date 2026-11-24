@@ -43,7 +43,8 @@ public class ProjectHubConnectionTests(DatabaseFixture fixture, CasterAppFactory
 
     /// <summary>
     /// Presence end to end: a member already in the project hears the second arrive, is in the second's
-    /// answer, and hears it depart when its connection closes without leaving, the disconnect path.
+    /// answer, and hears the list without them when their connection closes without leaving, the
+    /// disconnect path.
     /// </summary>
     [Fact]
     public async Task A_member_in_the_project_sees_another_arrive_and_depart_on_disconnect()
@@ -52,24 +53,32 @@ public class ProjectHubConnectionTests(DatabaseFixture fixture, CasterAppFactory
         await Seed(project);
         var bob = await Actor().WithName("Bob").OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
         var alice = await Actor().WithName("Alice").OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
-        var arrived = new TaskCompletionSource<PresentUser>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var departed = new TaskCompletionSource<PresentUser>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var afterAlice = new TaskCompletionSource<PresenceState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var afterDeparture = new TaskCompletionSource<PresenceState>(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var bobs = Connection(bob);
-        bobs.On<PresentUser>(ProjectHubMethods.PresenceArrived, x => arrived.TrySetResult(x));
-        bobs.On<PresentUser>(ProjectHubMethods.PresenceDeparted, x => departed.TrySetResult(x));
+        bobs.On<PresenceState>(ProjectHubMethods.PresenceChanged, x =>
+        {
+            if (x.Users.Count == 2)
+                afterAlice.TrySetResult(x);
+            else if (afterAlice.Task.IsCompleted)
+                afterDeparture.TrySetResult(x);
+        });
         await bobs.StartAsync(Ct);
-        Assert.Empty(await bobs.InvokeAsync<List<PresentUser>>(nameof(ProjectHub.JoinProject), project.Id, Ct));
+        var first = await bobs.InvokeAsync<PresenceState>(nameof(ProjectHub.JoinProject), project.Id, Ct);
+        Assert.Equal([new PresentUser(bob.Id, "Bob")], first.Users);
 
         var alices = Connection(alice);
         await alices.StartAsync(Ct);
-        var present = await alices.InvokeAsync<List<PresentUser>>(nameof(ProjectHub.JoinProject), project.Id, Ct);
+        var present = await alices.InvokeAsync<PresenceState>(nameof(ProjectHub.JoinProject), project.Id, Ct);
 
-        Assert.Equal([new PresentUser(bob.Id, "Bob")], present);
-        Assert.Equal(new PresentUser(alice.Id, "Alice"), await arrived.Task.WaitAsync(Waits.Budget, Ct));
+        Assert.Equal([new PresentUser(alice.Id, "Alice"), new PresentUser(bob.Id, "Bob")], present.Users);
+        Assert.Equal(present.Users, (await afterAlice.Task.WaitAsync(Waits.Budget, Ct)).Users);
 
         await alices.DisposeAsync();
 
-        Assert.Equal(new PresentUser(alice.Id, "Alice"), await departed.Task.WaitAsync(Waits.Budget, Ct));
+        var departed = await afterDeparture.Task.WaitAsync(Waits.Budget, Ct);
+        Assert.Equal([new PresentUser(bob.Id, "Bob")], departed.Users);
+        Assert.True(departed.Version > present.Version);
     }
 
     /// <summary>A request with no identity is answered with a 401; the anonymous client is the case under test.</summary>

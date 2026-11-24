@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,13 +14,14 @@ using Caster.Api.Hubs;
 using Caster.Api.Infrastructure.Exceptions;
 using Caster.Api.Tests.Support;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Caster.Api.Tests.Hubs;
 
 /// <summary>
-/// <see cref="ProjectHub"/>'s project presence: joining a project tells the others in it who arrived and
-/// answers with who is already there; leaving, or disconnecting, tells them who departed, once a user's
-/// last connection to the project has gone.
+/// <see cref="ProjectHub"/>'s project presence: joining or leaving a project, or disconnecting, tells the
+/// project's group who is there now, as a state with a version, once the set of users has changed; joining
+/// also answers with that state.
 /// </summary>
 /// <remarks>
 /// Each connection is a hub over a harness of its own, all sharing one tracker, which is how SignalR runs
@@ -31,48 +33,69 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
     private readonly ProjectPresenceTracker _tracker = new();
 
     [Fact]
-    public async Task JoinProject_tells_the_others_in_the_project_who_arrived()
+    public async Task JoinProject_tells_the_group_who_is_there_and_answers_with_the_same_state()
     {
         var project = await SeedProject();
         var alice = Connect(Member(project, "Alice"));
 
-        await alice.Hub.JoinProject(project.Id);
+        var answer = await alice.Hub.JoinProject(project.Id);
 
-        var arrived = HubHarness.Sent<PresentUser>(alice.Others(project.Id), ProjectHubMethods.PresenceArrived);
-        Assert.Equal(new PresentUser(alice.Harness.UserId, "Alice"), arrived);
-        alice.Harness.AssertAddressedOnly(nameof(IHubCallerClients.OthersInGroup));
+        var sent = HubHarness.Sent<PresenceState>(alice.Harness.Group(project.Id.ToString()), ProjectHubMethods.PresenceChanged);
+        Assert.Equal(answer.Version, sent.Version);
+        Assert.Equal(answer.Users, sent.Users);
+        Assert.Equal(project.Id, answer.ProjectId);
+        Assert.Equal([new PresentUser(alice.Harness.UserId, "Alice")], answer.Users);
     }
 
     [Fact]
-    public async Task JoinProject_answers_with_the_others_already_present_but_not_the_caller()
+    public async Task JoinProject_answers_with_everyone_present_the_caller_included()
     {
         var project = await SeedProject();
         var alice = Connect(Member(project, "Alice"));
         var bob = Connect(Member(project, "Bob"));
         await alice.Hub.JoinProject(project.Id);
 
-        var present = await bob.Hub.JoinProject(project.Id);
+        var answer = await bob.Hub.JoinProject(project.Id);
 
-        Assert.Equal([new PresentUser(alice.Harness.UserId, "Alice")], present);
+        Assert.Equal(
+            [new PresentUser(alice.Harness.UserId, "Alice"), new PresentUser(bob.Harness.UserId, "Bob")],
+            answer.Users);
     }
 
     [Fact]
-    public async Task JoinProject_from_a_second_tab_announces_nothing_and_lists_only_the_others()
+    public async Task Each_change_is_sent_with_a_higher_version()
+    {
+        var project = await SeedProject();
+        var alice = Connect(Member(project, "Alice"));
+        var bob = Connect(Member(project, "Bob"));
+
+        var first = await alice.Hub.JoinProject(project.Id);
+        var second = await bob.Hub.JoinProject(project.Id);
+        await bob.Hub.LeaveProject(project.Id);
+
+        var left = (await Connect(Member(project, "Carol")).Hub.JoinProject(project.Id)).Version;
+        Assert.True(second.Version > first.Version);
+        Assert.True(left > second.Version);
+    }
+
+    [Fact]
+    public async Task JoinProject_from_a_second_tab_sends_nothing_and_lists_the_user_once()
     {
         var project = await SeedProject();
         var alice = Member(project, "Alice");
         var firstTab = Connect(alice, "alice-tab-1");
         var secondTab = Connect(alice, "alice-tab-2");
-        await firstTab.Hub.JoinProject(project.Id);
+        var first = await firstTab.Hub.JoinProject(project.Id);
 
-        var present = await secondTab.Hub.JoinProject(project.Id);
+        var answer = await secondTab.Hub.JoinProject(project.Id);
 
-        Assert.Empty(present);
-        HubHarness.NothingSent(secondTab.Others(project.Id), ProjectHubMethods.PresenceArrived);
+        Assert.Equal(first.Version, answer.Version);
+        Assert.Equal(first.Users, answer.Users);
+        HubHarness.NothingSent(secondTab.Harness.Group(project.Id.ToString()), ProjectHubMethods.PresenceChanged);
     }
 
     [Fact]
-    public async Task JoinProject_again_on_the_same_connection_announces_nothing()
+    public async Task JoinProject_again_on_the_same_connection_sends_nothing()
     {
         var project = await SeedProject();
         var alice = Connect(Member(project, "Alice"));
@@ -81,7 +104,7 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
         await alice.Hub.JoinProject(project.Id);
 
         // Sent<> fails unless it was sent exactly once, the first join's.
-        HubHarness.Sent<PresentUser>(alice.Others(project.Id), ProjectHubMethods.PresenceArrived);
+        HubHarness.Sent<PresenceState>(alice.Harness.Group(project.Id.ToString()), ProjectHubMethods.PresenceChanged);
     }
 
     [Fact]
@@ -92,9 +115,9 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
         var bob = Connect(Member(project, "Bob"));
 
         await Assert.ThrowsAsync<ForbiddenException>(() => outsider.Hub.JoinProject(project.Id));
-        var present = await bob.Hub.JoinProject(project.Id);
+        var answer = await bob.Hub.JoinProject(project.Id);
 
-        Assert.Empty(present);
+        Assert.Equal([new PresentUser(bob.Harness.UserId, "Bob")], answer.Users);
         outsider.Harness.NothingAddressed();
     }
 
@@ -106,28 +129,29 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
         await Seed(TestData.User(principal.UserId, name: "Stored Name"));
         var caller = Connect(principal);
 
-        await caller.Hub.JoinProject(project.Id);
+        var answer = await caller.Hub.JoinProject(project.Id);
 
-        var arrived = HubHarness.Sent<PresentUser>(caller.Others(project.Id), ProjectHubMethods.PresenceArrived);
-        Assert.Equal("Stored Name", arrived.Name);
+        Assert.Equal("Stored Name", Assert.Single(answer.Users).Name);
     }
 
     [Fact]
-    public async Task LeaveProject_from_the_last_tab_tells_the_project_who_departed()
+    public async Task LeaveProject_from_the_last_tab_tells_the_group_who_is_left()
     {
         var project = await SeedProject();
         var alice = Connect(Member(project, "Alice"));
+        var bob = Connect(Member(project, "Bob"));
         await alice.Hub.JoinProject(project.Id);
+        await bob.Hub.JoinProject(project.Id);
+        var group = alice.Harness.Group(project.Id.ToString());
 
         await alice.Hub.LeaveProject(project.Id);
 
-        var departed = HubHarness.Sent<PresentUser>(alice.Harness.Group(project.Id.ToString()), ProjectHubMethods.PresenceDeparted);
-        Assert.Equal(new PresentUser(alice.Harness.UserId, "Alice"), departed);
-        Assert.Empty(await Connect(Member(project, "Bob")).Hub.JoinProject(project.Id));
+        var sent = Sent(group);
+        Assert.Equal([new PresentUser(bob.Harness.UserId, "Bob")], sent.Last().Users);
     }
 
     [Fact]
-    public async Task LeaveProject_from_one_of_two_tabs_announces_nothing_and_keeps_the_user_present()
+    public async Task LeaveProject_from_one_of_two_tabs_sends_nothing_and_keeps_the_user_present()
     {
         var project = await SeedProject();
         var alice = Member(project, "Alice");
@@ -138,20 +162,21 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
 
         await firstTab.Hub.LeaveProject(project.Id);
 
-        HubHarness.NothingSent(firstTab.Harness.Group(project.Id.ToString()), ProjectHubMethods.PresenceDeparted);
-        var present = await Connect(Member(project, "Bob")).Hub.JoinProject(project.Id);
-        Assert.Equal([new PresentUser(alice.UserId, "Alice")], present);
+        // Sent<> fails unless it was sent exactly once, the first join's.
+        HubHarness.Sent<PresenceState>(firstTab.Harness.Group(project.Id.ToString()), ProjectHubMethods.PresenceChanged);
+        var answer = await Connect(Member(project, "Bob")).Hub.JoinProject(project.Id);
+        Assert.Contains(new PresentUser(alice.UserId, "Alice"), answer.Users);
     }
 
     [Fact]
-    public async Task LeaveProject_without_having_joined_announces_nothing()
+    public async Task LeaveProject_without_having_joined_sends_nothing()
     {
         var project = await SeedProject();
         var alice = Connect(Member(project, "Alice"));
 
         await alice.Hub.LeaveProject(project.Id);
 
-        alice.Harness.NothingAddressed();
+        alice.Harness.AssertAddressedOnly();
     }
 
     [Fact]
@@ -171,21 +196,48 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
 
         await tab.Hub.OnDisconnectedAsync(null);
 
-        var departed = HubHarness.Sent<PresentUser>(tab.Harness.Group(first.Id.ToString()), ProjectHubMethods.PresenceDeparted);
-        Assert.Equal(new PresentUser(principal.UserId, "Alice"), departed);
-        HubHarness.NothingSent(tab.Harness.Group(second.Id.ToString()), ProjectHubMethods.PresenceDeparted);
-        Assert.Equal([new PresentUser(principal.UserId, "Alice")], _tracker.GetUsers(second.Id));
-        Assert.Empty(_tracker.GetUsers(first.Id));
+        Assert.Empty(Sent(tab.Harness.Group(first.Id.ToString())).Last().Users);
+        // Only the join announced her to the second project: the other tab kept her there.
+        Assert.Single(Sent(tab.Harness.Group(second.Id.ToString())));
+        Assert.Empty(_tracker.ProjectsOf("alice-tab-1"));
     }
 
     [Fact]
-    public async Task Disconnecting_without_having_joined_announces_nothing()
+    public async Task Disconnecting_without_having_joined_sends_nothing()
     {
         var alice = Connect(new ClaimsPrincipalBuilder().WithName("Alice"));
 
         await alice.Hub.OnDisconnectedAsync(null);
 
         alice.Harness.NothingAddressed();
+    }
+
+    /// <summary>
+    /// Verifies: a send that fails on disconnect doesn't leave the connection listed or stop the sends
+    /// for its other projects.
+    /// Data: Alice has two projects open; the send for the first throws.
+    /// </summary>
+    [Fact]
+    public async Task Disconnecting_forgets_the_connection_and_goes_on_when_a_send_fails()
+    {
+        var first = await SeedProject();
+        var second = await SeedProject();
+        var principal = new ClaimsPrincipalBuilder()
+            .WithName("Alice")
+            .WithProject(first.Id, ProjectPermission.ViewProject)
+            .WithProject(second.Id, ProjectPermission.ViewProject);
+        var tab = Connect(principal, "alice-tab-1");
+        await tab.Hub.JoinProject(first.Id);
+        await tab.Hub.JoinProject(second.Id);
+        tab.Harness.Group(first.Id.ToString())
+            .SendCoreAsync(ProjectHubMethods.PresenceChanged, Arg.Any<object[]>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("send failed"));
+        tab.Harness.Group(second.Id.ToString()).ClearReceivedCalls();
+
+        await tab.Hub.OnDisconnectedAsync(null);
+
+        Assert.Empty(_tracker.ProjectsOf("alice-tab-1"));
+        Assert.Empty(Sent(tab.Harness.Group(second.Id.ToString())).Last().Users);
     }
 
     /// <summary>
@@ -211,62 +263,19 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
             });
 
         var answer = await alice.Hub.JoinProject(project.Id);
-        var present = await bob.Hub.JoinProject(project.Id);
+        var bobs = await bob.Hub.JoinProject(project.Id);
 
-        Assert.Empty(answer);
-        Assert.Empty(present);
-        HubHarness.NothingSent(alice.Others(project.Id), ProjectHubMethods.PresenceArrived);
+        Assert.Empty(answer.Users);
+        Assert.Equal([new PresentUser(bob.Harness.UserId, "Bob")], bobs.Users);
     }
 
     /// <summary>
-    /// Verifies: a user's departure is announced before their next arrival, however slowly it is sent.
-    /// Interacts with: ProjectPresenceTracker.LockProjectAsync.
-    /// Data: Alice's only tab leaves and its departure broadcast is held up; her second tab joins meanwhile.
-    /// </summary>
-    [Fact]
-    public async Task A_departure_is_announced_before_the_same_users_next_arrival()
-    {
-        var project = await SeedProject();
-        var alice = Member(project, "Alice");
-        var firstTab = Connect(alice, "alice-tab-1");
-        var secondTab = Connect(alice, "alice-tab-2");
-        await firstTab.Hub.JoinProject(project.Id);
-
-        var sent = new List<string>();
-        var release = new TaskCompletionSource();
-        firstTab.Harness.Group(project.Id.ToString())
-            .SendCoreAsync(ProjectHubMethods.PresenceDeparted, Arg.Any<object[]>(), Arg.Any<CancellationToken>())
-            .Returns(async _ =>
-            {
-                await release.Task;
-                lock (sent) sent.Add("departed");
-            });
-        secondTab.OthersByGroup[project.Id.ToString()] = Substitute.For<IClientProxy>();
-        secondTab.OthersByGroup[project.Id.ToString()]
-            .SendCoreAsync(ProjectHubMethods.PresenceArrived, Arg.Any<object[]>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                lock (sent) sent.Add("arrived");
-                return Task.CompletedTask;
-            });
-
-        var leaving = firstTab.Hub.LeaveProject(project.Id);
-        var joining = secondTab.Hub.JoinProject(project.Id);
-        await Task.Delay(200, TestContext.Current.CancellationToken);
-        release.SetResult();
-        await Task.WhenAll(leaving, joining);
-
-        Assert.Equal(["departed", "arrived"], sent);
-    }
-
-    /// <summary>
-    /// Verifies: a repeat join that finds its connection closed leaves the earlier registration to the
-    /// disconnect, which announces the departure.
-    /// Interacts with: HubHarness (Groups.AddToGroupAsync aborts the connection), ProjectPresenceTracker.
+    /// Verifies: a repeat join that finds its connection closed removes the registration it already had,
+    /// and the disconnect that follows has nothing more to send.
     /// Data: Alice joins, joins again as the connection aborts, then the disconnect runs; Bob is in the project.
     /// </summary>
     [Fact]
-    public async Task A_repeat_join_on_a_closed_connection_leaves_its_departure_to_the_disconnect()
+    public async Task A_repeat_join_on_a_closed_connection_removes_the_registration_once()
     {
         var project = await SeedProject();
         var alice = Connect(Member(project, "Alice"));
@@ -284,38 +293,38 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
 
         await alice.Hub.JoinProject(project.Id);
         var present = await bob.Hub.JoinProject(project.Id);
+        var sentBefore = Sent(alice.Harness.Group(project.Id.ToString())).Count;
         await alice.Hub.OnDisconnectedAsync(null);
 
-        Assert.Equal([new PresentUser(alice.Harness.UserId, "Alice")], present);
-        var departed = HubHarness.Sent<PresentUser>(alice.Harness.Group(project.Id.ToString()), ProjectHubMethods.PresenceDeparted);
-        Assert.Equal(new PresentUser(alice.Harness.UserId, "Alice"), departed);
+        Assert.Equal([new PresentUser(bob.Harness.UserId, "Bob")], present.Users);
+        Assert.Equal(sentBefore, Sent(alice.Harness.Group(project.Id.ToString())).Count);
     }
 
     /// <summary>
-    /// Verifies: leaving a project the connection never had open announces nothing.
-    /// Interacts with: ProjectPresenceTracker.ProjectsOf.
+    /// Verifies: leaving a project the connection never had open sends nothing.
     /// Data: a connection that never joined leaves a project id it made up.
     /// </summary>
     [Fact]
-    public async Task LeaveProject_for_a_project_the_connection_never_joined_announces_nothing()
+    public async Task LeaveProject_for_a_project_the_connection_never_joined_sends_nothing()
     {
         var alice = Connect(new ClaimsPrincipalBuilder().WithName("Alice"));
 
         await alice.Hub.LeaveProject(Guid.NewGuid());
 
-        HubHarness.NothingSent(alice.Harness.Group("anything"), ProjectHubMethods.PresenceDeparted);
-        alice.Harness.AssertAddressedOnly();
+        alice.Harness.NothingAddressed();
     }
 
     // ---- helpers --------------------------------------------------------------------------------
 
-    private sealed record Connection(ProjectHub Hub, HubHarness Harness, Dictionary<string, IClientProxy> OthersByGroup)
-    {
-        /// <summary>The proxy for <c>Clients.OthersInGroup(projectId)</c>, which the harness leaves unset.</summary>
-        public IClientProxy Others(Guid projectId) => OthersByGroup.TryGetValue(projectId.ToString(), out var proxy)
-            ? proxy
-            : Substitute.For<IClientProxy>();
-    }
+    private sealed record Connection(ProjectHub Hub, HubHarness Harness);
+
+    /// <summary>Every presence state sent to <paramref name="group"/>, oldest first.</summary>
+    private static IReadOnlyList<PresenceState> Sent(IClientProxy group) =>
+        [.. group.ReceivedCalls()
+            .Where(x => x.GetMethodInfo().Name == nameof(IClientProxy.SendCoreAsync))
+            .Select(x => x.GetArguments())
+            .Where(x => (string)x[0] == ProjectHubMethods.PresenceChanged)
+            .Select(x => (PresenceState)((object[])x[1])[0])];
 
     private async Task<Project> SeedProject()
     {
@@ -327,30 +336,18 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
     private static ClaimsPrincipalBuilder Member(Project project, string name) =>
         new ClaimsPrincipalBuilder().WithName(name).WithProject(project.Id, ProjectPermission.ViewProject);
 
-    private Connection Connect(ClaimsPrincipalBuilder principal, string connectionId = HubHarness.ConnectionId)
+    private Connection Connect(ClaimsPrincipalBuilder principal, string connectionId = null)
     {
         ClaimsPrincipal user = principal.Build();
-        var harness = new HubHarness(principal.UserId, user, connectionId);
-        var others = new Dictionary<string, IClientProxy>();
-        harness.Clients.OthersInGroup(Arg.Any<string>()).Returns(call =>
-        {
-            var group = call.Arg<string>();
-
-            if (!others.TryGetValue(group, out var proxy))
-            {
-                proxy = Substitute.For<IClientProxy>();
-                others[group] = proxy;
-            }
-
-            return proxy;
-        });
+        var harness = new HubHarness(principal.UserId, user, connectionId ?? Guid.NewGuid().ToString());
 
         var hub = harness.Attach(new ProjectHub(
             new OutputService(),
             Db,
             AuthorizationHarness.CreateCasterAuthorizationService(Db, user),
-            _tracker));
+            _tracker,
+            NullLogger<ProjectHub>.Instance));
 
-        return new Connection(hub, harness, others);
+        return new Connection(hub, harness);
     }
 }

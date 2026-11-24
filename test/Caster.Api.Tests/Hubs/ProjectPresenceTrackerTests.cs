@@ -10,7 +10,7 @@ namespace Caster.Api.Tests.Hubs;
 
 /// <summary>
 /// <see cref="ProjectPresenceTracker"/>: a user is present in a project while any of their connections has
-/// it open, arriving with the first and departing with the last.
+/// it open, and every change to who is present comes back as a state with a higher version.
 /// </summary>
 public class ProjectPresenceTrackerTests
 {
@@ -20,67 +20,99 @@ public class ProjectPresenceTrackerTests
     private readonly PresentUser _bob = new(Guid.NewGuid(), "bob");
 
     [Fact]
-    public void Join_is_an_arrival_for_the_first_connection_only()
+    public void Join_changes_who_is_present_for_the_first_connection_only()
     {
-        Assert.True(_tracker.Join(_project, "a1", _alice));
-        Assert.False(_tracker.Join(_project, "a2", _alice));
-        Assert.False(_tracker.Join(_project, "a1", _alice));
-        Assert.True(_tracker.Join(_project, "b1", _bob));
+        Assert.True(_tracker.Join(_project, "a1", _alice).Changed);
+        Assert.False(_tracker.Join(_project, "a2", _alice).Changed);
+        Assert.False(_tracker.Join(_project, "a1", _alice).Changed);
+        Assert.True(_tracker.Join(_project, "b1", _bob).Changed);
     }
 
     [Fact]
-    public void Join_to_another_project_is_an_arrival_there()
+    public void Join_to_another_project_changes_who_is_present_there()
     {
         _tracker.Join(_project, "a1", _alice);
 
-        Assert.True(_tracker.Join(Guid.NewGuid(), "a1", _alice));
+        Assert.True(_tracker.Join(Guid.NewGuid(), "a1", _alice).Changed);
     }
 
     [Fact]
-    public void GetUsers_lists_each_user_once_ordered_by_name_ignoring_case()
+    public void The_state_lists_each_user_once_ordered_by_name_ignoring_case_the_caller_included()
     {
         _tracker.Join(_project, "b1", _bob);
         _tracker.Join(_project, "a1", _alice);
-        _tracker.Join(_project, "a2", _alice);
+        var state = _tracker.Join(_project, "a2", _alice).State;
 
-        Assert.Equal([_alice, _bob], _tracker.GetUsers(_project));
-        Assert.Empty(_tracker.GetUsers(Guid.NewGuid()));
+        Assert.Equal(_project, state.ProjectId);
+        Assert.Equal([_alice, _bob], state.Users);
     }
 
     [Fact]
-    public void Leave_is_a_departure_for_the_last_connection_only()
+    public void Each_change_raises_the_version_and_a_repeat_join_leaves_it()
+    {
+        var first = _tracker.Join(_project, "a1", _alice).State.Version;
+        var second = _tracker.Join(_project, "b1", _bob).State.Version;
+        var repeat = _tracker.Join(_project, "b1", _bob).State.Version;
+        var secondTab = _tracker.Join(_project, "a2", _alice).State.Version;
+
+        Assert.True(second > first);
+        Assert.Equal(second, repeat);
+        Assert.Equal(second, secondTab);
+    }
+
+    [Fact]
+    public void Leave_changes_who_is_present_for_the_last_connection_only()
     {
         _tracker.Join(_project, "a1", _alice);
         _tracker.Join(_project, "a2", _alice);
 
-        Assert.Null(_tracker.Leave(_project, "a1"));
-        Assert.Equal([_alice], _tracker.GetUsers(_project));
-        Assert.Equal(_alice, _tracker.Leave(_project, "a2"));
-        Assert.Empty(_tracker.GetUsers(_project));
+        var firstTab = _tracker.Leave(_project, "a1");
+        var lastTab = _tracker.Leave(_project, "a2");
+
+        Assert.False(firstTab.Changed);
+        Assert.Equal([_alice], firstTab.State.Users);
+        Assert.True(lastTab.Changed);
+        Assert.Empty(lastTab.State.Users);
+        Assert.True(lastTab.State.Version > firstTab.State.Version);
     }
 
     [Fact]
-    public void Leave_of_a_connection_that_never_joined_is_no_departure()
+    public void Leave_of_a_connection_that_never_joined_is_nothing()
     {
         _tracker.Join(_project, "a1", _alice);
 
         Assert.Null(_tracker.Leave(_project, "b1"));
         Assert.Null(_tracker.Leave(Guid.NewGuid(), "a1"));
-        Assert.Equal([_alice], _tracker.GetUsers(_project));
     }
 
     [Fact]
-    public void LeaveAll_departs_only_the_projects_the_connection_was_the_last_one_to()
+    public void A_version_never_goes_back_when_a_project_empties_and_fills_again()
+    {
+        var before = _tracker.Join(_project, "a1", _alice).State.Version;
+        var emptied = _tracker.Leave(_project, "a1").State.Version;
+
+        var after = _tracker.Join(_project, "a2", _alice).State.Version;
+
+        Assert.True(emptied > before);
+        Assert.True(after > emptied);
+    }
+
+    [Fact]
+    public void LeaveAll_reports_each_project_the_connection_had_open()
     {
         var other = Guid.NewGuid();
         _tracker.Join(_project, "a1", _alice);
         _tracker.Join(other, "a1", _alice);
         _tracker.Join(other, "a2", _alice);
 
-        var departures = _tracker.LeaveAll("a1");
+        var changes = _tracker.LeaveAll("a1");
 
-        Assert.Equal([new PresenceDeparture(_project, _alice)], departures);
-        Assert.Equal([_alice], _tracker.GetUsers(other));
+        var gone = Assert.Single(changes, x => x.State.ProjectId == _project);
+        Assert.True(gone.Changed);
+        Assert.Empty(gone.State.Users);
+        var kept = Assert.Single(changes, x => x.State.ProjectId == other);
+        Assert.False(kept.Changed);
+        Assert.Equal([_alice], kept.State.Users);
         Assert.Empty(_tracker.LeaveAll("a1"));
     }
 
@@ -92,29 +124,8 @@ public class ProjectPresenceTrackerTests
         var arrivals = await Task.WhenAll(connections.Select(c => Task.Run(() => _tracker.Join(_project, c, _alice))));
         var departures = await Task.WhenAll(connections.Select(c => Task.Run(() => _tracker.Leave(_project, c))));
 
-        Assert.Single(arrivals, x => x);
-        Assert.Single(departures, x => x != null);
-        Assert.Empty(_tracker.GetUsers(_project));
-    }
-
-    /// <summary>
-    /// Verifies: a project's lock is held until its holder disposes it, and is free again afterwards.
-    /// Data: two lock requests for one project.
-    /// </summary>
-    [Fact]
-    public async Task LockProjectAsync_makes_a_second_request_for_the_project_wait_for_the_first()
-    {
-        var projectId = Guid.NewGuid();
-        var first = await _tracker.LockProjectAsync(projectId, TestContext.Current.CancellationToken);
-
-        var second = _tracker.LockProjectAsync(projectId, TestContext.Current.CancellationToken);
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        Assert.False(second.IsCompleted);
-
-        first.Dispose();
-        first.Dispose();
-
-        using var held = await second;
-        Assert.True(second.IsCompletedSuccessfully);
+        Assert.Single(arrivals, x => x.Changed);
+        Assert.Single(departures, x => x.Changed);
+        Assert.Empty(departures.Single(x => x.Changed).State.Users);
     }
 }
