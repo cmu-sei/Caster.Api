@@ -30,6 +30,15 @@ namespace Caster.Api.Features.Modules
         public int? VersionsCount { get; set; }
 
         /// <summary>
+        /// When the last whole-source read first found this Module gone from its git source, or null while it
+        /// is still there. Such a Module is still listed and usable; it is a candidate for Delete.
+        /// </summary>
+        public DateTime? MissingSince { get; set; }
+
+        /// <summary>Whether the Module is still in its source: true unless <see cref="MissingSince"/> is set.</summary>
+        public bool InSource => MissingSince == null;
+
+        /// <summary>
         /// The name of the highest version, the one Designer offers first. Null unless
         /// requested, or if the Module has no versions.
         /// </summary>

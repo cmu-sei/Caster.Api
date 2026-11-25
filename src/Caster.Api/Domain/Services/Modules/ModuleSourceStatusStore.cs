@@ -10,10 +10,14 @@ namespace Caster.Api.Domain.Services.Modules;
 public class ModuleSourceStatus
 {
     public DateTime? LastAttempt { get; init; }
+
+    /// <summary>When the source was last read without error, including a read that found it Empty or a Warning.</summary>
     public DateTime? LastSuccess { get; init; }
 
-    /// <summary>Why the last attempt failed, or null if it succeeded.</summary>
-    public string Error { get; init; }
+    public ModuleSourceState State { get; init; }
+
+    /// <summary>What to tell an administrator: set for Empty, Warning and Error (why it failed), null for Ok.</summary>
+    public string Message { get; init; }
 }
 
 /// <summary>
@@ -29,22 +33,44 @@ public class ModuleSourceStatusStore
     private readonly ConcurrentDictionary<string, ModuleSourceStatus> _statuses =
         new(StringComparer.OrdinalIgnoreCase);
 
-    public void RecordSuccess(string sourceName)
+    /// <summary>Records a read that did not fail, whether it found Modules (Ok) or not (Empty, Warning).</summary>
+    public void RecordSuccess(string sourceName, ModuleSyncResult result)
     {
+        ArgumentNullException.ThrowIfNull(result);
+
+        // A sync that read nothing has nothing to record; see ModuleSyncResult.NotRead.
+        if (!result.Read || result.State == null)
+        {
+            throw new ArgumentException("Only a sync that read the source can be recorded.", nameof(result));
+        }
+
         var now = DateTime.UtcNow;
-        _statuses[sourceName] = new ModuleSourceStatus { LastAttempt = now, LastSuccess = now };
+
+        _statuses[sourceName] = new ModuleSourceStatus
+        {
+            LastAttempt = now,
+            LastSuccess = now,
+            State = result.State.Value,
+            Message = result.Message,
+        };
     }
 
     public void RecordFailure(string sourceName, string error)
     {
         _statuses.AddOrUpdate(
             sourceName,
-            _ => new ModuleSourceStatus { LastAttempt = DateTime.UtcNow, Error = error },
+            _ => new ModuleSourceStatus
+            {
+                LastAttempt = DateTime.UtcNow,
+                State = ModuleSourceState.Error,
+                Message = error,
+            },
             (_, previous) => new ModuleSourceStatus
             {
                 LastAttempt = DateTime.UtcNow,
                 LastSuccess = previous.LastSuccess,
-                Error = error,
+                State = ModuleSourceState.Error,
+                Message = error,
             });
     }
 

@@ -79,9 +79,18 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
 
             try
             {
-                await provider.SyncModulesAsync(source, forceUpdate, cancellationToken);
-                _statuses.RecordSuccess(source.Name);
-                LogRecovery(source.Name);
+                // An Empty or Warning result is a successful read, not a
+                // failure: it is recorded for GET api/modules/sources and
+                // does not fail the Module list.
+                var result = await provider.SyncModulesAsync(source, forceUpdate, cancellationToken);
+
+                // Not read (another request held the source's sync lock): its
+                // last status still stands, and that request records its own.
+                if (result.Read)
+                {
+                    _statuses.RecordSuccess(source.Name, result);
+                    LogRecovery(source.Name);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -92,9 +101,15 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
                 // Sources are independent, so one broken source must not hide
                 // the others. Whatever synced is already persisted; the caller
                 // is told what did not.
-                LogFailure(source.Name, ex.Message, ex);
-                failures.Add($"module source '{source.Name}': {ex.Message}");
-                _statuses.RecordFailure(source.Name, ex.Message);
+                // Redacted again against this source's url: an exception from
+                // anywhere, not only git, may quote it. When the message changed,
+                // the exception itself would log the unredacted message, so it is
+                // not passed on.
+                var message = GitCommandRunner.Redact(ex.Message, source.Url);
+
+                LogFailure(source.Name, message, message == ex.Message ? ex : null);
+                failures.Add($"module source '{source.Name}': {message}");
+                _statuses.RecordFailure(source.Name, message);
             }
         }
 
@@ -145,7 +160,7 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
         // Both keys are required: the group id names what to list, and the api
         // url is what the "gitlab" http client is pointed at, which throws on
         // an empty string.
-        if (options.GitlabGroupId.HasValue && !string.IsNullOrWhiteSpace(options.GitlabApiUrl))
+        if (options.GitlabSourceConfigured)
         {
             sources.Add(new ModuleSourceOptions
             {
@@ -173,6 +188,18 @@ public class ModuleRepositoryDispatcher : IModuleRepositoryService
                         "Ignoring a Terraform:ModuleSources entry with no Name or no Url (Name '{Name}').",
                         source.Name);
                 }
+
+                continue;
+            }
+
+            // A source is found by name ignoring case (for a Module Path, and in
+            // the sync lock, status and read cache), so two names that differ
+            // only in case would be one source with two urls.
+            if (sources.Any(x => string.Equals(x.Name, source.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogWarning(
+                    "Ignoring a Terraform:ModuleSources entry named '{Name}': another source has that name, ignoring case.",
+                    source.Name);
 
                 continue;
             }

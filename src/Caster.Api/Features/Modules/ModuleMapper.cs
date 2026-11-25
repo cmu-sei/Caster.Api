@@ -59,6 +59,7 @@ public static partial class ModuleProjectionMapper
 
     [MapperIgnoreTarget(nameof(Module.Versions))]
     [MapperIgnoreTarget(nameof(Module.VersionsCount))]
+    [MapperIgnoreTarget(nameof(Module.InSource))]
     [MapperIgnoreTarget(nameof(Module.LatestVersion))]
     private static partial Module MapToModule(Domain.Models.Module source);
 }
@@ -70,6 +71,7 @@ public static partial class ModuleWithVersionCountProjectionMapper
     public static partial IQueryable<Module> ProjectToModuleWithVersionCount(this IQueryable<Domain.Models.Module> query);
 
     [MapperIgnoreTarget(nameof(Module.Versions))]
+    [MapperIgnoreTarget(nameof(Module.InSource))]
     [MapperIgnoreTarget(nameof(Module.LatestVersion))]
     [MapProperty(nameof(Domain.Models.Module.Versions), nameof(Module.VersionsCount), Use = nameof(CountVersions))]
     private static partial Module MapToModule(Domain.Models.Module source);

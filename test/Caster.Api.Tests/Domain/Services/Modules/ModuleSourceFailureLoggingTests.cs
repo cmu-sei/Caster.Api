@@ -349,10 +349,10 @@ namespace Caster.Api.Tests.Domain.Services.Modules
 
             public Dictionary<string, Exception> Failures { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-            public Task<bool> SyncModulesAsync(ModuleSourceOptions source, bool forceUpdate, CancellationToken cancellationToken) =>
+            public Task<ModuleSyncResult> SyncModulesAsync(ModuleSourceOptions source, bool forceUpdate, CancellationToken cancellationToken) =>
                 Failures.TryGetValue(source.Name, out var failure)
-                    ? Task.FromException<bool>(failure)
-                    : Task.FromResult(true);
+                    ? Task.FromException<ModuleSyncResult>(failure)
+                    : Task.FromResult(ModuleSyncResult.Ok);
 
             public Task<bool> SyncModuleAsync(ModuleSourceOptions source, string providerId, CancellationToken cancellationToken) =>
                 Task.FromResult(true);

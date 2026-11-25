@@ -307,6 +307,7 @@ namespace Caster.Api.Infrastructure.Extensions
         {
             services.AddSingleton<IGitCommandRunner, GitCommandRunner>();
             services.AddSingleton<ModuleSourceStatusStore>();
+            services.AddSingleton<ModuleSourceReadCache>();
             Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
                 .TryAddSingleton(services, TimeProvider.System);
             services.AddSingleton<ModuleSourceFailureLog>();
