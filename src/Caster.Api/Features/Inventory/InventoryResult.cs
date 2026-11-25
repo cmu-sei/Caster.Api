@@ -88,6 +88,13 @@ namespace Caster.Api.Features.Inventory
         public string Error { get; set; }
 
         /// <summary>
+        /// Set when <see cref="Available"/> but the list is incomplete, e.g. some ISO
+        /// locations could not be searched, so what it names may be missing from
+        /// <see cref="Items"/>. Null when the list is complete.
+        /// </summary>
+        public string Warning { get; set; }
+
+        /// <summary>
         /// The connection read, by name. Null from a project's routes when the project has no
         /// usable connection, in which case nothing is listed.
         /// </summary>
@@ -121,7 +128,8 @@ namespace Caster.Api.Features.Inventory
                 Applies = result.Applies,
                 Enabled = result.Enabled,
                 Stale = result.Stale,
-                Error = result.Error
+                Error = result.Error,
+                Warning = result.Warning
             };
         }
     }
