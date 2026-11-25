@@ -1,6 +1,8 @@
 // Copyright 2026 Carnegie Mellon University. All Rights Reserved.
 // Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
 
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -37,6 +39,46 @@ public class ProjectHubConnectionTests(DatabaseFixture fixture, CasterAppFactory
         await connection.InvokeAsync(nameof(ProjectHub.JoinProject), project.Id, Ct);
 
         Assert.Equal(HubConnectionState.Connected, connection.State);
+    }
+
+    /// <summary>
+    /// Presence end to end: a member already in the project hears the second arrive, is in the second's
+    /// answer, and hears the list without them when their connection closes without leaving, the
+    /// disconnect path.
+    /// </summary>
+    [Fact]
+    public async Task A_member_in_the_project_sees_another_arrive_and_depart_on_disconnect()
+    {
+        var project = TestData.Project();
+        await Seed(project);
+        var bob = await Actor().WithName("Bob").OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+        var alice = await Actor().WithName("Alice").OnProject(project, [ProjectPermission.ViewProject]).SeedAsync();
+        var afterAlice = new TaskCompletionSource<PresenceState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var afterDeparture = new TaskCompletionSource<PresenceState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var bobs = Connection(bob);
+        bobs.On<PresenceState>(ProjectHubMethods.PresenceChanged, x =>
+        {
+            if (x.Users.Count == 2)
+                afterAlice.TrySetResult(x);
+            else if (afterAlice.Task.IsCompleted)
+                afterDeparture.TrySetResult(x);
+        });
+        await bobs.StartAsync(Ct);
+        var first = await bobs.InvokeAsync<PresenceState>(nameof(ProjectHub.JoinProject), project.Id, Ct);
+        Assert.Equal([new PresentUser(bob.Id, "Bob")], first.Users);
+
+        var alices = Connection(alice);
+        await alices.StartAsync(Ct);
+        var present = await alices.InvokeAsync<PresenceState>(nameof(ProjectHub.JoinProject), project.Id, Ct);
+
+        Assert.Equal([new PresentUser(alice.Id, "Alice"), new PresentUser(bob.Id, "Bob")], present.Users);
+        Assert.Equal(present.Users, (await afterAlice.Task.WaitAsync(Waits.Budget, Ct)).Users);
+
+        await alices.DisposeAsync();
+
+        var departed = await afterDeparture.Task.WaitAsync(Waits.Budget, Ct);
+        Assert.Equal([new PresentUser(bob.Id, "Bob")], departed.Users);
+        Assert.True(departed.Version > present.Version);
     }
 
     /// <summary>A request with no identity is answered with a 401; the anonymous client is the case under test.</summary>

@@ -230,6 +230,7 @@ namespace Caster.Api
             services.AddSingleton<ILockService, LockService>();
             services.AddSingleton<IUserIdProvider, SubUserIdProvider>();
             services.AddSingleton<IOutputService, OutputService>();
+            services.AddSingleton<IProjectPresenceTracker, ProjectPresenceTracker>();
 
             services.AddSingleton<IFileVersionScrubService, FileVersionScrubService>();
             services.AddSingleton<IHostedService>(x => x.GetService<IFileVersionScrubService>());
