@@ -36,7 +36,7 @@ As environment variables, the same settings are `Infrastructure__Connections__0_
 
 - **Name** is required and unique, ignoring case. Clients pick a connection with `?connection=<Name>`, and a request that names none uses the first connection with inventory enabled. Other settings refer to a connection by its Name, so renaming one breaks those references, which then show as missing.
 - **Url, Username, Password, ApiToken.** Each connection holds one credential, which the inventory reads with. For Proxmox, `ApiToken` (`user@realm!tokenid=secret`, exactly as Proxmox prints it) is preferred over `Username` and `Password`. The credential needs to see what should be listed; for vSphere the ISO list also needs Datastore > Browse datastore.
-- **IsoLocations** says where the connection's ISOs live. For vSphere it's datastore names (`iso-datastore`) or folders (`[iso-datastore] stock`), and it's required: with none, no ISOs are listed. For Proxmox it's storage names (`iso-stock`) or the start of a volid (`local:iso/stock-`), and with none every ISO storage is read.
+- **IsoLocations** says where the connection's ISOs live. For vSphere it's datastore names (`iso-datastore`) or folders (`[iso-datastore] stock`), and it's required: with none, no ISOs are listed. If some locations can't be searched (a folder that doesn't exist, a datastore that isn't accessible, a timeout) the ISOs found in the others are still listed and the ISO endpoint's `warning` names what was skipped. At most 50 locations (a datastore, or a folder on one) are searched; beyond that the rest are skipped and the warning says how many. If none can be searched, ISOs are unavailable. For Proxmox it's storage names (`iso-stock`) or the start of a volid (`local:iso/stock-`), and with none every ISO storage is read.
 - **Datacenters** (vSphere only) limits the read to the named datacenters. Empty reads all of them. Content libraries belong to the whole vCenter, so `Datacenters` doesn't filter them.
 
 The API never returns a connection's url or credentials. Variables under `Infrastructure__` are never passed to Terraform runs, even with `Terraform:EnvironmentVariables:InheritAll` on; a run gets a connection's settings only through an Environment Set's connection entries.
@@ -51,8 +51,9 @@ The API never returns a connection's url or credentials. Variables under `Infras
 - **Locations** lists only objects in those places. Every entry ignores case.
   - vSphere: a full inventory path, in the form `govc` uses, matching that folder and everything below it. `/DC1/vm/Templates` matches `/DC1/vm/Templates/linux/ubuntu`. VM templates take a VM folder, datastores a datastore folder or datastore cluster, and hosts a cluster. Networks take a network folder, or a distributed switch's name to list its port groups.
   - Proxmox: a name. VM templates take a node or resource pool, networks a node (for bridges) or SDN zone (for vnets), datastores a storage, and hosts a node.
-  - `Isos` and `ContentLibraries` have no Locations: ISOs are found in `IsoLocations`, and content libraries are filtered by name.
-- **Include** and **Exclude** are regular expressions on the object's name, ignoring case. An object is listed when its name matches `Include` (or there is none) and doesn't match `Exclude`.
+  - `ContentLibraries` (vSphere only) take content library names, not paths: `teamA-templates` lists only the items in the library of that name. Caster doesn't list or read the items of any other library, so a vCenter shared by several teams can be limited to one team's libraries. An entry that starts with `/` is rejected.
+  - `Isos` has no Locations: ISOs are found in `IsoLocations`.
+- **Include** and **Exclude** are regular expressions on the object's name, ignoring case. An object is listed when its name matches `Include` (or there is none) and doesn't match `Exclude`. For content libraries the name is the item's name, not the library's: use `Locations` to choose libraries.
 
 A setting that can't be used, such as an invalid regular expression or a location in the wrong form, marks the connection as misconfigured. It isn't read, and `GET api/inventory/connections` and every inventory endpoint say why. The API still starts.
 
@@ -72,6 +73,6 @@ Each vSphere object's `path` is its full inventory path, e.g. `/DC1/vm/Templates
 
 ## Caching
 
-Each connection's inventory is cached in memory. When a read fails, the last good read of each kind of object is kept and marked stale. Changing any setting that changes what's listed (provider, url, credentials, `Datacenters`, `IsoLocations`, or the `Inventory` settings other than `RefreshMinutes`) empties the cache, and a read that was already running is discarded rather than shown.
+Each connection's inventory is cached in memory. When a read fails, the last good read of each kind of object is kept and marked stale, with the warning, if any, that the read had. Changing any setting that changes what's listed (provider, url, credentials, `Datacenters`, `IsoLocations`, or the `Inventory` settings other than `RefreshMinutes`) empties the cache, and a read that was already running is discarded rather than shown.
 
 Provider errors are reported and logged with the connection's password, token and token secret masked.

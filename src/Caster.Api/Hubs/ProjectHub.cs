@@ -12,9 +12,11 @@ using Caster.Api.Domain.Models;
 using Caster.Api.Domain.Services;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Infrastructure.Exceptions;
+using Caster.Api.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Caster.Api.Hubs;
 
@@ -24,25 +26,79 @@ public class ProjectHub : Hub
     private readonly IOutputService _outputService;
     private readonly CasterContext _db;
     private readonly ICasterAuthorizationService _authorizationService;
+    private readonly IProjectPresenceTracker _presence;
+    private readonly ILogger<ProjectHub> _logger;
 
-    public ProjectHub(IOutputService outputService, CasterContext db, ICasterAuthorizationService authorizationService)
+    public ProjectHub(
+        IOutputService outputService,
+        CasterContext db,
+        ICasterAuthorizationService authorizationService,
+        IProjectPresenceTracker presence,
+        ILogger<ProjectHub> logger)
     {
         _outputService = outputService;
         _db = db;
         _authorizationService = authorizationService;
+        _presence = presence;
+        _logger = logger;
     }
 
-    public async Task JoinProject(Guid projectId)
+    public override async Task OnDisconnectedAsync(Exception exception)
+    {
+        // Forget the connection first, so that a send that fails can't leave it listed.
+        foreach (var change in _presence.LeaveAll(Context.ConnectionId).Where(x => x.Changed))
+        {
+            await TrySendPresence(change.State);
+        }
+
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>
+    /// Adds the connection to the project's group and to the project's presence, telling the group who is
+    /// there when this is the caller's first connection to it.
+    /// </summary>
+    /// <returns>
+    /// Everyone with the project open, the caller included, as of a version. An update can reach the caller
+    /// before this answer does, so the caller keeps whichever has the higher version.
+    /// </returns>
+    public async Task<PresenceState> JoinProject(Guid projectId)
     {
         if (!await _authorizationService.Authorize<Project>(projectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], Context.ConnectionAborted))
             throw new ForbiddenException();
 
         await Groups.AddToGroupAsync(Context.ConnectionId, projectId.ToString());
+
+        var user = await GetPresentUser();
+        var change = _presence.Join(projectId, Context.ConnectionId, user);
+
+        // The connection can have closed while this was waiting. Its disconnect has then already looked for
+        // what it had open and may have found nothing, so a join that registered it now must not leave it
+        // registered.
+        if (Context.ConnectionAborted.IsCancellationRequested)
+        {
+            var left = _presence.Leave(projectId, Context.ConnectionId);
+
+            if (left is { Changed: true })
+                await TrySendPresence(left.State);
+
+            return left?.State ?? change.State;
+        }
+
+        if (change.Changed)
+            await TrySendPresence(change.State);
+
+        return change.State;
     }
 
     public async Task LeaveProject(Guid projectId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, projectId.ToString());
+
+        var change = _presence.Leave(projectId, Context.ConnectionId);
+
+        if (change is { Changed: true })
+            await TrySendPresence(change.State);
     }
 
     public async Task JoinProjectAdmin(Guid projectId)
@@ -147,6 +203,43 @@ public class ProjectHub : Hub
     public async Task LeaveEnvironmentSetsAdmin()
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, nameof(HubGroups.EnvironmentSetsAdmin));
+    }
+
+    private Task SendPresence(PresenceState state) =>
+        Clients.Group(state.ProjectId.ToString()).SendAsync(ProjectHubMethods.PresenceChanged, state);
+
+    // A send that fails only costs the others one update. The tracker has already changed by then, so it
+    // must not fail the caller's join or leave, or stop the sends after it.
+    private async Task TrySendPresence(PresenceState state)
+    {
+        try
+        {
+            await SendPresence(state);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not send presence for project {ProjectId}", state.ProjectId);
+        }
+    }
+
+    /// <summary>
+    /// The caller as the others see them: the token's name, else the name Caster stored for the user, else
+    /// their id.
+    /// </summary>
+    private async Task<PresentUser> GetPresentUser()
+    {
+        var id = Context.User.GetId();
+        var name = Context.User.FindFirst("name")?.Value;
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = await _db.Users
+                .Where(x => x.Id == id)
+                .Select(x => x.Name)
+                .FirstOrDefaultAsync(Context.ConnectionAborted);
+        }
+
+        return new PresentUser(id, string.IsNullOrWhiteSpace(name) ? id.ToString() : name);
     }
 
     #region RunOutput
@@ -270,6 +363,8 @@ public static class ProjectHubMethods
     public const string ProjectMembershipCreated = nameof(ProjectMembershipCreated);
     public const string ProjectMembershipUpdated = nameof(ProjectMembershipUpdated);
     public const string ProjectMembershipDeleted = nameof(ProjectMembershipDeleted);
+
+    public const string PresenceChanged = nameof(PresenceChanged);
 
     private const string GroupSeparator = "-";
 

@@ -37,6 +37,24 @@ namespace Caster.Api.Tests.Features.Inventory
             var result = await sut.HandleRequest(new GetIsos.Query { Connection = "lab2" }, CancellationToken.None);
 
             Assert.Equal("local:iso/a.iso", Assert.Single(result.Items).Id);
+            Assert.Null(result.Warning);
+        }
+
+        [Fact]
+        public async Task Get_ReturnsTheWarningOfAnIncompleteRead()
+        {
+            _inventory.GetSnapshot("lab2").Returns(new InventorySnapshot
+            {
+                Isos = InventoryCategoryResult.OkWithWarning([new InventoryEntry { Id = "[ds] a.iso", Name = "a.iso" }], "Some ISO locations could not be searched: [gone] x.")
+            });
+            var sut = new GetIsos.Handler(_authorization, _inventory);
+
+            var result = await sut.HandleRequest(new GetIsos.Query { Connection = "lab2" }, CancellationToken.None);
+
+            Assert.True(result.Available);
+            Assert.False(result.Stale);
+            Assert.Equal("Some ISO locations could not be searched: [gone] x.", result.Warning);
+            Assert.Single(result.Items);
         }
 
         [Fact]

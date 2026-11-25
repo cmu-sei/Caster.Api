@@ -37,6 +37,12 @@ namespace Caster.Api.Features.Modules
 
         /// <summary>Whether the Module is still in its source: true unless <see cref="MissingSince"/> is set.</summary>
         public bool InSource => MissingSince == null;
+
+        /// <summary>
+        /// The name of the highest version, the one Designer offers first. Null unless
+        /// requested, or if the Module has no versions.
+        /// </summary>
+        public string LatestVersion { get; set; }
     }
 
     public class ModuleVersion
