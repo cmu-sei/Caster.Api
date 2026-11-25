@@ -624,7 +624,9 @@ public class VsphereInventoryClient(
         {
             var libraryIds = DeserializeList<string>(await GetAsync(client, sessionToken, LibraryPath, cancellationToken));
             var entries = new List<InventoryEntry>();
+            var filter = InventoryFilters.For(options, InventoryCategory.ContentLibrary);
             var read = 0;
+            var readLibraries = 0;
 
             foreach (var libraryId in libraryIds)
             {
@@ -635,8 +637,14 @@ public class VsphereInventoryClient(
                 {
                     library = DeserializeObject<VsphereLibrary>(
                         await GetAsync(client, sessionToken, $"{LibraryPath}/{Uri.EscapeDataString(libraryId)}", cancellationToken));
+
+                    // Locations are library names: leave a library out before listing or reading its items.
+                    if (!filter.ListsLocation(string.IsNullOrWhiteSpace(library?.Name) ? libraryId : library.Name))
+                        continue;
+
                     itemIds = DeserializeList<string>(
                         await GetAsync(client, sessionToken, $"{LibraryItemPath}?library_id={Uri.EscapeDataString(libraryId)}", cancellationToken));
+                    readLibraries++;
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
@@ -650,8 +658,9 @@ public class VsphereInventoryClient(
                 {
                     if (++read > MaxLibraryItems)
                     {
-                        return InventoryCategoryResult.Unavailable(
-                            $"vCenter has more than {MaxLibraryItems} content library items, more than Caster reads, so content library templates are not listed.");
+                        return InventoryCategoryResult.Unavailable(filter.HasLocations
+                            ? $"The content libraries in Infrastructure:Inventory:Resources:ContentLibraries:Locations have more than {MaxLibraryItems} items, more than Caster reads, so content library templates are not listed."
+                            : $"vCenter has more than {MaxLibraryItems} content library items, more than Caster reads, so content library templates are not listed.");
                     }
 
                     VsphereLibraryItem item;
@@ -680,13 +689,14 @@ public class VsphereInventoryClient(
                         Id = item.Id ?? itemId,
                         Name = item.Name,
                         Path = $"{libraryName}/{item.Name}",
+                        Locations = [libraryName],
                         Properties = properties,
                         Terraform = TerraformSnippets.VsphereLibraryItem(item.Name, item.Type, libraryName)
                     });
                 }
             }
 
-            logger.LogInformation("Read {Count} content library templates from {LibraryCount} libraries at {VsphereUrl}", entries.Count, libraryIds.Length, options.Url);
+            logger.LogInformation("Read {Count} content library templates from {LibraryCount} of {TotalLibraryCount} libraries at {VsphereUrl}", entries.Count, readLibraries, libraryIds.Length, options.Url);
 
             return InventoryCategoryResult.Ok(entries
                 .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
