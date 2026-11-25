@@ -1,0 +1,518 @@
+// Copyright 2026 Carnegie Mellon University. All Rights Reserved.
+// Released under a MIT (SEI)-style license. See LICENSE.md in the project root for license information.
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using Caster.Api.Features.Designs;
+
+namespace Caster.Api.Features.Files;
+
+/// <summary>
+/// Terraform files drafted by AI for one Directory. Nothing is saved until the reviewed
+/// draft is sent to ApplyAiTerraformDraft.
+/// </summary>
+public class AiTerraformDraft
+{
+    public string Summary { get; set; }
+    public List<AiTerraformFile> Files { get; set; } = [];
+
+    /// <summary>
+    /// What the model decided that the request did not say, one plain sentence each: what it chose and why.
+    /// </summary>
+    public List<string> Assumptions { get; set; } = [];
+
+    /// <summary>
+    /// What was dropped or changed from the model's answer, and what still needs a designer's attention.
+    /// </summary>
+    public List<string> Warnings { get; set; } = [];
+
+    /// <summary>
+    /// The infrastructure inventory the draft was checked against, and the names it found or not.
+    /// </summary>
+    public AiInventoryGrounding Inventory { get; set; }
+
+    /// <summary>
+    /// The range the files build, as the model describes it, with the server's totals. Null when the model gave none.
+    /// </summary>
+    public AiTopologyPlan Topology { get; set; }
+}
+
+public class AiTerraformFile
+{
+    public string Name { get; set; }
+    public string Purpose { get; set; }
+    public string Content { get; set; }
+
+    /// <summary>
+    /// The Directory's file this one replaces; empty for a new file.
+    /// </summary>
+    public Guid? ExistingFileId { get; set; }
+
+    /// <summary>
+    /// The replaced file's content when the draft was written, to show the change.
+    /// </summary>
+    public string ExistingContent { get; set; }
+
+    /// <summary>
+    /// A hash of ExistingContent. Applying refuses a file whose content no longer matches it.
+    /// </summary>
+    public string ExistingContentHash { get; set; }
+}
+
+/// <summary>
+/// A file the model is shown: the Directory's own, which it may change, or one it only reads.
+/// </summary>
+/// <param name="ReadOnlyReason">Why this Directory's own file may not be changed, such as that it sets a credential; null otherwise.</param>
+public record AiContextFile(Guid Id, string Name, string Content, string DirectoryName, bool Editable, string ReadOnlyReason = null);
+
+/// <summary>
+/// Builds the prompt and tool schema for drafting raw Terraform in a Directory, and checks the
+/// model's answer: file names, files it may replace, and problems Terraform would only find at plan.
+/// </summary>
+public static class AiTerraformDraftBuilder
+{
+    public const string ToolName = "draft_terraform";
+    public const string ToolDescription = "Return the Terraform files to create or replace in the directory, each with its complete content.";
+
+    // what the model is shown of the workspace; past this the draft is refused rather than truncated
+    public const int MaxContextCharacters = 400_000;
+
+    private static readonly Regex FileName = new(@"^[A-Za-z0-9_][A-Za-z0-9._-]{0,254}$");
+
+    // a resource that builds a machine, which a draft should describe in its topology plan
+    private static readonly Regex Machine = new(
+        @"^\s*resource\s+""(proxmox_virtual_environment_vm|proxmox_vm_qemu|vsphere_virtual_machine)""",
+        RegexOptions.Multiline);
+
+    // a top-level block that declares a name Terraform requires to be unique in the root module
+    private static readonly Regex Declaration = new(
+        @"^\s*(variable|output|module|provider)\s+""([^""]+)""|^\s*(resource|data)\s+""([^""]+)""\s+""([^""]+)""",
+        RegexOptions.Multiline);
+
+    // A credential-like argument (password, secret, token, a key) set to a literal string rather than a variable. It may start
+    // a line or follow { , or ; so a one-line block counts, and its value may hold an escaped quote or be one character long.
+    private const string SecretName = @"[A-Za-z0-9_]*(?:password|secret|token|api_key|access_key|private_key)[A-Za-z0-9_]*";
+    private const string SecretValue = @"""(?!\$\{)(?:[^""\\]|\\.)+""";
+
+    private static readonly Regex LiteralSecret = new(
+        $@"(?:^|[{{,;])\s*({SecretName})\s*=\s*{SecretValue}",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase);
+
+    // the same arguments, with what comes before the value kept so the text can be written back with the value redacted
+    private static readonly Regex LiteralSecretValue = new(
+        $@"((?:^|[{{,;])\s*{SecretName}\s*=\s*){SecretValue}",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase);
+
+    // the same arguments wherever they appear: a Terraform error prints the source line it is about, after a line number
+    // each identifier is matched whole, once, and its name is checked afterwards, so the match is linear in the text
+    private static readonly Regex LiteralSecretInText = new(
+        $@"(?<![A-Za-z0-9_])([A-Za-z0-9_]+)(\s*=\s*){SecretValue}",
+        RegexOptions.IgnoreCase);
+    private static readonly Regex SecretNameOnly = new($"^{SecretName}$", RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Text a model is shown that may quote a file, such as a failed plan's output: the value of a credential-like argument
+    /// set to a literal string is replaced wherever it appears, not only at the start of a line.
+    /// </summary>
+    public static string RedactText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        var shown = new System.Text.StringBuilder();
+        var from = 0;
+        var m = LiteralSecretInText.Match(text);
+        while (m.Success)
+        {
+            var credential = SecretNameOnly.IsMatch(m.Groups[1].Value);
+            // an ordinary argument's value is not consumed, so a credential after an unfinished string is still found
+            var end = credential ? m.Index + m.Length : m.Groups[2].Index + m.Groups[2].Length;
+            shown.Append(text, from, (credential ? m.Groups[2].Index + m.Groups[2].Length : end) - from);
+            if (credential) shown.Append('"').Append(Redacted).Append('"');
+            from = end;
+            m = LiteralSecretInText.Match(text, end);
+        }
+        return shown.Append(text, from, text.Length - from).ToString();
+    }
+
+    /// <summary>The placeholder a credential's value is shown as to a model.</summary>
+    public const string Redacted = "[redacted]";
+
+    /// <summary>
+    /// A file's content as a model is shown it: the value of each credential-like argument set to a literal string is
+    /// replaced, so a password or token in a file never reaches the model. A file that has any is read-only to the model,
+    /// so the placeholder cannot be written back over the real value.
+    /// </summary>
+    public static string ForModel(string content) =>
+        HoldsLiteralSecret(content) ? LiteralSecretValue.Replace(content, $"$1\"{Redacted}\"") : content;
+
+    /// <summary>Whether a file sets a credential-like argument, such as a password or token, to a literal string.</summary>
+    public static bool HoldsLiteralSecret(string content) => !string.IsNullOrEmpty(content) && LiteralSecret.IsMatch(content);
+
+    /// <summary>
+    /// Tells the model which provider settings Caster's runs set in the environment, by name only, so it writes
+    /// provider blocks without them rather than declaring required variables. Empty when there are none.
+    /// </summary>
+    public static string ProviderEnvironmentSection(IReadOnlyList<string> providerVariables)
+    {
+        if (providerVariables == null || providerVariables.Count == 0)
+            return "";
+        return "Provider settings from the run environment: Caster sets these environment variables for every Terraform run, and "
+            + $"the providers read them on their own: {string.Join(", ", providerVariables)}. Leave those settings out of provider "
+            + "blocks (for example provider \"proxmox\" {}) and declare no variables for them; they are not credentials to ask for.\n";
+    }
+
+    public static string BuildSystemPrompt(IReadOnlyList<AiCatalogModule> catalog, string inventory = null, IReadOnlyList<string> providerVariables = null)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("You write Terraform for Caster, the infrastructure tool of the Crucible cyber range.");
+        sb.AppendLine($"Answer only by calling the {ToolName} tool, once.");
+        sb.AppendLine();
+        sb.AppendLine("How Caster runs Terraform:");
+        sb.AppendLine("- Each workspace of a directory is one Terraform root module: the directory's files, the files of every parent directory,");
+        sb.AppendLine("  and the modules of enabled Designs, all joined together. A name declared twice anywhere in that set fails the plan.");
+        sb.AppendLine("- Parent directories usually hold the provider and terraform blocks and shared variables. Reuse them; do not declare them again.");
+        sb.AppendLine();
+        sb.AppendLine("Rules:");
+        sb.AppendLine("- Return the complete content of every file you create or change. Leave out files you do not change.");
+        sb.AppendLine("- You may only change the files marked editable. To change something in a read-only file, say so in notes.");
+        sb.AppendLine("- File names: letters, digits, dots, underscores and dashes, ending in .tf (or .tfvars, .tftpl, .sh, .yaml where needed).");
+        sb.AppendLine("- Never write credentials, tokens or keys. Declare a variable (sensitive = true) and say in notes what must be set.");
+        sb.AppendLine("- Use a catalog module, with the source given, when one does what is asked. Otherwise write resources directly.");
+        sb.AppendLine("- Use names for templates, networks, datastores and images that the inventory below or the context already uses.");
+        sb.AppendLine("  If you must guess one, make it a variable and say so in notes.");
+        sb.AppendLine("- Use fictional addressing (RFC 1918 and RFC 5737 ranges) unless the context already sets the addresses.");
+        sb.AppendLine("- Write HCL a person can maintain: one purpose per file, comments only where intent is not obvious.");
+        sb.AppendLine("- In the summary, say what you changed and what the designer still has to decide.");
+        sb.AppendLine("- In assumptions, list each decision the request did not settle, one plain sentence each: what you chose and why, for");
+        sb.AppendLine("  example a template, size, address range, segment or module. Leave it empty when the request settled everything. Put in");
+        sb.AppendLine("  notes only what the designer must do or check before applying.");
+        sb.AppendLine();
+        sb.AppendLine(AiTopology.Guidance);
+        if (ProviderEnvironmentSection(providerVariables) is { Length: > 0 } providerSection)
+        {
+            sb.AppendLine();
+            sb.Append(providerSection);
+        }
+        if (!string.IsNullOrEmpty(inventory))
+        {
+            sb.AppendLine();
+            sb.Append(inventory);
+        }
+        if (catalog.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Module catalog (highest version of each):");
+            foreach (var entry in catalog)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"## {entry.Module.Name}: source = \"git::{entry.Version.UrlLink}?ref={entry.Version.Name}\"");
+                if (!string.IsNullOrWhiteSpace(entry.Module.Description))
+                    sb.AppendLine(entry.Module.Description.Trim());
+                foreach (var v in entry.Version.Variables ?? [])
+                {
+                    var need = v.IsOptional ? $"optional, default {v.DefaultValue}" : "required";
+                    sb.AppendLine($"- variable {v.Name} ({v.VariableType ?? "any"}, {need}): {v.Description}");
+                }
+                foreach (var o in entry.Version.Outputs ?? [])
+                    sb.AppendLine($"- output {o.Name}: {o.Description}");
+            }
+        }
+        return sb.ToString();
+    }
+
+    public static string BuildUserPrompt(string prompt, IReadOnlyList<AiContextFile> files, IReadOnlyList<string> designs, AiContextFile focus)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Request:");
+        sb.AppendLine(prompt.Trim());
+        if (focus != null)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"The designer is editing {focus.Name}. Change that file; change others only if the request needs it.");
+        }
+
+        if (designs.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Enabled Designs that add modules to every workspace (read-only):");
+            foreach (var design in designs)
+                sb.AppendLine($"- {design}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine(files.Count == 0 ? "The directory and its parents have no files yet." : "Files:");
+        foreach (var file in files.OrderBy(f => f.Editable).ThenBy(f => f.DirectoryName).ThenBy(f => f.Name))
+        {
+            sb.AppendLine();
+            var holdsSecret = HoldsLiteralSecret(file.Content);
+            var kind = file.Editable ? "editable, this directory" : $"read-only, from {file.DirectoryName}";
+            sb.AppendLine($"=== {file.Name} ({kind}{(holdsSecret ? "; credential values are hidden" : "")}) ===");
+            sb.AppendLine(ForModel(file.Content) ?? "");
+        }
+        return sb.ToString();
+    }
+
+    public static JsonObject BuildToolSchema() => new()
+    {
+        ["type"] = "object",
+        ["properties"] = new JsonObject
+        {
+            ["summary"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["description"] = "What the files do and what the designer still has to decide."
+            },
+            ["files"] = new JsonObject
+            {
+                ["type"] = "array",
+                ["description"] = "Each file to create, or editable file to replace, with its complete content.",
+                ["items"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["name"] = new JsonObject { ["type"] = "string", ["description"] = "File name, e.g. network.tf" },
+                        ["purpose"] = new JsonObject { ["type"] = "string", ["description"] = "One line on what this file holds." },
+                        ["content"] = new JsonObject { ["type"] = "string", ["description"] = "The complete file content." }
+                    },
+                    ["required"] = new JsonArray("name", "content")
+                }
+            },
+            ["assumptions"] = new JsonObject
+            {
+                ["type"] = "array",
+                ["description"] = "Each decision the request did not settle, as one plain sentence saying what you chose and why. Empty when the request settled everything.",
+                ["items"] = new JsonObject { ["type"] = "string" }
+            },
+            ["notes"] = new JsonObject
+            {
+                ["type"] = "array",
+                ["description"] = "What the designer must do or check before applying: variables to set, and changes needed in read-only files.",
+                ["items"] = new JsonObject { ["type"] = "string" }
+            },
+            [AiTopology.ToolProperty] = AiTopology.BuildToolSchema()
+        },
+        ["required"] = new JsonArray("summary", "files")
+    };
+
+    /// <summary>
+    /// Turns the model's answer into a draft: drops files it may not write, matches the rest to the
+    /// Directory's files, and warns about what the plan would reject. With an inventory, the names
+    /// the files and the topology plan use are checked against it; the plan is checked either way.
+    /// </summary>
+    public static AiTerraformDraft Review(
+        JsonElement input,
+        IReadOnlyList<AiContextFile> files,
+        AiInventory inventory = null,
+        IReadOnlyList<string> hypervisors = null,
+        AiTopologyExpectations expected = null)
+    {
+        var draft = new AiTerraformDraft { Summary = GetString(input, "summary") };
+        var editable = files.Where(f => f.Editable).ToDictionary(f => f.Name, StringComparer.Ordinal);
+        var readOnly = files.Where(f => !f.Editable).Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (input.TryGetProperty("files", out var answered) && answered.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in answered.EnumerateArray())
+            {
+                var name = GetString(item, "name")?.Trim();
+                var content = GetString(item, "content") ?? "";
+                if (!IsValidFileName(name))
+                {
+                    draft.Warnings.Add($"Dropped a file named '{name}': names may only use letters, digits, dots, underscores and dashes.");
+                    continue;
+                }
+                if (!names.Add(name))
+                {
+                    draft.Warnings.Add($"Dropped the second file named {name}.");
+                    continue;
+                }
+
+                // this Directory's own file the model may not change: dropped, not mistaken for a parent's file of the same name
+                if (files.FirstOrDefault(f => f.ReadOnlyReason != null && f.Name == name) is { } locked)
+                {
+                    draft.Warnings.Add($"Dropped {name}: it {locked.ReadOnlyReason}, so it cannot be changed here.");
+                    continue;
+                }
+
+                var file = new AiTerraformFile { Name = name, Purpose = GetString(item, "purpose"), Content = content };
+                if (editable.TryGetValue(name, out var existing))
+                {
+                    if (existing.Content == content)
+                    {
+                        draft.Warnings.Add($"{name} is unchanged, so it was left out.");
+                        continue;
+                    }
+                    file.ExistingFileId = existing.Id;
+                    file.ExistingContent = existing.Content;
+                    file.ExistingContentHash = ContentHash(existing.Content);
+                }
+                else if (readOnly.Contains(name))
+                {
+                    draft.Warnings.Add($"{name} is also the name of a parent directory's file; this directory's copy is used alongside it, not instead of it.");
+                }
+
+                draft.Warnings.AddRange(Problems(file));
+                draft.Files.Add(file);
+            }
+        }
+
+        if (input.TryGetProperty("assumptions", out var assumptions) && assumptions.ValueKind == JsonValueKind.Array)
+            draft.Assumptions.AddRange(assumptions.EnumerateArray()
+                .Where(a => a.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(a.GetString()))
+                .Select(a => a.GetString().Trim()));
+
+        if (input.TryGetProperty("notes", out var notes) && notes.ValueKind == JsonValueKind.Array)
+            draft.Warnings.AddRange(notes.EnumerateArray().Where(n => n.ValueKind == JsonValueKind.String).Select(n => n.GetString()));
+
+        if (draft.Files.Count == 0)
+            draft.Warnings.Add("The draft changes no files.");
+
+        draft.Warnings.AddRange(DuplicateDeclarations(files, draft.Files));
+
+        // a name the Directory's workspace creates is not missing from the inventory
+        var hypervisor = hypervisors?.Count == 1 ? hypervisors[0] : null;
+        var replaced = draft.Files.Where(d => d.ExistingFileId.HasValue).Select(d => d.ExistingFileId.Value).ToHashSet();
+        var contents = files.Where(f => !replaced.Contains(f.Id) && IsHcl(f.Name)).Select(f => f.Content)
+            .Concat(draft.Files.Where(d => IsHcl(d.Name)).Select(d => d.Content))
+            .ToList();
+        var created = contents.SelectMany(AiTerraformReferences.CreatedNetworks).ToHashSet(StringComparer.Ordinal);
+
+        draft.Topology = AiTopology.Parse(input);
+        if (draft.Topology == null && (expected != null || draft.Files.Any(d => IsHcl(d.Name) && Machine.IsMatch(StripComments(d.Content)))))
+            draft.Warnings.Add(AiTopology.NoPlan);
+        draft.Warnings.AddRange(AiTopology.Check(draft.Topology, inventory, hypervisor, expected));
+        if (inventory != null)
+        {
+            var uses = draft.Files
+                .Where(d => IsHcl(d.Name))
+                .SelectMany(d => AiTerraformReferences.NameUses(d.Name, d.Content))
+                .Select(u => u.Hypervisor == null ? u with { Hypervisor = hypervisor } : u)
+                .Concat(AiTopology.NameUses(draft.Topology, hypervisor, contents.Any(AiTerraformReferences.CreatesNetworks)))
+                .Where(u => u.Kind != AiInventoryKind.Network || !created.Contains(u.Name));
+            inventory.Check(uses, draft.Warnings);
+            draft.Inventory = inventory.Grounding;
+        }
+        return draft;
+    }
+
+    public static string ContentHash(string content) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content ?? "")));
+
+    /// <summary>Whether a drafted file's name is one Caster saves: letters, digits, dots, underscores and dashes</summary>
+    public static bool IsValidFileName(string name) =>
+        !string.IsNullOrEmpty(name) && FileName.IsMatch(name) && !name.Contains("..");
+
+    /// <summary>What the plan would reject in a drafted file, or what should not be in it</summary>
+    public static IEnumerable<string> Problems(AiTerraformFile file)
+    {
+        if (!IsHcl(file.Name))
+            yield break;
+        if (!Balanced(file.Content))
+            yield return $"{file.Name}: its braces, brackets or quotes do not balance, so the plan will fail to parse it.";
+        foreach (Match m in LiteralSecret.Matches(file.Content))
+            yield return $"{file.Name}: {m.Groups[1].Value} is set to a literal value. Use a sensitive variable instead.";
+    }
+
+    /// <summary>
+    /// Names declared more than once in the workspace the draft produces: the draft's files, plus every
+    /// context file the draft does not replace.
+    /// </summary>
+    public static IEnumerable<string> DuplicateDeclarations(IReadOnlyList<AiContextFile> files, IReadOnlyList<AiTerraformFile> drafted)
+    {
+        var replaced = drafted.Where(d => d.ExistingFileId.HasValue).Select(d => d.ExistingFileId.Value).ToHashSet();
+        var sources = files
+            .Where(f => !replaced.Contains(f.Id) && IsHcl(f.Name))
+            .Select(f => (Label: f.Editable ? f.Name : $"{f.DirectoryName}/{f.Name}", f.Content))
+            .Concat(drafted.Where(d => IsHcl(d.Name)).Select(d => (Label: d.Name, d.Content)));
+
+        return sources
+            .SelectMany(s => Declaration.Matches(StripComments(s.Content)).Select(m => (Name: DeclaredName(m), s.Label)))
+            .GroupBy(d => d.Name)
+            .Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key} is declared more than once ({string.Join(", ", g.Select(d => d.Label))}); the plan will fail.");
+    }
+
+    private static string DeclaredName(Match m) =>
+        m.Groups[1].Success ? $"{m.Groups[1].Value} \"{m.Groups[2].Value}\"" : $"{m.Groups[3].Value} \"{m.Groups[4].Value}\" \"{m.Groups[5].Value}\"";
+
+    private static bool IsHcl(string name) =>
+        name.EndsWith(".tf", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".tfvars", StringComparison.OrdinalIgnoreCase);
+
+    // drops comments so a commented-out block is not counted as declared
+    public static string StripComments(string content) =>
+        Regex.Replace(content ?? "", @"/\*.*?\*/|(#|//)[^\n]*", "", RegexOptions.Singleline);
+
+    /// <summary>
+    /// Whether braces, brackets and parentheses balance outside strings, comments and heredocs.
+    /// Interpolations inside strings are skipped whole.
+    /// </summary>
+    public static bool Balanced(string content)
+    {
+        var stack = new Stack<char>();
+        var lines = (content ?? "").Replace("\r\n", "\n").Split('\n');
+        string heredoc = null;
+        var inBlockComment = false;
+        foreach (var line in lines)
+        {
+            if (heredoc != null)
+            {
+                if (line.Trim() == heredoc)
+                    heredoc = null;
+                continue;
+            }
+            for (var i = 0; i < line.Length; i++)
+            {
+                var c = line[i];
+                if (inBlockComment)
+                {
+                    if (c == '*' && i + 1 < line.Length && line[i + 1] == '/') { inBlockComment = false; i++; }
+                    continue;
+                }
+                if (c == '#' || (c == '/' && i + 1 < line.Length && line[i + 1] == '/'))
+                    break;
+                if (c == '/' && i + 1 < line.Length && line[i + 1] == '*') { inBlockComment = true; i++; continue; }
+                if (c == '<' && i + 1 < line.Length && line[i + 1] == '<')
+                {
+                    var marker = Regex.Match(line[(i + 2)..], @"^-?([A-Za-z_][A-Za-z0-9_]*)\s*$");
+                    if (marker.Success) { heredoc = marker.Groups[1].Value; break; }
+                }
+                if (c == '"')
+                {
+                    // a string ends at the next unescaped quote outside an interpolation
+                    var depth = 0;
+                    for (i++; i < line.Length; i++)
+                    {
+                        if (line[i] == '\\') { i++; continue; }
+                        if (line[i] == '$' && i + 1 < line.Length && line[i + 1] == '{') { depth++; i++; continue; }
+                        if (line[i] == '}' && depth > 0) { depth--; continue; }
+                        if (line[i] == '"' && depth == 0) break;
+                    }
+                    if (i >= line.Length)
+                        return false;
+                    continue;
+                }
+                if (c is '{' or '[' or '(')
+                    stack.Push(c);
+                else if (c is '}' or ']' or ')')
+                {
+                    var open = c == '}' ? '{' : c == ']' ? '[' : '(';
+                    if (stack.Count == 0 || stack.Pop() != open)
+                        return false;
+                }
+            }
+        }
+        return stack.Count == 0 && heredoc == null && !inBlockComment;
+    }
+
+    private static string GetString(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+}

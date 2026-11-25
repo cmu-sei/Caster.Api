@@ -84,6 +84,66 @@ namespace Caster.Api.Features.Files
         }
 
         /// <summary>
+        /// Draft Terraform for a directory with AI
+        /// </summary>
+        /// <remarks>
+        /// Nothing is saved. The designer reviews the files, then saves them with ApplyAiTerraformDraft.
+        /// </remarks>
+        /// <param name="directoryId">ID of the directory the files belong to.</param>
+        /// <param name="command"></param>
+        /// <returns></returns>
+        [HttpPost("directories/{directoryId}/files/ai-draft")]
+        [ProducesResponseType(typeof(AiTerraformDraft), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "DraftTerraformWithAi")]
+        public async Task<IActionResult> DraftWithAi([FromRoute] Guid directoryId, [FromBody] DraftWithAi.Command command)
+        {
+            command.DirectoryId = directoryId;
+            var result = await _mediator.Send(command);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Draft Terraform for a directory with AI from a structured scenario brief
+        /// </summary>
+        /// <remarks>
+        /// For an application such as Blueprint that describes the exercise rather than the Terraform: its organizations,
+        /// network segments and key terrain, critical systems, the attacker's entry point and path, and the participant teams.
+        /// Returns the same draft as DraftTerraformWithAi. Nothing is saved: the planner reviews the files, then saves them
+        /// with ApplyAiTerraformDraft.
+        /// </remarks>
+        /// <param name="directoryId">ID of the directory the files belong to.</param>
+        /// <param name="command"></param>
+        /// <returns></returns>
+        [HttpPost("directories/{directoryId}/files/ai-draft/brief")]
+        [ProducesResponseType(typeof(AiTerraformDraft), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "DraftTerraformWithAiFromBrief")]
+        public async Task<IActionResult> DraftWithAiFromBrief([FromRoute] Guid directoryId, [FromBody] DraftWithAiFromBrief.Command command)
+        {
+            command.DirectoryId = directoryId;
+            var result = await _mediator.Send(command);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Save the files of a reviewed AI Terraform draft
+        /// </summary>
+        /// <remarks>
+        /// Every file is saved, or none is: a replaced file must not have changed since the draft, or be held by another user.
+        /// </remarks>
+        /// <param name="directoryId">ID of the directory the files belong to.</param>
+        /// <param name="command"></param>
+        /// <returns></returns>
+        [HttpPost("directories/{directoryId}/files/ai-draft/apply")]
+        [ProducesResponseType(typeof(File[]), (int)HttpStatusCode.OK)]
+        [SwaggerOperation(OperationId = "ApplyAiTerraformDraft")]
+        public async Task<IActionResult> ApplyAiDraft([FromRoute] Guid directoryId, [FromBody] ApplyAiDraft.Command command)
+        {
+            command.DirectoryId = directoryId;
+            var result = await _mediator.Send(command);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Create a new file.
         /// </summary>
         /// <param name="command"></param>

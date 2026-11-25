@@ -71,6 +71,44 @@ public class DesignModuleValidationTests(DatabaseFixture fixture) : DatabaseTest
         await EnsureComplete(NewDesignModule(design, module, SeededVersion, new ModuleValue { Name = "vm_name", Value = "web" }));
     }
 
+    /// <summary>An enabled design is written into Workspaces, so it may not take a placeholder.</summary>
+    [Fact]
+    public async Task EnsureComplete_Rejects_A_Placeholder_In_An_Enabled_Design()
+    {
+        var (design, module) = await SeedDesignAndModule();
+
+        var ex = await Assert.ThrowsAsync<ValidationException>(() =>
+            EnsureComplete(NewDesignModule(design, module, SeededVersion, new ModuleValue { Name = "vm_name", Value = "REPLACE_WITH_VM_NAME" })));
+
+        Assert.Contains("vm (vm_name)", string.Join(" ", ex.Errors.Values.SelectMany(x => x)));
+    }
+
+    [Fact]
+    public async Task EnsureComplete_Accepts_A_Placeholder_In_A_Disabled_Design()
+    {
+        var (design, module) = await SeedDesignAndModule(enabled: false);
+
+        await EnsureComplete(NewDesignModule(design, module, SeededVersion, new ModuleValue { Name = "vm_name", Value = "REPLACE_WITH_VM_NAME" }));
+    }
+
+    [Fact]
+    public async Task EnsureNoPlaceholders_Names_Each_Enabled_Module_And_Variable_To_Fill()
+    {
+        var (design, module) = await SeedDesignAndModule(enabled: false);
+        var dc = NewDesignModule(design, module, SeededVersion, new ModuleValue { Name = "vm_name", Value = "REPLACE_WITH_VM_NAME" });
+        dc.Name = "dc01";
+        var off = NewDesignModule(design, module, SeededVersion, new ModuleValue { Name = "vm_name", Value = "REPLACE_WITH_VM_NAME" });
+        off.Name = "spare";
+        off.Enabled = false;
+        var done = NewDesignModule(design, module, SeededVersion, new ModuleValue { Name = "vm_name", Value = "web" });
+        await Seed(dc, off, done);
+
+        await using var db = NewContext();
+        var ex = await Assert.ThrowsAsync<ValidationException>(() => DesignModuleValidation.EnsureNoPlaceholders(db, design.Id, Ct));
+
+        Assert.Equal(["Before enabling, replace the placeholder values in dc01 (vm_name)"], ex.Errors["Values"]);
+    }
+
     private async Task EnsureComplete(DesignModule designModule)
     {
         await using var db = NewContext();
@@ -79,11 +117,12 @@ public class DesignModuleValidationTests(DatabaseFixture fixture) : DatabaseTest
     }
 
     /// <summary>A design, and a module whose one version requires <c>vm_name</c> and defaults <c>cpus</c>.</summary>
-    private async Task<(Design Design, Module Module)> SeedDesignAndModule()
+    private async Task<(Design Design, Module Module)> SeedDesignAndModule(bool enabled = true)
     {
         var project = TestData.Project();
         var directory = TestData.Directory(project);
         var design = TestData.Design(directory);
+        design.Enabled = enabled;
         var module = TestData.Module();
         var version = TestData.ModuleVersion(module, SeededVersion);
         version.Variables =

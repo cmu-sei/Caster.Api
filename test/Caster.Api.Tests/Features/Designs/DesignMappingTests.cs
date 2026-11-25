@@ -52,7 +52,9 @@ public class DesignMappingTests(DatabaseFixture fixture, CasterAppFactory factor
         Assert.Equal(("created", true), (created.GetProperty("name").GetString(), created.GetProperty("enabled").GetBoolean()));
         Assert.Equal("renamed", put.GetProperty("name").GetString());
         Assert.True(enabled.GetProperty("enabled").GetBoolean());
-        Assert.All(new[] { created, put, enabled }, x => Assert.Equal(0, x.GetProperty("modules").GetArrayLength()));
+        // Enabling reads the Design's modules to check for placeholders, so it answers them.
+        Assert.All(new[] { created, put }, x => Assert.Equal(0, x.GetProperty("modules").GetArrayLength()));
+        Assert.Equal(1, enabled.GetProperty("modules").GetArrayLength());
         Assert.Equal("renamed", (await ReadBack(db => db.Designs.SingleAsync(x => x.Id == graph.Design.Id, Ct))).Name);
         var broadcast = Assert.IsType<DesignView>(Assert.Single(Factory.Hub<ProjectHub>().ToGroup(graph.Project.Id), x => x.Method == "DesignCreated").Arguments[0]);
         Assert.NotNull(broadcast.Modules);
@@ -61,9 +63,9 @@ public class DesignMappingTests(DatabaseFixture fixture, CasterAppFactory factor
 
     // ---- Design modules ---------------------------------------------------------------------------
 
-    /// <summary>A single design module read carries its values; the design's module list leaves them null.</summary>
+    /// <summary>A single design module read and the design's module list both carry the values.</summary>
     [Fact]
-    public async Task A_design_module_read_carries_the_values_and_the_list_leaves_them_null()
+    public async Task A_design_module_read_and_the_list_both_carry_the_values()
     {
         var graph = await SeedGraph();
 
@@ -74,7 +76,7 @@ public class DesignMappingTests(DatabaseFixture fixture, CasterAppFactory factor
         AssertValues(one, ("count", "3"));
         var listed = Assert.Single(list);
         AssertDesignModule(listed, graph);
-        Assert.Equal(JsonValueKind.Null, listed.GetProperty("values").ValueKind);
+        AssertValues(listed, ("count", "3"));
     }
 
     /// <summary>The design module writes answer the values, and so does their broadcast.</summary>
