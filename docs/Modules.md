@@ -61,7 +61,7 @@ Terraform__ModuleSources__0__Layout=Subdirectories
 
 ### Repository Requirements
 
-* **Versions are git tags.** Every tag is a version. A repository with no tags fails to sync with an error saying so, because a Design could never reference an untagged Module.
+* **Versions are git tags.** Every tag is a version. A repository with no tags, or with tags but no Module in any of them, has zero Modules: the sync succeeds, reports no error, and lists nothing until a tagged commit contains a Module. Asking for one named Module that is not there still fails.
 * In the `Subdirectories` layout, a plain tag (`v1.0.0`) versions every Module in the repository. A tag of the form `<subdir>/<version>` (`network-segment/v1.2.0`) versions only that Module, so Modules can be released independently.
 * **A Module root must contain `variables.tf.json` or `outputs.tf.json`.** Caster reads variables and outputs from these files in Terraform's JSON syntax. Modules written only in HCL (`variables.tf`, `outputs.tf`) are not discovered.
 * An optional `caster.json` in a Module root sets `displayName` and `description`, so the Modules of one repository get distinct labels in Designer.
