@@ -71,7 +71,7 @@ Terraform__ModuleSources__0__Layout=Subdirectories
 
 ### When Sources Sync
 
-Listing Modules (`GET /api/modules`, which every Designer and Modules page load sends) syncs each source first. A source whose tags have not changed since the last sync is not cloned again. If a source fails to sync, the stored Modules are still served, and `GET /api/modules/sources` reports the error for each source.
+Listing Modules (`GET /api/modules`, which every Designer and Modules page load sends) syncs each source first. A source whose tags have not changed since the last sync is not cloned again. If a source fails to sync, the stored Modules are still served, and `GET /api/modules/sources` reports the error for each source. The API log records a source's failure in full once, again when the error changes, and as a reminder after 15 minutes, then after 30 minutes, 1 hour, and so on up to every 4 hours while it keeps failing the same way; it logs a line when the source syncs again.
 
 To re-read one Module even when its tags have not changed (for example after a tag was moved), enter the source `Name`, or `Name/subdirectory` for one Module of a `Subdirectories` source, in **External Module ID** on *Administration > Modules* and click **Add/Update the Modules from this source**.
 

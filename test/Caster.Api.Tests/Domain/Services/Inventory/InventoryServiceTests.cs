@@ -283,6 +283,78 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal(Refused, snapshot.Isos.Error);
         }
 
+        private static InventorySnapshot LoadedWithIsoWarning(DateTime stamp, string warning)
+        {
+            var read = LoadedAt(stamp);
+            read.Isos = InventoryCategoryResult.OkWithWarning([new InventoryEntry { Id = "[ds] a.iso", Name = "a.iso", Path = "[ds] a.iso" }], warning);
+            return read;
+        }
+
+        [Fact]
+        public async Task AStaleRead_KeepsTheWarningOfTheReadItCameFrom()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedWithIsoWarning(FirstRead, "Some ISO locations could not be searched: [gone] x."),
+                () => InventorySnapshot.AllUnavailable(Refused)));
+
+            await RunReads(sut, refreshes: 1);
+
+            var isos = sut.GetSnapshot().Isos;
+            Assert.True(isos.Stale);
+            Assert.Equal("a.iso", Assert.Single(isos.Entries).Name);
+            Assert.Equal("Some ISO locations could not be searched: [gone] x.", isos.Warning);
+            Assert.Equal(Refused, isos.Error);
+        }
+
+        [Fact]
+        public async Task AStaleRead_OfACompleteReadDoesNotInventAWarning()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () =>
+                {
+                    var read = LoadedAt(FirstRead);
+                    read.Isos = InventoryCategoryResult.Ok([new InventoryEntry { Id = "[ds] a.iso", Name = "a.iso", Path = "[ds] a.iso" }]);
+                    return read;
+                },
+                () => InventorySnapshot.AllUnavailable(Refused)));
+
+            await RunReads(sut, refreshes: 1);
+
+            var isos = sut.GetSnapshot().Isos;
+            Assert.True(isos.Stale);
+            Assert.Null(isos.Warning);
+        }
+
+        [Fact]
+        public async Task ANewerRead_ReplacesTheWarning()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedWithIsoWarning(FirstRead, "Some ISO locations could not be searched: [gone] x."),
+                () =>
+                {
+                    var read = LoadedAt(ThirdRead);
+                    read.Isos = InventoryCategoryResult.Ok([new InventoryEntry { Id = "[ds] a.iso", Name = "a.iso", Path = "[ds] a.iso" }]);
+                    return read;
+                }));
+
+            await RunReads(sut, refreshes: 1);
+
+            var isos = sut.GetSnapshot().Isos;
+            Assert.False(isos.Stale);
+            Assert.Null(isos.Warning);
+        }
+
+        [Fact]
+        public async Task AWarning_NamesTheConnectionsOwnKeys()
+        {
+            var sut = Build(EnabledOptions(), Reads(
+                () => LoadedWithIsoWarning(FirstRead, "Infrastructure:IsoLocations names \"x\", which is not an accessible datastore.")));
+
+            await RunReads(sut, refreshes: 0);
+
+            Assert.Contains("Infrastructure:Connections:0:IsoLocations", sut.GetSnapshot().Isos.Warning);
+        }
+
         [Fact]
         public async Task ContentLibraryDown_AfterAGoodRead_KeepsItAsStale()
         {
@@ -946,15 +1018,25 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         [Fact]
         public async Task OverlappingRefreshes_AreMerged()
         {
+            var ct = TestContext.Current.CancellationToken;
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var thirdRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var calls = 0;
-            var client = new FakeProviderClient(_ =>
+
+            // The second read waits on the gate without holding a thread, so a busy
+            // thread pool cannot starve the test of the threads it needs to release it.
+            var client = FakeProviderClient.Async(async (_, _) =>
             {
-                if (Interlocked.Increment(ref calls) == 2)
+                switch (Interlocked.Increment(ref calls))
                 {
-                    blocked.TrySetResult();
-                    gate.Task.Wait(TimeSpan.FromSeconds(10));
+                    case 2:
+                        blocked.TrySetResult();
+                        await gate.Task.WaitAsync(TimeSpan.FromSeconds(60));
+                        break;
+                    case 3:
+                        thirdRead.TrySetResult();
+                        break;
                 }
 
                 return Loaded();
@@ -965,17 +1047,22 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             {
                 await sut.StartAsync(CancellationToken.None);
                 sut.ForceRefresh();
-                await blocked.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+                await blocked.Task.WaitAsync(TimeSpan.FromSeconds(60), ct);
 
                 var refreshes = Enumerable.Range(0, 5)
-                    .Select(_ => sut.ForceRefreshAsync(TimeSpan.FromSeconds(10), CancellationToken.None))
+                    .Select(_ => sut.ForceRefreshAsync(TimeSpan.FromSeconds(60), ct))
                     .ToArray();
 
                 gate.TrySetResult();
 
                 Assert.All(await Task.WhenAll(refreshes), Assert.True);
-                await WaitFor(() => Volatile.Read(ref calls) >= 3);
-                await Task.Delay(200, TestContext.Current.CancellationToken);
+
+                // The merged refreshes cost exactly one more read. Once it has started, a
+                // stray extra read would follow straight away, so a short wait that starts
+                // from that point is enough. It can only miss a stray read, never fail a
+                // correct run.
+                await thirdRead.Task.WaitAsync(TimeSpan.FromSeconds(60), ct);
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
 
                 Assert.Equal(3, Volatile.Read(ref calls));
             }
@@ -1109,6 +1196,14 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         {
             private int _calls;
 
+            private Func<InfrastructureConnectionOptions, CancellationToken, Task<InventorySnapshot>> _asyncResponder;
+
+            /// <summary>
+            /// A client whose reads can wait asynchronously, for tests that hold a read open.
+            /// </summary>
+            public static FakeProviderClient Async(Func<InfrastructureConnectionOptions, CancellationToken, Task<InventorySnapshot>> responder) =>
+                new(_ => null) { _asyncResponder = responder };
+
             public int Calls => _calls;
             public InfrastructureConnectionOptions LastOptions { get; private set; }
 
@@ -1130,7 +1225,9 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
                 LastOptions = options;
                 Urls.Enqueue(options.Url);
                 OnCall?.Invoke(cancellationToken);
-                return Task.FromResult(responder(options));
+                return _asyncResponder is { } respond
+                    ? respond(options, cancellationToken)
+                    : Task.FromResult(responder(options));
             }
         }
 

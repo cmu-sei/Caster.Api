@@ -604,6 +604,9 @@ public class InventoryService : BackgroundService, IInventoryService
             {
                 if (category?.Error is not null)
                     category.Error = Scope(category.Error, Order);
+
+                if (category?.Warning is not null)
+                    category.Warning = Scope(category.Warning, Order);
             }
 
             return snapshot;

@@ -170,16 +170,129 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Contains("Hosts:Locations names \"/pve2\"", InventoryFilters.Validate(options));
         }
 
-        [Theory]
-        [InlineData("Isos")]
-        [InlineData("ContentLibraries")]
-        public void Locations_does_not_apply_to_isos_or_content_libraries(string key)
+        [Fact]
+        public void Locations_does_not_apply_to_isos()
         {
             var options = Vsphere();
-            var settings = key == "Isos" ? options.Inventory.Resources.Isos : options.Inventory.Resources.ContentLibraries;
-            settings.Locations = ["/DC1"];
+            options.Inventory.Resources.Isos.Locations = ["/DC1"];
 
-            Assert.Contains($"Infrastructure:Inventory:Resources:{key}:Locations doesn't apply", InventoryFilters.Validate(options));
+            Assert.Contains("Infrastructure:Inventory:Resources:Isos:Locations doesn't apply", InventoryFilters.Validate(options));
+        }
+
+        [Fact]
+        public void Content_library_locations_are_library_names()
+        {
+            var options = Vsphere();
+            options.Inventory.Resources.ContentLibraries.Locations = ["teamA-templates", "Team B"];
+
+            Assert.Null(InventoryFilters.Validate(options));
+        }
+
+        [Fact]
+        public void Content_library_locations_are_vsphere_only()
+        {
+            var options = Proxmox();
+            options.Inventory.Resources.ContentLibraries.Locations = ["teamA-templates"];
+
+            Assert.Contains("ContentLibraries:Locations doesn't apply. Content libraries are vsphere only.", InventoryFilters.Validate(options));
+        }
+
+        [Fact]
+        public void Content_library_locations_reject_paths()
+        {
+            var options = Vsphere();
+            options.Inventory.Resources.ContentLibraries.Locations = ["teamA-templates", "/DC1/teamA-templates"];
+
+            var problem = InventoryFilters.Validate(options);
+
+            Assert.Contains("ContentLibraries:Locations names \"/DC1/teamA-templates\"", problem);
+            Assert.Contains("not a path", problem);
+        }
+
+        [Fact]
+        public void Content_library_locations_match_the_library_name_ignoring_case()
+        {
+            var options = Vsphere();
+            options.Inventory.Resources.ContentLibraries.Locations = ["TEAMA-templates"];
+            var snapshot = Templates();
+            snapshot.ContentLibrary = InventoryCategoryResult.Ok([
+                Entry("ubuntu", "teamA-templates"),
+                Entry("win", "teamB-templates"),
+                Entry("teamA-templates", "teamB-templates")
+            ]);
+
+            snapshot = InventoryFilters.Apply(snapshot, options);
+
+            Assert.Equal(["ubuntu"], snapshot.ContentLibrary.Entries.Select(x => x.Name));
+        }
+
+        [Fact]
+        public void Content_library_include_still_matches_the_item_name()
+        {
+            var options = Vsphere();
+            options.Inventory.Resources.ContentLibraries.Include = "^teamA-templates$";
+            var snapshot = Templates();
+            snapshot.ContentLibrary = InventoryCategoryResult.Ok([
+                Entry("ubuntu", "teamA-templates"),
+                Entry("teamA-templates", "teamB-templates")
+            ]);
+
+            snapshot = InventoryFilters.Apply(snapshot, options);
+
+            Assert.Equal(["teamB-templates"], snapshot.ContentLibrary.Entries.Select(x => x.Path));
+        }
+
+        [Fact]
+        public void No_content_library_locations_lists_every_library()
+        {
+            var options = Vsphere();
+            var snapshot = Templates();
+            snapshot.ContentLibrary = InventoryCategoryResult.Ok([
+                Entry("ubuntu", "a"),
+                Entry("win", "b")
+            ]);
+
+            snapshot = InventoryFilters.Apply(snapshot, options);
+
+            Assert.Equal(2, snapshot.ContentLibrary.Entries.Length);
+            Assert.True(InventoryFilters.For(options, InventoryCategory.ContentLibrary).ListsLocation("anything"));
+        }
+
+        [Fact]
+        public void A_content_library_name_keeps_its_trailing_slash()
+        {
+            var options = Vsphere();
+            options.Inventory.Resources.ContentLibraries.Locations = ["teamA/"];
+            var filter = InventoryFilters.For(options, InventoryCategory.ContentLibrary);
+
+            Assert.False(filter.ListsLocation("teamA"));
+            Assert.True(filter.ListsLocation("teamA/"));
+        }
+
+        [Fact]
+        public void A_content_library_name_is_trimmed_as_the_setting_is()
+        {
+            var options = Vsphere();
+            options.Inventory.Resources.ContentLibraries.Locations = [" teamA-templates "];
+            var filter = InventoryFilters.For(options, InventoryCategory.ContentLibrary);
+            var snapshot = Templates();
+            snapshot.ContentLibrary = InventoryCategoryResult.Ok([Entry("ubuntu", "teamA-templates ")]);
+
+            snapshot = InventoryFilters.Apply(snapshot, options);
+
+            Assert.True(filter.ListsLocation("teamA-templates "));
+            Assert.Equal(["ubuntu"], snapshot.ContentLibrary.Entries.Select(x => x.Name));
+        }
+
+        [Fact]
+        public void ListsLocation_matches_names_ignoring_case()
+        {
+            var options = Vsphere();
+            options.Inventory.Resources.ContentLibraries.Locations = ["TeamA"];
+            var filter = InventoryFilters.For(options, InventoryCategory.ContentLibrary);
+
+            Assert.True(filter.ListsLocation("teama"));
+            Assert.False(filter.ListsLocation("teamA-templates"));
         }
 
         [Fact]

@@ -278,18 +278,46 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
-        public async Task GetInventoryAsync_AnIncompleteIsoSearchMakesIsosUnavailable()
+        public async Task GetInventoryAsync_WhenNoIsoLocationCouldBeSearchedIsosAreUnavailable()
         {
-            // A partial list would make an ISO that exists look missing.
+            // Every location failed: an empty list would look like a datastore with no ISOs.
             var vim = Vim();
-            vim.IsoError = "Some ISO locations could not be searched: [slow-ds]: timed out.";
+            vim.Isos.Clear();
+            vim.IsoError = "No ISO location could be searched: [a] x: timed out; [b] y: folder not found.";
 
             var snapshot = await Read(DefaultResponder(), vim: vim);
 
             Assert.False(snapshot.Isos.Available);
             Assert.Empty(snapshot.Isos.Entries);
+            Assert.Null(snapshot.Isos.Warning);
             Assert.Equal(vim.IsoError, snapshot.Isos.Error);
             Assert.True(snapshot.VmTemplates.Available);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_APartialIsoSearchKeepsTheIsosFoundAndWarns()
+        {
+            var vim = Vim();
+            vim.IsoWarning = "Some ISO locations could not be searched, so ISOs in them are missing from this list: [gone] stock: folder not found.";
+
+            var snapshot = await Read(DefaultResponder(), vim: vim);
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.False(snapshot.Isos.Stale);
+            Assert.Null(snapshot.Isos.Error);
+            Assert.Equal(vim.IsoWarning, snapshot.Isos.Warning);
+            Assert.Contains(snapshot.Isos.Entries, x => x.Name == "iso/alpine.iso");
+            Assert.True(snapshot.VmTemplates.Available);
+            Assert.Null(snapshot.VmTemplates.Warning);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ACompleteIsoSearchHasNoWarning()
+        {
+            var snapshot = await Read(DefaultResponder());
+
+            Assert.True(snapshot.Isos.Available);
+            Assert.Null(snapshot.Isos.Warning);
         }
 
         [Fact]
@@ -480,6 +508,124 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             Assert.Equal("2048", ovf.Properties["size"]);
             Assert.Contains("type       = \"ovf\"", ovf.Terraform[TerraformSnippets.Vsphere]);
             Assert.Contains("name = \"Golden\"", ovf.Terraform[TerraformSnippets.Vsphere]);
+        }
+
+        private static (Func<HttpRequestMessage, HttpResponseMessage> Responder, List<string> Seen) TeamLibraries(int hugeItems = 0) // 2001 is one past the 2000 item cap
+        {
+            var seen = new List<string>();
+            var huge = string.Join(",", Enumerable.Range(1, hugeItems).Select(x => $"\"h-{x}\""));
+
+            HttpResponseMessage Respond(HttpRequestMessage request)
+            {
+                var path = request.RequestUri.AbsolutePath;
+                seen.Add(path + request.RequestUri.Query);
+
+                return path switch
+                {
+                    "/api/content/library" => Json("""["lib-a", "lib-b", "lib-huge"]"""),
+                    "/api/content/library/lib-a" => Json("""{ "id": "lib-a", "name": "teamA-templates", "type": "LOCAL" }"""),
+                    "/api/content/library/lib-b" => Json("""{ "id": "lib-b", "name": "teamB-templates", "type": "LOCAL" }"""),
+                    "/api/content/library/lib-huge" => Json("""{ "id": "lib-huge", "name": "shared-archive", "type": "LOCAL" }"""),
+                    "/api/content/library/item" when request.RequestUri.Query == "?library_id=lib-a" => Json("""["a-1", "a-2"]"""),
+                    "/api/content/library/item" when request.RequestUri.Query == "?library_id=lib-b" => Json("""["b-1"]"""),
+                    "/api/content/library/item" when request.RequestUri.Query == "?library_id=lib-huge" => Json($"[{huge}]"),
+                    "/api/content/library/item/a-1" => Json("""{ "id": "a-1", "name": "ubuntu", "type": "ovf" }"""),
+                    "/api/content/library/item/a-2" => Json("""{ "id": "a-2", "name": "win", "type": "vm-template" }"""),
+                    "/api/content/library/item/b-1" => Json("""{ "id": "b-1", "name": "kali", "type": "ovf" }"""),
+                    _ when path.StartsWith("/api/content/library/item/h-") =>
+                        Json($$"""{ "id": "{{path[(path.LastIndexOf('/') + 1)..]}}", "name": "{{path[(path.LastIndexOf('/') + 1)..]}}", "type": "ovf" }"""),
+                    _ => DefaultResponder()(request)
+                };
+            }
+
+            return (Respond, seen);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ContentLibraryLocationsReadOnlyTheNamedLibraries()
+        {
+            var (responder, seen) = TeamLibraries();
+            var options = Options();
+            options.Inventory.Resources.ContentLibraries.Locations = ["TEAMA-templates"];
+
+            var snapshot = await Read(responder, options);
+            snapshot = InventoryFilters.Apply(snapshot, options);
+
+            Assert.True(snapshot.ContentLibrary.Available);
+            Assert.Equal(["teamA-templates/ubuntu", "teamA-templates/win"], snapshot.ContentLibrary.Entries.Select(x => x.Path));
+            Assert.Equal(["teamA-templates"], snapshot.ContentLibrary.Entries.SelectMany(x => x.Locations).Distinct());
+
+            // other libraries are looked up for their name, but their items are never listed or read
+            Assert.Contains("/api/content/library/item?library_id=lib-a", seen);
+            Assert.DoesNotContain(seen, x => x.Contains("lib-b") && x.Contains("item"));
+            Assert.DoesNotContain(seen, x => x.Contains("lib-huge") && x.Contains("item"));
+            Assert.DoesNotContain(seen, x => x.Contains("/item/b-") || x.Contains("/item/h-"));
+            Assert.Equal(2, seen.Count(x => x.StartsWith("/api/content/library/item/")));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_AnExcludedHugeLibraryDoesNotTripTheItemCap()
+        {
+            var (responder, seen) = TeamLibraries(2001);
+            var options = Options();
+            options.Inventory.Resources.ContentLibraries.Locations = ["teamA-templates", "teamB-templates"];
+
+            var snapshot = await Read(responder, options);
+
+            Assert.True(snapshot.ContentLibrary.Available);
+            Assert.Null(snapshot.ContentLibrary.Error);
+            Assert.Equal(3, snapshot.ContentLibrary.Entries.Length);
+            Assert.DoesNotContain(seen, x => x.Contains("lib-huge") && x.Contains("item"));
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_AHugeLibraryStillTripsTheItemCapWhenNotExcluded()
+        {
+            var (responder, _) = TeamLibraries(2001);
+
+            var snapshot = await Read(responder);
+
+            Assert.False(snapshot.ContentLibrary.Available);
+            Assert.StartsWith("vCenter has more than 2000 content library items", snapshot.ContentLibrary.Error);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_TheItemCapNamesTheSelectedLibraries()
+        {
+            var (responder, _) = TeamLibraries(2001);
+            var options = Options();
+            options.Inventory.Resources.ContentLibraries.Locations = ["shared-archive"];
+
+            var snapshot = await Read(responder, options);
+
+            Assert.False(snapshot.ContentLibrary.Available);
+            Assert.StartsWith("The content libraries in Infrastructure:Inventory:Resources:ContentLibraries:Locations have more than 2000 items", snapshot.ContentLibrary.Error);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_NoContentLibraryLocationsReadsEveryLibrary()
+        {
+            var (responder, seen) = TeamLibraries();
+
+            var snapshot = await Read(responder);
+
+            Assert.Equal(
+                ["teamA-templates/ubuntu", "teamA-templates/win", "teamB-templates/kali"],
+                snapshot.ContentLibrary.Entries.Select(x => x.Path));
+            Assert.Contains("/api/content/library/item?library_id=lib-b", seen);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_ContentLibraryIncludeAndExcludeStillMatchTheItemName()
+        {
+            var (responder, _) = TeamLibraries();
+            var options = Options();
+            options.Inventory.Resources.ContentLibraries.Include = "^(ubuntu|kali)$";
+            options.Inventory.Resources.ContentLibraries.Exclude = "^kali$";
+
+            var snapshot = InventoryFilters.Apply(await Read(responder, options), options);
+
+            Assert.Equal(["teamA-templates/ubuntu"], snapshot.ContentLibrary.Entries.Select(x => x.Path));
         }
 
         [Fact]

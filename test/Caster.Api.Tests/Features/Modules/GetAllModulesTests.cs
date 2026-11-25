@@ -14,6 +14,7 @@ using Caster.Api.Tests.Support;
 using Caster.Api.Infrastructure.Options;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Microsoft.Extensions.Logging;
 using NSubstitute.ExceptionExtensions;
 using Xunit;
 
@@ -43,6 +44,19 @@ namespace Caster.Api.Tests.Features.Modules
             var modules = await Handler(CatalogHolder()).HandleRequest(new GetAll.Query(), Ct);
 
             Assert.Equal("Network Segment", Assert.Single(modules).Name);
+        }
+
+        [Fact]
+        public async Task SyncFailure_IsNotLoggedAgainAboveDebug_BecauseTheDispatcherAlreadyLoggedIt()
+        {
+            await SeedStoredModule();
+            _modules.GetModulesAsync(Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                .ThrowsAsync(new ModuleSyncException("module source 'catalog': fatal: repository not found"));
+            var logger = new RecordingLogger<GetAll>();
+
+            await Handler(logger: logger).HandleRequest(new GetAll.Query(), Ct);
+
+            Assert.DoesNotContain(logger.Entries, x => x.Level >= LogLevel.Information);
         }
 
         [Fact]
@@ -203,11 +217,11 @@ namespace Caster.Api.Tests.Features.Modules
             return monitor;
         }
 
-        private GetAll.Handler Handler(ClaimsPrincipal caller = null)
+        private GetAll.Handler Handler(ClaimsPrincipal caller = null, RecordingLogger<GetAll> logger = null)
         {
             var authorization = AuthorizationHarness.CreateCasterAuthorizationService(Db, caller ?? ClaimsPrincipalBuilder.Anonymous());
 
-            return new(authorization, Db, _modules, new ModuleAccessService(Db, authorization, Options()), new RecordingLogger<GetAll>());
+            return new(authorization, Db, _modules, new ModuleAccessService(Db, authorization, Options()), logger ?? new RecordingLogger<GetAll>());
         }
     }
 }

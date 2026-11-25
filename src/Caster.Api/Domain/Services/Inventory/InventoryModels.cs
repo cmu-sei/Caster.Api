@@ -110,8 +110,20 @@ public class InventoryCategoryResult
     /// </summary>
     public string Error { get; set; }
 
+    /// <summary>
+    /// Human readable note on an <see cref="Available"/> read that is incomplete, e.g.
+    /// some ISO locations could not be searched. <see cref="Entries"/> are what was
+    /// found, so what the warning names may be missing. Null when the read is complete.
+    /// Describes the read that <see cref="Entries"/> came from, so a kept stale read
+    /// keeps its own. Must never contain credentials.
+    /// </summary>
+    public string Warning { get; set; }
+
     public static InventoryCategoryResult Ok(InventoryEntry[] entries) =>
         new() { Entries = entries ?? [], Available = true };
+
+    public static InventoryCategoryResult OkWithWarning(InventoryEntry[] entries, string warning) =>
+        new() { Entries = entries ?? [], Available = true, Warning = warning };
 
     public static InventoryCategoryResult Unavailable(string error) =>
         new() { Entries = [], Available = false, Error = error };
@@ -219,7 +231,9 @@ public class InventorySnapshot
             Available = true,
             Stale = true,
             LastUpdated = previous.LastUpdated,
-            Error = current.Error
+            Error = current.Error,
+            // The kept entries came from the previous read, so its warning goes with them.
+            Warning = previous.Warning
         };
     }
 }
