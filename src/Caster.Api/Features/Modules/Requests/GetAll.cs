@@ -82,7 +82,9 @@ namespace Caster.Api.Features.Modules
                 }
                 catch (Exception ex) when (ex is ModuleSyncException or ModuleSourceNotConfiguredException)
                 {
-                    logger.LogWarning("Serving the stored Modules: {Message}", ex.Message);
+                    // The dispatcher already logged each failing source, once per change of error; saying it
+                    // again on every Module list is what drowned the rest of the log.
+                    logger.LogDebug("Serving the stored Modules: {Message}", ex.Message);
                 }
 
                 IQueryable<Domain.Models.Module> query = dbContext.Modules;

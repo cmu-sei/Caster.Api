@@ -34,6 +34,7 @@ namespace Caster.Api.Tests.Domain.Services.Modules
                 [_git, _gitlab],
                 monitor,
                 _statuses,
+                new ModuleSourceFailureLog(TimeProvider.System),
                 new RecordingLogger<ModuleRepositoryDispatcher>());
         }
 
