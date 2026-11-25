@@ -28,18 +28,23 @@ namespace Caster.Api.Features.Modules
         /// Get a Module by Id
         /// </summary>
         /// <param name="id">The Id of the Module to retrieve</param>
+        /// <param name="projectId">The project the Module is looked up for: a Module outside the project's Module Scopes is not found, unless a Design of the project uses it</param>
         [HttpGet("modules/{id}")]
         [ProducesResponseType(typeof(Module), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "GetModule")]
-        public async Task<IActionResult> Get([FromRoute] string id)
+        public async Task<IActionResult> Get([FromRoute] string id, [FromQuery] Guid? projectId)
         {
-            var result = await this._mediator.Send(new Get.Query { Id = Guid.Parse(id) });
+            var result = await this._mediator.Send(new Get.Query { Id = Guid.Parse(id), ProjectId = projectId });
             return Ok(result);
         }
 
         /// <summary>
         /// Get all available Modules
         /// </summary>
+        /// <remarks>
+        /// Limited by Module Scopes: with a projectId, to what that project may use; without one, a
+        /// holder of ViewModules gets every Module and anyone else what their own projects may use.
+        /// </remarks>
         /// <param name="query"></param>
         [HttpGet("modules")]
         [ProducesResponseType(typeof(IEnumerable<Module>), (int)HttpStatusCode.OK)]
@@ -126,12 +131,13 @@ namespace Caster.Api.Features.Modules
         /// Get a Module's Versions
         /// </summary>
         /// <param name="id">The Id of the Module to retrieve</param>
+        /// <param name="projectId">The project the Module is looked up for: see Get a Module by Id</param>
         [HttpGet("modules/{id}/versions")]
         [ProducesResponseType(typeof(IEnumerable<ModuleVersion>), (int)HttpStatusCode.OK)]
         [SwaggerOperation(OperationId = "GetModuleVersions")]
-        public async Task<IActionResult> GetModuleVersions([FromRoute] string id)
+        public async Task<IActionResult> GetModuleVersions([FromRoute] string id, [FromQuery] Guid? projectId)
         {
-            var result = await this._mediator.Send(new GetVersions.Query { ModuleId = Guid.Parse(id) });
+            var result = await this._mediator.Send(new GetVersions.Query { ModuleId = Guid.Parse(id), ProjectId = projectId });
             return Ok(result);
         }
 

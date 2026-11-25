@@ -18,6 +18,7 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Caster.Api.Domain.Models;
 using Caster.Api.Data;
+using Caster.Api.Domain.Services.ModuleScopes;
 
 namespace Caster.Api.Features.DesignModules;
 
@@ -43,7 +44,10 @@ public class Edit
         }
     }
 
-    public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Command, DesignModule>
+    public class Handler(
+        ICasterAuthorizationService authorizationService,
+        CasterContext dbContext,
+        IModuleAccessService moduleAccess) : BaseHandler<Command, DesignModule>
     {
         public override async Task<bool> Authorize(Command request, CancellationToken cancellationToken) =>
             await authorizationService.Authorize<Domain.Models.DesignModule>(request.DesignModuleId, [SystemPermission.EditProjects], [ProjectPermission.EditProject], cancellationToken);
@@ -56,6 +60,11 @@ public class Edit
 
             if (designModule == null)
                 throw new EntityNotFoundException<DesignModule>();
+
+            // Switching to another Module is checked against the project's scopes; keeping the
+            // Module a Design already uses is not, so it keeps working after the scopes change.
+            if (request.ModuleId != designModule.ModuleId)
+                await DesignModuleValidation.EnsureModuleAllowed(dbContext, moduleAccess, designModule.DesignId, request.ModuleId, cancellationToken);
 
             request.ApplyTo(designModule);
             await DesignModuleValidation.EnsureComplete(dbContext, designModule, cancellationToken);

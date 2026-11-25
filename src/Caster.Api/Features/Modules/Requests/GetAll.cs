@@ -10,6 +10,7 @@ using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Domain.Services;
 using Caster.Api.Domain.Services.Modules;
+using Caster.Api.Domain.Services.ModuleScopes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -50,6 +51,15 @@ namespace Caster.Api.Features.Modules
             public Guid? DesignId { get; set; }
 
             /// <summary>
+            /// only return the Modules this project may use: its Module Scopes and its project
+            /// group's. Without it, a holder of ViewModules gets every Module, and anyone else the
+            /// Modules their own projects together may use. Ignored with a DesignId, which lists
+            /// the Modules the Design already uses.
+            /// </summary>
+            [DataMember]
+            public Guid? ProjectId { get; set; }
+
+            /// <summary>
             /// Whether or not to retrieve the name of the highest version.
             /// </summary>
             [DataMember]
@@ -60,15 +70,29 @@ namespace Caster.Api.Features.Modules
             ICasterAuthorizationService authorizationService,
             CasterContext dbContext,
             IModuleRepositoryService moduleRepositoryService,
+            IModuleAccessService moduleAccess,
             ILogger<GetAll> logger) : BaseHandler<Query, Module[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
-                var canViewCatalog = authorizationService.GetAuthorizedProjectIds().Any()
-                    || await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
+                // Naming a project asks for that project's Modules, so seeing the project is what is needed;
+                // the catalog gate below is for the listing without one.
+                if (request.ProjectId.HasValue)
+                {
+                    if (!await authorizationService.Authorize<Domain.Models.Project>(
+                        request.ProjectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken))
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    var canViewCatalog = authorizationService.GetAuthorizedProjectIds().Any()
+                        || await authorizationService.Authorize([SystemPermission.ViewModules], cancellationToken);
 
-                if (!canViewCatalog)
-                    return false;
+                    if (!canViewCatalog)
+                        return false;
+                }
 
                 return !request.DesignId.HasValue
                     || await authorizationService.Authorize<Domain.Models.Design>(
@@ -111,9 +135,16 @@ namespace Caster.Api.Features.Modules
 
                     query = designQuery.Select(x => x.Module);
                 }
-                else if (request.IncludeVersions)
+                else
                 {
-                    query = query.Include(x => x.Versions);
+                    // A Design's own Modules above stay whatever the scopes say, so a Design
+                    // that uses one outside them keeps working. Only what is offered is limited.
+                    query = (await moduleAccess.ForCaller(request.ProjectId, cancellationToken)).Apply(query);
+
+                    if (request.IncludeVersions)
+                    {
+                        query = query.Include(x => x.Versions);
+                    }
                 }
 
                 // The versions are never projected: the Include calls above have no effect on a projection.

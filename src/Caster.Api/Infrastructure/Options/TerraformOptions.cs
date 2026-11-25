@@ -26,6 +26,9 @@ public class TerraformOptions
     /// </summary>
     public ModuleSourceOptions[] ModuleSources { get; set; } = [];
 
+    /// <summary>Which Modules a project may use: see <see cref="ModuleScopeOptions"/>.</summary>
+    public ModuleScopeOptions ModuleScopes { get; set; } = new();
+
     /// <summary>
     /// Seconds any single git command (ls-remote, clone, log) may run before it
     /// is killed. Guards against a module source that accepts a connection and

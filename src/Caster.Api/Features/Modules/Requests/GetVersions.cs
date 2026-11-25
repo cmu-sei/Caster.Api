@@ -12,6 +12,8 @@ using System.Runtime.Serialization;
 using Caster.Api.Infrastructure.Authorization;
 using Caster.Api.Features.Shared;
 using Caster.Api.Domain.Models;
+using Caster.Api.Domain.Services.ModuleScopes;
+using Caster.Api.Infrastructure.Exceptions;
 
 namespace Caster.Api.Features.Modules
 {
@@ -25,12 +27,27 @@ namespace Caster.Api.Features.Modules
             /// </summary>
             [DataMember]
             public Guid ModuleId { get; set; }
+
+            /// <summary>
+            /// The project the Module's versions are looked up for. See <see cref="Get.Query.ProjectId"/>.
+            /// </summary>
+            [DataMember]
+            public Guid? ProjectId { get; set; }
         }
 
-        public class Handler(ICasterAuthorizationService authorizationService, CasterContext dbContext) : BaseHandler<Query, ModuleVersion[]>
+        public class Handler(
+            ICasterAuthorizationService authorizationService,
+            CasterContext dbContext,
+            IModuleAccessService moduleAccess) : BaseHandler<Query, ModuleVersion[]>
         {
             public override async Task<bool> Authorize(Query request, CancellationToken cancellationToken)
             {
+                if (request.ProjectId.HasValue)
+                {
+                    return await authorizationService.Authorize<Project>(
+                        request.ProjectId, [SystemPermission.ViewProjects], [ProjectPermission.ViewProject], cancellationToken);
+                }
+
                 if (authorizationService.GetAuthorizedProjectIds().Any())
                 {
                     return true;
@@ -43,6 +60,9 @@ namespace Caster.Api.Features.Modules
 
             public override async Task<ModuleVersion[]> HandleRequest(Query request, CancellationToken cancellationToken)
             {
+                if (!await moduleAccess.CanSeeModule(request.ModuleId, request.ProjectId, cancellationToken))
+                    throw new EntityNotFoundException<Module>();
+
                 var versions = await dbContext.ModuleVersions
                     .Where(v => v.ModuleId == request.ModuleId)
                     .ProjectToModuleVersion()
