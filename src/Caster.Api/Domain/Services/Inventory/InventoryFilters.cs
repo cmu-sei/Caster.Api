@@ -110,6 +110,12 @@ public static class InventoryFilters
 
             if (category is InventoryCategory.ContentLibrary)
             {
+                if (!vsphere)
+                {
+                    problems.Add($"{key}:Locations doesn't apply. Content libraries are vsphere only.");
+                    continue;
+                }
+
                 // Library names, not paths. Include and Exclude still match the item's name.
                 var wrong = locations.Where(x => x.StartsWith('/')).ToArray();
 
@@ -217,16 +223,19 @@ public static class InventoryFilters
     /// </summary>
     public sealed class Filter(string[] locations, Regex include, Regex exclude)
     {
+        /// <summary>Whether the Locations setting lists any places.</summary>
+        public bool HasLocations => locations.Length > 0;
+
         public bool Matches(InventoryEntry entry) =>
             Matches(entry.Name, entry.Locations);
 
         /// <summary>
         /// Whether a place, by name, is one the Locations setting lists. True when there are
         /// no Locations. Ignores case. For a provider that can tell before reading what's
-        /// inside, e.g. a content library by name.
+        /// inside, e.g. a content library by name. The name is trimmed, as the setting is.
         /// </summary>
         public bool ListsLocation(string name) =>
-            locations.Length == 0 || locations.Any(x => IsAt(name ?? string.Empty, x));
+            locations.Length == 0 || locations.Any(x => IsAt((name ?? string.Empty).Trim(), x));
 
         /// <summary>
         /// Whether an object with this name, at these locations, is listed. A location
@@ -237,7 +246,8 @@ public static class InventoryFilters
         {
             if (locations.Length > 0)
             {
-                var keys = (at ?? []).Where(x => !string.IsNullOrEmpty(x)).ToArray();
+                // Trimmed, as the setting is.
+                var keys = (at ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToArray();
 
                 if (!locations.Any(location => keys.Any(key => IsAt(key, location))))
                     return false;

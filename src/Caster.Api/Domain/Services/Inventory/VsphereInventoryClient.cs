@@ -642,9 +642,9 @@ public class VsphereInventoryClient(
                     if (!filter.ListsLocation(string.IsNullOrWhiteSpace(library?.Name) ? libraryId : library.Name))
                         continue;
 
-                    readLibraries++;
                     itemIds = DeserializeList<string>(
                         await GetAsync(client, sessionToken, $"{LibraryItemPath}?library_id={Uri.EscapeDataString(libraryId)}", cancellationToken));
+                    readLibraries++;
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
@@ -658,8 +658,9 @@ public class VsphereInventoryClient(
                 {
                     if (++read > MaxLibraryItems)
                     {
-                        return InventoryCategoryResult.Unavailable(
-                            $"vCenter has more than {MaxLibraryItems} content library items, more than Caster reads, so content library templates are not listed.");
+                        return InventoryCategoryResult.Unavailable(filter.HasLocations
+                            ? $"The content libraries in Infrastructure:Inventory:Resources:ContentLibraries:Locations have more than {MaxLibraryItems} items, more than Caster reads, so content library templates are not listed."
+                            : $"vCenter has more than {MaxLibraryItems} content library items, more than Caster reads, so content library templates are not listed.");
                     }
 
                     VsphereLibraryItem item;

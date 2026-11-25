@@ -97,7 +97,7 @@ public class InfrastructureConnectionOptions
     /// <summary>
     /// vsphere only. The datacenters this connection reads, by name, e.g. <c>DC1</c>.
     /// Empty reads all of them. Content libraries belong to the whole vCenter, so this
-    /// doesn't filter them; use their Include and Exclude instead.
+    /// doesn't filter them; list the libraries by name in their Locations instead.
     /// </summary>
     public string[] Datacenters { get; set; } = [];
 
@@ -149,7 +149,9 @@ public class InventoryResourcesOptions
     public InventoryResourceOptions Datastores { get; set; } = new();
 
     /// <summary>
-    /// vsphere only. <see cref="InventoryResourceOptions.Locations"/> doesn't apply.
+    /// vsphere only. <see cref="InventoryResourceOptions.Locations"/> takes content library
+    /// names, e.g. <c>teamA-templates</c>, and the items of any other library are never read.
+    /// Include and Exclude match the item's name.
     /// </summary>
     public InventoryResourceOptions ContentLibraries { get; set; } = new();
 
@@ -175,7 +177,8 @@ public class InventoryResourceOptions
     /// <para>
     /// vsphere: a full inventory path, e.g. <c>/DC1/vm/Templates</c>, matching that
     /// folder and everything below it, ignoring case. Networks also take a
-    /// distributed switch's name, matching its port groups.
+    /// distributed switch's name, matching its port groups. Content libraries take a
+    /// library's name, not a path, ignoring case.
     /// </para>
     /// <para>
     /// proxmox: a name, ignoring case. VM templates take a node or resource pool,

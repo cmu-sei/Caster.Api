@@ -558,7 +558,20 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
             var snapshot = await Read(responder);
 
             Assert.False(snapshot.ContentLibrary.Available);
-            Assert.Contains("more than", snapshot.ContentLibrary.Error);
+            Assert.StartsWith("vCenter has more than 2000 content library items", snapshot.ContentLibrary.Error);
+        }
+
+        [Fact]
+        public async Task GetInventoryAsync_TheItemCapNamesTheSelectedLibraries()
+        {
+            var (responder, _) = TeamLibraries(2001);
+            var options = Options();
+            options.Inventory.Resources.ContentLibraries.Locations = ["shared-archive"];
+
+            var snapshot = await Read(responder, options);
+
+            Assert.False(snapshot.ContentLibrary.Available);
+            Assert.StartsWith("The content libraries in Infrastructure:Inventory:Resources:ContentLibraries:Locations have more than 2000 items", snapshot.ContentLibrary.Error);
         }
 
         [Fact]

@@ -189,6 +189,15 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
         }
 
         [Fact]
+        public void Content_library_locations_are_vsphere_only()
+        {
+            var options = Proxmox();
+            options.Inventory.Resources.ContentLibraries.Locations = ["teamA-templates"];
+
+            Assert.Contains("ContentLibraries:Locations doesn't apply. Content libraries are vsphere only.", InventoryFilters.Validate(options));
+        }
+
+        [Fact]
         public void Content_library_locations_reject_paths()
         {
             var options = Vsphere();
@@ -258,6 +267,21 @@ namespace Caster.Api.Tests.Domain.Services.Inventory
 
             Assert.False(filter.ListsLocation("teamA"));
             Assert.True(filter.ListsLocation("teamA/"));
+        }
+
+        [Fact]
+        public void A_content_library_name_is_trimmed_as_the_setting_is()
+        {
+            var options = Vsphere();
+            options.Inventory.Resources.ContentLibraries.Locations = [" teamA-templates "];
+            var filter = InventoryFilters.For(options, InventoryCategory.ContentLibrary);
+            var snapshot = Templates();
+            snapshot.ContentLibrary = InventoryCategoryResult.Ok([Entry("ubuntu", "teamA-templates ")]);
+
+            snapshot = InventoryFilters.Apply(snapshot, options);
+
+            Assert.True(filter.ListsLocation("teamA-templates "));
+            Assert.Equal(["ubuntu"], snapshot.ContentLibrary.Entries.Select(x => x.Name));
         }
 
         [Fact]
