@@ -241,6 +241,42 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
     }
 
     /// <summary>
+    /// Verifies: a join whose send to the group fails still registers the caller and answers with the
+    /// state, rather than failing the caller.
+    /// Data: Alice joins; the send to the project's group throws.
+    /// </summary>
+    [Fact]
+    public async Task JoinProject_answers_when_the_send_fails()
+    {
+        var project = await SeedProject();
+        var alice = Connect(Member(project, "Alice"), "alice-tab-1");
+        FailSends(alice, project.Id);
+
+        var answer = await alice.Hub.JoinProject(project.Id);
+
+        Assert.Equal([new PresentUser(alice.Harness.UserId, "Alice")], answer.Users);
+        Assert.Equal([project.Id], _tracker.ProjectsOf("alice-tab-1"));
+    }
+
+    /// <summary>
+    /// Verifies: a leave whose send to the group fails still forgets the connection, without failing the
+    /// caller.
+    /// Data: Alice has the project open; the send to the project's group throws when she leaves.
+    /// </summary>
+    [Fact]
+    public async Task LeaveProject_forgets_the_connection_when_the_send_fails()
+    {
+        var project = await SeedProject();
+        var alice = Connect(Member(project, "Alice"), "alice-tab-1");
+        await alice.Hub.JoinProject(project.Id);
+        FailSends(alice, project.Id);
+
+        await alice.Hub.LeaveProject(project.Id);
+
+        Assert.Empty(_tracker.ProjectsOf("alice-tab-1"));
+    }
+
+    /// <summary>
     /// Verifies: a join that was still waiting when the connection closed leaves no one registered, so the
     /// others never see a user who is gone.
     /// Interacts with: HubHarness (Groups.AddToGroupAsync aborts the connection as the join waits on it), ProjectPresenceTracker.
@@ -325,6 +361,12 @@ public class ProjectHubPresenceTests(DatabaseFixture fixture) : DatabaseTestBase
             .Select(x => x.GetArguments())
             .Where(x => (string)x[0] == ProjectHubMethods.PresenceChanged)
             .Select(x => (PresenceState)((object[])x[1])[0])];
+
+    /// <summary>Makes every presence send to <paramref name="projectId"/>'s group from <paramref name="connection"/> throw.</summary>
+    private static void FailSends(Connection connection, Guid projectId) =>
+        connection.Harness.Group(projectId.ToString())
+            .SendCoreAsync(ProjectHubMethods.PresenceChanged, Arg.Any<object[]>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("send failed"));
 
     private async Task<Project> SeedProject()
     {

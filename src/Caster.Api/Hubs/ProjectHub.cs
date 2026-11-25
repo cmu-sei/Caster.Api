@@ -86,7 +86,7 @@ public class ProjectHub : Hub
         }
 
         if (change.Changed)
-            await SendPresence(change.State);
+            await TrySendPresence(change.State);
 
         return change.State;
     }
@@ -98,7 +98,7 @@ public class ProjectHub : Hub
         var change = _presence.Leave(projectId, Context.ConnectionId);
 
         if (change is { Changed: true })
-            await SendPresence(change.State);
+            await TrySendPresence(change.State);
     }
 
     public async Task JoinProjectAdmin(Guid projectId)
@@ -208,7 +208,8 @@ public class ProjectHub : Hub
     private Task SendPresence(PresenceState state) =>
         Clients.Group(state.ProjectId.ToString()).SendAsync(ProjectHubMethods.PresenceChanged, state);
 
-    // A send that fails only costs the others one update, and must not stop the ones after it.
+    // A send that fails only costs the others one update. The tracker has already changed by then, so it
+    // must not fail the caller's join or leave, or stop the sends after it.
     private async Task TrySendPresence(PresenceState state)
     {
         try
